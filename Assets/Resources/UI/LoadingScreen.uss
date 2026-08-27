@@ -1,0 +1,26 @@
+.loading-root {
+    flex-grow: 1;
+    width: 100%;
+    height: 100%;
+    background-color: rgb(0, 0, 0);
+}
+
+.loading-background {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    -unity-background-scale-mode: scale-and-crop;
+}
+
+.loading-text {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 40px;
+    height: 80px;
+    -unity-text-align: middle-center;
+    font-size: 28px;
+    color: rgb(255, 255, 255);
+}

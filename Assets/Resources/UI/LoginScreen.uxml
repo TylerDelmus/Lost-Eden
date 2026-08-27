@@ -1,0 +1,28 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <Style src="project://database/Assets/Resources/UI/LoginScreen.uss?fileID=7433441132597879392&amp;guid=94b031093aa7941449364315d54e2a18&amp;type=3#LoginScreen"/>
+    <ui:VisualElement name="root" class="login-root">
+        <ui:VisualElement name="login-panel" class="panel login-panel hidden" style="display: flex;">
+            <ui:VisualElement name="login-content" class="login-content">
+                <ui:Label text="Username" class="field-label"/>
+                <ui:TextField name="username-field" class="text-field"/>
+                <ui:Label text="Password" class="field-label"/>
+                <ui:TextField name="password-field" password="true" class="text-field"/>
+                <ui:Label text="Dimension" class="field-label"/>
+                <ui:DropdownField name="dimension-dropdown" class="dropdown-field"/>
+                <ui:VisualElement class="flex-spacer"/>
+                <ui:Label name="status-text" text="" class="status-text"/>
+            </ui:VisualElement>
+            <ui:Button name="connect-button" text="Login" class="connect-button"/>
+        </ui:VisualElement>
+        <ui:VisualElement name="character-panel" class="panel character-panel hidden" style="display: flex;">
+            <ui:VisualElement name="character-content" class="character-content">
+                <ui:Label text="Select Character" class="title"/>
+                <ui:ScrollView name="character-scroll" class="character-scroll">
+                    <ui:VisualElement name="character-list" class="character-list"/>
+                </ui:ScrollView>
+                <ui:Label name="character-status-text" text="" class="status-text"/>
+            </ui:VisualElement>
+            <ui:Button name="back-button" text="Back" class="back-button"/>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>StbImageWriteSharp</id>
+    <version>1.16.7</version>
+    <authors>StbImageWriteSharpTeam</authors>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectUrl>https://github.com/StbSharp/StbImageWriteSharp</projectUrl>
+    <description>C# port of the stb_image_write.h</description>
+    <dependencies>
+      <group targetFramework=".NETStandard2.0" />
+    </dependencies>
+  </metadata>
+</package>

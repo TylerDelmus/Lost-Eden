@@ -1,0 +1,198 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using AOSharp.Common.GameData;
+using Reflex.Attributes;
+using Reflex.Core;
+using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+using UnityEngine;
+using UnityEngine.Serialization;
+
+public class PlayfieldFactory : MonoBehaviour
+{
+    [SerializeField] RenderConfig _renderConfig;
+    [FormerlySerializedAs("_dynelPrefab")]
+    [SerializeField] Character _characterPrefab;
+
+    [Inject] ResourceDatabase _resourceDatabase;
+    [Inject] Container _container;
+    [Inject] NetworkClient _networkClient;
+    [Inject] LoadingScreen _loadingScreen;
+
+    readonly Dictionary<Identity, SimpleCharFullUpdateMessage> _pendingCharacters = new();
+
+    Coroutine _loadRoutine;
+    Transform _playfieldRoot;
+    Playfield _current;
+    bool _playfieldReady;
+
+    public bool NetworkDriven { get; set; }
+
+    public event Action<int> PlayfieldReady;
+
+    void OnEnable()
+    {
+        _networkClient.PlayfieldAnarchyFReceived += OnNetworkPlayfieldReceived;
+        _networkClient.SimpleCharFullUpdateReceived += OnSimpleCharFullUpdate;
+        _networkClient.StatReceived += OnStat;
+        _networkClient.CharDCMoveReceived += OnCharDCMove;
+        _networkClient.FollowTargetReceived += OnFollowTarget;
+        _networkClient.DynelDespawned += OnDynelDespawn;
+    }
+
+    void OnDisable()
+    {
+        _networkClient.PlayfieldAnarchyFReceived -= OnNetworkPlayfieldReceived;
+        _networkClient.SimpleCharFullUpdateReceived -= OnSimpleCharFullUpdate;
+        _networkClient.StatReceived -= OnStat;
+        _networkClient.CharDCMoveReceived -= OnCharDCMove;
+        _networkClient.FollowTargetReceived -= OnFollowTarget;
+        _networkClient.DynelDespawned -= OnDynelDespawn;
+    }
+
+    void OnNetworkPlayfieldReceived(int zoneId)
+    {
+        if (!NetworkDriven)
+            return;
+
+        Load(zoneId);
+    }
+
+    void OnSimpleCharFullUpdate(SimpleCharFullUpdateMessage msg)
+    {
+        if (!NetworkDriven)
+            return;
+
+        if (!_playfieldReady)
+        {
+            _pendingCharacters[msg.Identity] = msg;
+            Debug.Log($"[PlayfieldFactory] SimpleCharFullUpdate queued (playfield not ready): {msg.Identity.Type}:{msg.Identity.Instance} \"{msg.Name}\" (pending={_pendingCharacters.Count})");
+            return;
+        }
+
+        _current.SpawnDynel(msg);
+    }
+
+    void OnStat(StatMessage msg)
+    {
+        if (!NetworkDriven || _current == null)
+            return;
+
+        _current.ApplyStat(msg);
+    }
+
+    void OnCharDCMove(CharDCMoveMessage msg)
+    {
+        if (!NetworkDriven || _current == null)
+            return;
+
+        _current.ApplyCharDCMove(msg);
+    }
+
+    void OnFollowTarget(FollowTargetMessage msg)
+    {
+        if (!NetworkDriven || _current == null)
+            return;
+
+        _current.ApplyFollowTarget(msg);
+    }
+
+    void OnDynelDespawn(Identity identity)
+    {
+        if (!NetworkDriven)
+            return;
+
+        _pendingCharacters.Remove(identity);
+
+        if (_current == null)
+            return;
+
+        _current.DespawnDynel(identity);
+    }
+
+    public void Load(int zoneId)
+    {
+        if (_loadRoutine != null)
+            StopCoroutine(_loadRoutine);
+
+        _loadRoutine = StartCoroutine(LoadWithUnloadRoutine(zoneId));
+    }
+
+    public void Unload()
+    {
+        if (_loadRoutine != null)
+            StopCoroutine(_loadRoutine);
+
+        _loadRoutine = StartCoroutine(UnloadOnlyRoutine());
+    }
+
+    IEnumerator UnloadOnlyRoutine()
+    {
+        yield return UnloadRoutine();
+        _loadRoutine = null;
+    }
+
+    IEnumerator LoadWithUnloadRoutine(int zoneId)
+    {
+        if (NetworkDriven)
+            _loadingScreen.Show("Loading zone...", LoadingScreenKind.Login);
+
+        yield return UnloadRoutine();
+        yield return LoadRoutine(zoneId);
+        _loadRoutine = null;
+    }
+
+    IEnumerator UnloadRoutine()
+    {
+        _playfieldReady = false;
+
+        if (_playfieldRoot == null)
+            yield break;
+
+        _pendingCharacters.Clear();
+        Destroy(_playfieldRoot.gameObject);
+        _playfieldRoot = null;
+        _current = null;
+        yield return null;
+    }
+
+    IEnumerator LoadRoutine(int zoneId)
+    {
+        var holder = new GameObject($"PlayfieldLoad_{zoneId}");
+        holder.transform.SetParent(transform, false);
+        _playfieldRoot = holder.transform;
+
+        _current = holder.AddComponent<Playfield>();
+        _current.Init(zoneId, _characterPrefab, _container);
+
+        var terrainParser = new TerrainParser(_resourceDatabase, _renderConfig);
+        yield return terrainParser.BuildCoroutine(zoneId, _playfieldRoot);
+
+        var waterBuilder = new PlayfieldWaterBuilder(_resourceDatabase, _renderConfig);
+        yield return waterBuilder.BuildCoroutine(zoneId, _playfieldRoot);
+
+        var abiffMaterials = new AbiffMaterialFactory(_resourceDatabase);
+        var statelParser = new StatelParser(_resourceDatabase, _renderConfig, abiffMaterials);
+        yield return statelParser.BuildCoroutine(zoneId, _playfieldRoot);
+
+        _playfieldReady = true;
+        FlushPendingCharacters();
+        Debug.Log($"[PlayfieldFactory] Playfield ready for dynels (id={zoneId}, prefab={(_characterPrefab != null ? _characterPrefab.name : "MISSING")})");
+        PlayfieldReady?.Invoke(zoneId);
+
+        if (NetworkDriven)
+            _loadingScreen.HideFade();
+    }
+
+    void FlushPendingCharacters()
+    {
+        if (_current == null || _pendingCharacters.Count == 0)
+            return;
+
+        Debug.Log($"[PlayfieldFactory] Flushing {_pendingCharacters.Count} queued SimpleCharFullUpdate(s)");
+        foreach (SimpleCharFullUpdateMessage msg in _pendingCharacters.Values)
+            _current.SpawnDynel(msg);
+
+        _pendingCharacters.Clear();
+    }
+}

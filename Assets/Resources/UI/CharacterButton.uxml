@@ -1,0 +1,4 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <ui:Style src="LoginScreen.uss" />
+    <ui:Button name="character-button" text="" class="character-button" />
+</ui:UXML>
