@@ -475,7 +475,7 @@ namespace Ionic.Zlib
                     if (_z.AvailableBytesIn == 0)
                         nomoreinput = true;
                 } 
-                catch (IOException e) 
+                catch (IOException) 
                 {
                     nomoreinput = true;
                     return 0;

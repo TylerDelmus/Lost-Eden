@@ -9,9 +9,10 @@ public sealed class CatAnimRuntimeClip
     public readonly int AnimId;
     public readonly string Name;
     public readonly float SourceDuration;
-    public readonly float TrimStart;
-    public readonly float TrimEnd;
+    public readonly float LoopStart;
+    public readonly float LoopEnd;
     public readonly float Duration;
+    public readonly bool HasLoopTiming;
     public readonly BoneTrack[] Tracks;
 
     public struct BoneTrack
@@ -37,25 +38,25 @@ public sealed class CatAnimRuntimeClip
         int animId,
         string name,
         float sourceDuration,
-        float trimStart,
-        float trimEnd,
+        float loopStart,
+        float loopEnd,
+        bool hasLoopTiming,
         BoneTrack[] tracks)
     {
         AnimId = animId;
         Name = name;
         SourceDuration = sourceDuration;
-        TrimStart = trimStart;
-        TrimEnd = trimEnd;
-        Duration = Mathf.Max(sourceDuration - trimStart - trimEnd, 0.001f);
+        LoopStart = loopStart;
+        LoopEnd = loopEnd;
+        HasLoopTiming = hasLoopTiming;
+        Duration = Mathf.Max(loopEnd - loopStart, 0.001f);
         Tracks = tracks;
     }
 
     public static CatAnimRuntimeClip Create(
         CATAnim catAnim,
         int animId,
-        int boneCount,
-        float trimStart = 0f,
-        float trimEnd = 0f)
+        int boneCount)
     {
         if (catAnim?.Animation.BoneData == null || boneCount <= 0)
             return null;
@@ -88,10 +89,29 @@ public sealed class CatAnimRuntimeClip
             return null;
 
         sourceDuration = Mathf.Max(sourceDuration, 0.001f);
-        ClampTrim(sourceDuration, ref trimStart, ref trimEnd);
+
+        float loopStart = 0f;
+        float loopEnd = sourceDuration;
+        bool hasLoopTiming = false;
+        if (catAnim.TryGetLoopTiming(out int loopStartMs, out int loopEndMs)
+            && loopEndMs > loopStartMs)
+        {
+            loopStart = ToSeconds(loopStartMs);
+            loopEnd = ToSeconds(loopEndMs);
+            hasLoopTiming = true;
+        }
+
+        ClampLoop(sourceDuration, ref loopStart, ref loopEnd);
 
         string name = BuildName(catAnim.Name, animId);
-        return new CatAnimRuntimeClip(animId, name, sourceDuration, trimStart, trimEnd, tracks.ToArray());
+        return new CatAnimRuntimeClip(
+            animId,
+            name,
+            sourceDuration,
+            loopStart,
+            loopEnd,
+            hasLoopTiming,
+            tracks.ToArray());
     }
 
     public void Evaluate(int boneIndex, float time, out Vector3? localPosition, out Quaternion? localRotation)
@@ -99,7 +119,7 @@ public sealed class CatAnimRuntimeClip
         localPosition = null;
         localRotation = null;
 
-        float sourceTime = TrimStart + time;
+        float sourceTime = LoopStart + time;
 
         for (int i = 0; i < Tracks.Length; i++)
         {
@@ -117,23 +137,16 @@ public sealed class CatAnimRuntimeClip
         }
     }
 
-    static void ClampTrim(float sourceDuration, ref float trimStart, ref float trimEnd)
+    static void ClampLoop(float sourceDuration, ref float loopStart, ref float loopEnd)
     {
-        trimStart = Mathf.Max(0f, trimStart);
-        trimEnd = Mathf.Max(0f, trimEnd);
+        loopStart = Mathf.Clamp(loopStart, 0f, sourceDuration);
+        loopEnd = Mathf.Clamp(loopEnd, 0f, sourceDuration);
 
-        float maxTrim = Mathf.Max(sourceDuration - 0.001f, 0f);
-        if (trimStart + trimEnd <= maxTrim)
+        if (loopEnd > loopStart + 0.001f)
             return;
 
-        if (trimStart >= maxTrim)
-        {
-            trimStart = maxTrim;
-            trimEnd = 0f;
-            return;
-        }
-
-        trimEnd = maxTrim - trimStart;
+        loopStart = 0f;
+        loopEnd = sourceDuration;
     }
 
     static Vector3Key[] BuildPositionKeys(List<TranslationKey> keys, ref float duration)

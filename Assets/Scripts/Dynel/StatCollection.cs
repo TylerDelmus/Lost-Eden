@@ -3,26 +3,100 @@ using System.Collections.Generic;
 using AOSharp.Common.GameData;
 using SmokeLounge.AOtomation.Messaging.GameData;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+using UnityEngine;
+
+public enum StatDetail
+{
+    Base,
+    Bonus,
+    Full
+}
+
+[Serializable]
+internal class StatValue
+{
+    [SerializeField]
+    private int _base;
+    internal int Base
+    {
+        get => _base;
+        set
+        {
+            _base = value;
+            Full = _base + _bonus;
+        }
+    }
+
+    [SerializeField]
+    private int _bonus;
+    internal int Bonus
+    {
+        get => _bonus;
+        set
+        {
+            _bonus = value;
+            Full = _base + _bonus;
+        }
+    }
+
+    internal int Full { get; private set; }
+
+    public StatValue()
+    {
+    }
+
+    internal StatValue(int @base, int bonus)
+    {
+        Base = @base;
+        Bonus = bonus;
+    }
+}
 
 public class StatCollection
 {
-    readonly Dictionary<Stat, int> _values = new();
+    readonly Dictionary<Stat, StatValue> _values = new();
 
     public event Action<Stat, int, int, bool> StatChanged;
 
-    public bool TryGetValue(Stat stat, out int value) => _values.TryGetValue(stat, out value);
-
-    public int Get(Stat stat) => _values.TryGetValue(stat, out int value) ? value : 0;
-
-    public void Set(Stat stat, int value)
+    public bool TryGetValue(Stat stat, out int value, StatDetail detail = StatDetail.Full)
     {
-        bool isInitialSet = !_values.ContainsKey(stat);
-        int previousValue = isInitialSet ? 0 : _values[stat];
-        if (!isInitialSet && previousValue == value)
+        if (!_values.TryGetValue(stat, out StatValue statValue))
+        {
+            value = 0;
+            return false;
+        }
+
+        value = GetDetail(statValue, detail);
+        return true;
+    }
+
+    public int Get(Stat stat, StatDetail detail = StatDetail.Full)
+        => _values.TryGetValue(stat, out StatValue statValue) ? GetDetail(statValue, detail) : 0;
+
+    public IEnumerable<(Stat Stat, int Base, int Bonus, int Full)> GetEntries()
+    {
+        foreach (KeyValuePair<Stat, StatValue> pair in _values)
+            yield return (pair.Key, pair.Value.Base, pair.Value.Bonus, pair.Value.Full);
+    }
+
+    public void Set(Stat stat, int value, StatDetail detail = StatDetail.Base)
+    {
+        bool isInitialSet = !_values.TryGetValue(stat, out StatValue existing);
+        if (isInitialSet)
+            existing = new StatValue();
+
+        int previousFull = existing.Full;
+
+        if (detail == StatDetail.Bonus)
+            existing.Bonus = value;
+        else
+            existing.Base = value;
+
+        if (!isInitialSet && previousFull == existing.Full)
             return;
 
-        _values[stat] = value;
-        StatChanged?.Invoke(stat, previousValue, value, isInitialSet);
+        _values[stat] = existing;
+        StatChanged?.Invoke(stat, previousFull, existing.Full, isInitialSet);
     }
 
     public void Apply(StatMessage msg)
@@ -32,6 +106,21 @@ public class StatCollection
 
         foreach (GameTuple<Stat, uint> entry in msg.Stats)
             Set(entry.Value1, (int)entry.Value2);
+    }
+
+    public void Apply(FullCharacterMessage msg)
+    {
+        if (msg.Stats1 != null)
+        {
+            foreach (GameTuple<int, int> entry in msg.Stats1)
+                Set((Stat)entry.Value1, entry.Value2);
+        }
+
+        if (msg.Stats2 != null)
+        {
+            foreach (GameTuple<int, int> entry in msg.Stats2)
+                Set((Stat)entry.Value1, entry.Value2);
+        }
     }
 
     public void Apply(SimpleCharFullUpdateMessage msg)
@@ -108,4 +197,11 @@ public class StatCollection
                 break;
         }
     }
+
+    static int GetDetail(StatValue statValue, StatDetail detail) => detail switch
+    {
+        StatDetail.Base => statValue.Base,
+        StatDetail.Bonus => statValue.Bonus,
+        _ => statValue.Full,
+    };
 }

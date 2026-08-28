@@ -1,23 +1,29 @@
+using System;
 using AOSharp.Common.GameData;
-using Reflex.Attributes;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using UnityEngine;
 
 [RequireComponent(typeof(CharacterMotor))]
+[RequireComponent(typeof(VisualDynel))]
 public class Character : Dynel
 {
     const float LocomotionAnimBlendSeconds = CatAnimPlayer.DefaultBlendSeconds;
 
-    [Inject] CatMeshLoader _catMeshLoader;
-
+    internal Character FightingTarget { get; set; }
     CharacterMotor _motor;
-    GameObject _visualRoot;
-    int _loadedMonsterDataId;
+    VisualDynel _visual;
     string _locomotionLogicalName;
+    bool _appearanceStale;
+
+    public CharacterMotor Motor => _motor;
+    public VisualDynel Visual => _visual;
+    public Action CombatStarted;
+    public Action CombatEnded;
 
     void Awake()
     {
         _motor = GetComponent<CharacterMotor>();
+        _visual = GetComponent<VisualDynel>();
     }
 
     void OnEnable()
@@ -32,36 +38,78 @@ public class Character : Dynel
 
     void Update()
     {
+        if (_appearanceStale)
+        {
+            _appearanceStale = false;
+            UpdateAppearance();
+        }
+
         UpdateLocomotionAnim();
     }
 
     void OnStatChanged(Stat stat, int previousValue, int value, bool isInitialSet)
     {
-        if (stat == Stat.MonsterData)
+        if (stat == Stat.MonsterData
+            || stat == Stat.Breed
+            || stat == Stat.Sex
+            || stat == Stat.Fatness
+            || stat == Stat.Race)
         {
-            ApplyMonsterVisual(value);
+            MarkAppearanceStale();
+            return;
+        }
+
+        if (stat == Stat.HeadMesh || stat == Stat.VisualFlags)
+        {
+            _visual.ApplyAttachedMeshes();
+            return;
+        }
+
+        if (stat == Stat.Scale)
+        {
+            _visual.ApplyScale();
             return;
         }
 
         if (stat == Stat.AnimSet)
         {
-            if (TryGetAnimPlayer(out CatAnimPlayer player))
+            if (_visual.TryGetAnimPlayer(out CatAnimPlayer player))
                 player.SetAnimSet(value);
         }
+
+        if (stat == Stat.RunSpeed || stat == Stat.Health || stat == Stat.MaxHealth)
+            RefreshMovementSpeed();
+
+        if (stat == Stat.AnimSpeed)
+            UpdateLocomotionPlaybackRate();
     }
 
     public override void Apply(SimpleCharFullUpdateMessage msg)
     {
         base.Apply(msg);
         _motor.Warp(transform.position, transform.rotation);
-        ApplyMonsterVisual(Stats.Get(Stat.MonsterData));
+        if (msg.MovementStatus.HasValue)
+            _motor.ApplyMovementStatus(msg.MovementStatus.Value);
+        RefreshMovementSpeed();
+        _visual.StoreTextures(msg.Textures);
+        _visual.StoreMeshes(msg.Meshes);
+        MarkAppearanceStale();
+    }
+
+    public void Apply(AppearanceUpdateMessage msg)
+    {
+        if (msg == null)
+            return;
+        Stats.Set(Stat.VisualFlags, msg.VisualFlags);
+        _visual.StoreTextures(msg.Textures);
+        _visual.StoreMeshes(msg.Meshes);
+        _visual.ApplyBodySlotTextures();
+        _visual.ApplyAttachedMeshes();
     }
 
     public void Apply(CharDCMoveMessage msg)
     {
-        _motor.Warp(
-            new UnityEngine.Vector3(msg.Position.X, msg.Position.Y, msg.Position.Z),
-            new UnityEngine.Quaternion(msg.Heading.X, msg.Heading.Y, msg.Heading.Z, msg.Heading.W));
+        _motor.Warp(msg.Position.ToUnity(), msg.Heading.ToUnity());
         _motor.ApplyAction(msg.MoveType);
     }
 
@@ -69,77 +117,85 @@ public class Character : Dynel
     {
         if (msg.Info is not FollowTargetMessage.PathInfo pathInfo)
             return;
-
         if (pathInfo.Waypoints == null || pathInfo.Waypoints.Length == 0)
         {
             _motor.ClearPath();
             return;
         }
-
         var waypoints = new UnityEngine.Vector3[pathInfo.Waypoints.Length];
         for (int i = 0; i < pathInfo.Waypoints.Length; i++)
-        {
-            var p = pathInfo.Waypoints[i];
-            waypoints[i] = new UnityEngine.Vector3(p.X, p.Y, p.Z);
-        }
-
+            waypoints[i] = pathInfo.Waypoints[i].ToUnity();
         _motor.SetPath(waypoints);
     }
 
     public bool Play(string logicalName, float blendSeconds = LocomotionAnimBlendSeconds)
     {
-        if (!TryGetAnimPlayer(out CatAnimPlayer player))
-            return false;
-
-        bool played = player.Play(logicalName, blendSeconds);
+        bool played = _visual.Play(logicalName, blendSeconds);
         if (played)
             _locomotionLogicalName = logicalName?.Trim().ToLowerInvariant();
-
         return played;
     }
 
-    void ApplyMonsterVisual(int monsterDataId)
-    {
-        int animSet = Stats.Get(Stat.AnimSet);
-        _catMeshLoader?.ApplyMonsterVisual(
-            transform,
-            monsterDataId,
-            animSet,
-            ref _visualRoot,
-            ref _loadedMonsterDataId);
+    public bool TryGetAttractor(AttractorPlace place, out Attractor attractor)
+        => _visual.TryGetAttractor(place, out attractor);
 
-        _locomotionLogicalName = null;
-        UpdateLocomotionAnim();
+    public void MarkAppearanceStale() => _appearanceStale = true;
+
+    public void UpdateAppearance()
+    {
+        int previousCatMeshId = _visual.LoadedCatMeshId;
+        _visual.UpdateAppearance();
+        if (_visual.LoadedCatMeshId != previousCatMeshId)
+        {
+            _locomotionLogicalName = null;
+            UpdateLocomotionAnim();
+        }
+    }
+
+    void RefreshMovementSpeed()
+    {
+        if (_motor == null)
+            return;
+
+        int runSpeed = Stats.Get(Stat.RunSpeed, StatDetail.Full);
+        int currentHealth = Stats.Get(Stat.Health, StatDetail.Full);
+        int maxHealth = Stats.Get(Stat.MaxHealth, StatDetail.Full);
+        _motor.UpdateRunLimitsFromStats(runSpeed, currentHealth, maxHealth);
     }
 
     void UpdateLocomotionAnim()
     {
-        if (_visualRoot == null || _motor == null)
+        if (_visual.VisualRoot == null || _motor == null)
             return;
 
-        string desired = _motor.IsMoving ? "run" : "idle";
-        if (string.Equals(_locomotionLogicalName, desired, System.StringComparison.Ordinal))
-            return;
-
-        if (!TryGetAnimPlayer(out CatAnimPlayer player))
-            return;
-
-        if (player.Play(desired, LocomotionAnimBlendSeconds))
-            _locomotionLogicalName = desired;
-    }
-
-    bool TryGetAnimPlayer(out CatAnimPlayer player)
-    {
-        player = null;
-        if (_visualRoot == null)
-            return false;
-
-        if (_visualRoot.TryGetComponent(out CatMeshVisualHolder holder) && holder.Player != null)
+        string desired = _motor.GetLocomotionLogicalName();
+        if (!string.Equals(_locomotionLogicalName, desired, StringComparison.Ordinal))
         {
-            player = holder.Player;
-            return true;
+            if (_visual.TryGetAnimPlayer(out CatAnimPlayer player)
+                && player.Play(desired, LocomotionAnimBlendSeconds))
+            {
+                _locomotionLogicalName = desired;
+            }
         }
 
-        return _visualRoot.TryGetComponent(out player);
+        UpdateLocomotionPlaybackRate();
+    }
+
+    void UpdateLocomotionPlaybackRate()
+    {
+        if (!_visual.TryGetAnimPlayer(out CatAnimPlayer player))
+            return;
+
+        if (!string.Equals(_locomotionLogicalName, "idle", StringComparison.Ordinal))
+        {
+            int animSpeed = Stats.Get(Stat.AnimSpeed, StatDetail.Full);
+            if (animSpeed <= 0)
+                animSpeed = 100;
+            player.PlaybackSpeed = CharacterMotor.ComputeRunPlaybackRate(_motor.GetLocomotionMaxSpeed(), animSpeed);
+        }
+        else
+        {
+            player.PlaybackSpeed = 1f;
+        }
     }
 }

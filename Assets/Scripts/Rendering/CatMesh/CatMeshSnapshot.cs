@@ -5,6 +5,17 @@ using UnityEngine;
 using AoVector2 = AODB.Common.Structs.Vector2;
 using AoVector3 = AODB.Common.Structs.Vector3;
 
+public sealed class CatMeshSubmeshSource
+{
+    public string GroupName;
+    public Vector3[] Positions;
+    public Vector3[] Normals;
+    public Vector2[] UVs;
+    public int[] Triangles;
+    public BoneWeight[] BoneWeights;
+    public AbiffMaterialDesc Material;
+}
+
 public static class CatMeshSnapshot
 {
     public static CatMeshSubmeshSource[] FromRdbCatMesh(RDBCatMesh catMesh)

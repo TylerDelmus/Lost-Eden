@@ -20,8 +20,15 @@ public class LoginScreenController : MonoBehaviour
     [Inject] NetworkClient _networkClient;
     [Inject] PlayfieldFactory _playfieldFactory;
     [Inject] LoadingScreen _loadingScreen;
+    [Inject] PlayerController _playerController;
 
     [SerializeField] LoginScreenView _loginView;
+
+    [Header("Login Camera")]
+    [SerializeField] UnityEngine.Vector3 _loginCameraPosition;
+    [SerializeField] UnityEngine.Vector3 _loginCameraEulerAngles;
+
+    const float AuthTimeoutSeconds = 10f;
 
     LoginScreenState _state = LoginScreenState.BootLoading;
 
@@ -29,6 +36,7 @@ public class LoginScreenController : MonoBehaviour
     bool _awaitingPlayfieldReady;
     bool _awaitingBackdropReload;
     bool _ignoreNextDisconnect;
+    float _authTimeoutAt = -1f;
 
     void Awake()
     {
@@ -78,6 +86,42 @@ public class LoginScreenController : MonoBehaviour
     void Update()
     {
         _networkClient.Update();
+        TickAuthTimeout();
+    }
+
+    void TickAuthTimeout()
+    {
+        if (_authTimeoutAt < 0f || _state != LoginScreenState.Authenticating)
+            return;
+
+        if (Time.realtimeSinceStartup < _authTimeoutAt)
+            return;
+
+        string message = _networkClient.Phase == SessionPhase.Authenticating
+            ? "Login timed out."
+            : "Connection timed out.";
+        FailAuthentication(message);
+    }
+
+    void BeginAuthTimeout()
+    {
+        _authTimeoutAt = Time.realtimeSinceStartup + AuthTimeoutSeconds;
+    }
+
+    void ClearAuthTimeout()
+    {
+        _authTimeoutAt = -1f;
+    }
+
+    void FailAuthentication(string message)
+    {
+        ClearAuthTimeout();
+        _ignoreNextDisconnect = true;
+        _networkClient.AbandonReconnect();
+        _networkClient.Disconnect();
+        _state = LoginScreenState.LoginBackdrop;
+        _loginView.SetFormInteractable(true);
+        _loginView.SetStatus(message);
     }
 
     void OnEnable()
@@ -160,6 +204,7 @@ public class LoginScreenController : MonoBehaviour
         _loginView.SetStatus(string.Empty);
         _loginView.SetFormInteractable(false);
         _loginView.SetStatus("Connecting...");
+        BeginAuthTimeout();
 
         _networkClient.Connect(new Credentials(username, password), dimension);
     }
@@ -169,11 +214,11 @@ public class LoginScreenController : MonoBehaviour
         if (_state != LoginScreenState.Authenticating)
             return;
 
+        ClearAuthTimeout();
+
         if (charList.Characters == null || charList.Characters.Length == 0)
         {
-            _state = LoginScreenState.LoginBackdrop;
-            _loginView.SetFormInteractable(true);
-            _loginView.SetStatus("No characters found on this account.");
+            FailAuthentication("No characters found on this account.");
             return;
         }
 
@@ -232,6 +277,7 @@ public class LoginScreenController : MonoBehaviour
         {
             _awaitingBackdropReload = false;
             _state = LoginScreenState.LoginBackdrop;
+            ApplyLoginCameraPose();
             _loginView.ShowLoginForm();
             _loginView.SetFormInteractable(true);
             _loginView.SetStatus(string.Empty);
@@ -243,6 +289,7 @@ public class LoginScreenController : MonoBehaviour
         if (_state == LoginScreenState.BootLoading)
         {
             _state = LoginScreenState.LoginBackdrop;
+            ApplyLoginCameraPose();
             _loginView.ShowLoginForm();
             _loginView.SetFormInteractable(true);
             _loadingScreen.HideFade();
@@ -259,13 +306,27 @@ public class LoginScreenController : MonoBehaviour
         }
     }
 
+    void ApplyLoginCameraPose()
+    {
+        if (_playerController?.CameraController == null)
+        {
+            Debug.LogWarning("[LoginScreen] CameraController unavailable; skipping login camera pose.");
+            return;
+        }
+
+        _playerController.CameraController.SetFreePose(_loginCameraPosition, _loginCameraEulerAngles);
+    }
+
     void OnLoginFailed(LoginError error)
     {
         if (_state != LoginScreenState.Authenticating)
             return;
 
+        // LoginError already drops the transport; skip Disconnect and only ignore
+        // the follow-up Disconnected so the credentials form stays up.
+        ClearAuthTimeout();
+        _ignoreNextDisconnect = true;
         _state = LoginScreenState.LoginBackdrop;
-        _loginView.ShowLoginForm();
         _loginView.SetFormInteractable(true);
         _loginView.SetStatus(error.ToString());
     }

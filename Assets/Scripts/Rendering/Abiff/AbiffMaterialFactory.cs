@@ -48,14 +48,10 @@ public sealed class AbiffMaterialFactory
 
     Material CreateLitMaterial(AbiffMaterialDesc desc)
     {
-        Shader shader = Shader.Find("HDRP/Lit");
-        if (shader == null)
-            shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null)
-            shader = Shader.Find("Standard");
-
         string name = string.IsNullOrEmpty(desc.Name) ? "AbiffMat" : desc.Name;
-        var material = new Material(shader) { name = name };
+        Material material = desc.ApplyAlpha
+            ? HdrpLitMaterialFactory.CreateAlphaClip(name)
+            : HdrpLitMaterialFactory.Create(name);
 
         Texture2D diffuse = desc.DiffuseTextureId > 0 ? LoadTexture(desc.DiffuseTextureId) : null;
         Texture2D emission = desc.EmissionTextureId > 0 ? LoadTexture(desc.EmissionTextureId) : null;
@@ -99,13 +95,9 @@ public sealed class AbiffMaterialFactory
                 material.SetTexture("_EmissionMap", emission);
         }
 
-        if (desc.ApplyAlpha)
+        if (desc.ApplyAlpha && !isHdrp)
         {
-            if (isHdrp)
-            {
-                HDMaterial.SetAlphaClipping(material, true);
-            }
-            else if (material.HasProperty("_AlphaClip"))
+            if (material.HasProperty("_AlphaClip"))
                 material.SetFloat("_AlphaClip", 1f);
             else if (material.HasProperty("_Mode"))
                 material.SetFloat("_Mode", 1f); // Cutout

@@ -65,10 +65,12 @@ public class NetworkClient
     public event Action<Message> MessageReceived;
     public event Action<int> PlayfieldAnarchyFReceived;
     public event Action<SimpleCharFullUpdateMessage> SimpleCharFullUpdateReceived;
+    public event Action<FullCharacterMessage> FullCharacterReceived;
     public event Action<StatMessage> StatReceived;
     public event Action<CharDCMoveMessage> CharDCMoveReceived;
     public event Action<FollowTargetMessage> FollowTargetReceived;
     public event Action<Identity> DynelDespawned;
+    public event Action<AppearanceUpdateMessage> AppearanceUpdateReceived;
 
     public NetworkClient(NetworkConfig config = null)
     {
@@ -142,8 +144,8 @@ public class NetworkClient
 
     public void SelectCharacter(int characterId)
     {
-        LocalDynelId = characterId;
         Send(new SelectCharacterMessage { CharacterId = characterId });
+        LocalDynelId = characterId;
     }
 
     internal void Post(Action action) => _mainThreadActions.Enqueue(action);
@@ -194,8 +196,17 @@ public class NetworkClient
         CharacterListReceived?.Invoke(charList);
     }
 
-    internal void OnFullCharacter()
+    internal void OnFullCharacter(FullCharacterMessage msg)
     {
+        Debug.Log($"[Network] FullCharacter → {msg.Identity.Type}:{msg.Identity.Instance}");
+        FullCharacterReceived?.Invoke(msg);
+    }
+
+    internal void EnterPlay()
+    {
+        if (_phase == SessionPhase.InPlay)
+            return;
+
         Send(new CharInPlayMessage());
         SetPhase(SessionPhase.InPlay);
         CharacterInPlay?.Invoke(_isFirstPlayshift);
@@ -235,6 +246,12 @@ public class NetworkClient
     {
         Debug.Log($"[Network] Despawn → {msg.Identity.Type}:{msg.Identity.Instance}");
         DynelDespawned?.Invoke(msg.Identity);
+    }
+
+    internal void OnAppearanceUpdate(AppearanceUpdateMessage msg)
+    {
+        Debug.Log($"[Network] AppearanceUpdate → {msg.Identity.Type}:{msg.Identity.Instance} (textures={msg.Textures?.Length ?? 0}, meshes={msg.Meshes?.Length ?? 0})");
+        AppearanceUpdateReceived?.Invoke(msg);
     }
 
     internal void RaiseMessageReceived(Message message) => MessageReceived?.Invoke(message);

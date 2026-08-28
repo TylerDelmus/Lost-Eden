@@ -8,6 +8,7 @@ public class Dynel : MonoBehaviour
     public string Name { get; private set; }
     public bool IsNpc { get; private set; }
     public StatCollection Stats { get; } = new();
+    public UnityEngine.Vector3 Position => transform.position;
 
     public void Initialize(SimpleCharFullUpdateMessage msg)
     {
@@ -20,12 +21,14 @@ public class Dynel : MonoBehaviour
         Name = msg.Name;
         IsNpc = msg.Flags.HasFlag(SimpleCharFullUpdateFlags.IsNpc);
         Stats.Apply(msg);
-        transform.position = new UnityEngine.Vector3(msg.Position.X, msg.Position.Y, msg.Position.Z);
-        transform.rotation = new UnityEngine.Quaternion(msg.Heading.X, msg.Heading.Y, msg.Heading.Z, msg.Heading.W);
+        transform.position = msg.Position.ToUnity();
+        transform.rotation = msg.Heading.ToUnity();
         gameObject.name = string.IsNullOrEmpty(msg.Name)
             ? $"Dynel_{msg.Identity.Type}_{msg.Identity.Instance}"
             : msg.Name;
     }
 
     public void Apply(StatMessage msg) => Stats.Apply(msg);
+
+    public void Apply(FullCharacterMessage msg) => Stats.Apply(msg);
 }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using AOSharp.Common.GameData;
 using Reflex.Core;
@@ -38,13 +39,41 @@ public class Playfield : MonoBehaviour
         }
 
         Character character = Instantiate(_characterPrefab, _dynelsRoot);
-        GameObjectInjector.InjectObject(character.gameObject, _container);
-        character.Initialize(msg);
-        _dynels[msg.Identity] = character;
-        Debug.Log($"[Playfield] Dynel spawned: {msg.Identity.Type}:{msg.Identity.Instance} \"{msg.Name}\" @ ({msg.Position.X:F1}, {msg.Position.Y:F1}, {msg.Position.Z:F1}) (total={_dynels.Count})");
+        try
+        {
+            GameObjectInjector.InjectObject(character.gameObject, _container);
+            character.Initialize(msg);
+            _dynels[msg.Identity] = character;
+            Debug.Log($"[Playfield] Dynel spawned: {msg.Identity.Type}:{msg.Identity.Instance} \"{msg.Name}\" @ ({msg.Position.X:F1}, {msg.Position.Y:F1}, {msg.Position.Z:F1}) (total={_dynels.Count})");
+        }
+        catch (Exception ex)
+        {
+            Destroy(character.gameObject);
+            Debug.LogError($"[Playfield] Dynel spawn failed for {msg.Identity.Type}:{msg.Identity.Instance} \"{msg.Name}\": {ex}");
+        }
+    }
+
+    public bool TryGetDynel(Identity identity, out Dynel dynel) => _dynels.TryGetValue(identity, out dynel);
+
+    public bool TryGetCharacter(Identity identity, out Character character)
+    {
+        character = null;
+        if (!_dynels.TryGetValue(identity, out Dynel dynel) || dynel is not Character c)
+            return false;
+
+        character = c;
+        return true;
     }
 
     public void ApplyStat(StatMessage msg)
+    {
+        if (!_dynels.TryGetValue(msg.Identity, out Dynel dynel))
+            return;
+
+        dynel.Apply(msg);
+    }
+
+    public void ApplyFullCharacter(FullCharacterMessage msg)
     {
         if (!_dynels.TryGetValue(msg.Identity, out Dynel dynel))
             return;
@@ -62,6 +91,15 @@ public class Playfield : MonoBehaviour
     }
 
     public void ApplyFollowTarget(FollowTargetMessage msg)
+    {
+        if (!_dynels.TryGetValue(msg.Identity, out Dynel dynel))
+            return;
+
+        if (dynel is Character character)
+            character.Apply(msg);
+    }
+
+    public void ApplyAppearanceUpdate(AppearanceUpdateMessage msg)
     {
         if (!_dynels.TryGetValue(msg.Identity, out Dynel dynel))
             return;

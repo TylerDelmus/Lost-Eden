@@ -1,7 +1,14 @@
 using System;
 using System.Collections.Generic;
 using AODB.Common.RDBObjects;
+using AOSharp.Common.GameData;
 using UnityEngine;
+using AoQuaternion = AODB.Common.Structs.Quaternion;
+using AoVector3 = AODB.Common.Structs.Vector3;
+using Matrix4x4 = UnityEngine.Matrix4x4;
+using Mesh = UnityEngine.Mesh;
+using Quaternion = UnityEngine.Quaternion;
+using Vector3 = UnityEngine.Vector3;
 
 public sealed class CatMeshLoader
 {
@@ -9,6 +16,7 @@ public sealed class CatMeshLoader
 
     readonly ResourceDatabase _database;
     readonly CatMeshMaterialFactory _materials;
+    Dictionary<string, int> _catMeshNameToId;
 
     public CatMeshLoader(ResourceDatabase database, CatMeshMaterialFactory materials)
     {
@@ -16,40 +24,24 @@ public sealed class CatMeshLoader
         _materials = materials ?? new CatMeshMaterialFactory(new AbiffMaterialFactory(database));
     }
 
-    public void ApplyMonsterVisual(
-        Transform dynelRoot,
-        int monsterDataId,
-        int animSet,
-        ref GameObject visualRoot,
-        ref int loadedMonsterDataId)
+    public bool TryResolveAppearanceCatMeshId(
+        Breed breed,
+        Gender gender,
+        Fatness fatness,
+        bool robe,
+        out int catMeshId)
     {
-        if (dynelRoot == null)
-            return;
+        catMeshId = 0;
+        if (_database?.Rdb == null)
+            return false;
 
-        if (monsterDataId == loadedMonsterDataId)
-        {
-            if (visualRoot != null && visualRoot.TryGetComponent(out CatAnimPlayer existingPlayer))
-                existingPlayer.SetAnimSet(animSet);
-            return;
-        }
+        if (!TryBuildAppearanceName(breed, gender, fatness, robe, out string name))
+            return false;
 
-        if (monsterDataId <= 0)
-        {
-            DestroyVisual(ref visualRoot);
-            loadedMonsterDataId = 0;
-            return;
-        }
-
-        if (!MonsterDataResolver.TryResolveBodyCatMeshId(_database, monsterDataId, out int catMeshId))
-        {
-            Debug.LogWarning($"CatMeshLoader: MonsterData {monsterDataId} has no BodyCatMesh stat.");
-            return;
-        }
-
-        if (!ApplyCatMeshVisual(dynelRoot, catMeshId, monsterDataId, animSet, ref visualRoot))
-            return;
-
-        loadedMonsterDataId = monsterDataId;
+        EnsureCatMeshNameCache();
+        return _catMeshNameToId != null
+            && _catMeshNameToId.TryGetValue(name, out catMeshId)
+            && catMeshId > 0;
     }
 
     public bool ApplyCatMeshVisual(
@@ -159,11 +151,56 @@ public sealed class CatMeshLoader
         var holder = visualRoot.AddComponent<CatMeshVisualHolder>();
         holder.Set(createdMeshes, bones, player);
 
+        CreateAttractors(catMesh, bones, visualRoot);
+
         if (playIdle && monsterDataId > 0)
             player.Play("idle");
 
         return true;
     }
+
+    static void CreateAttractors(RDBCatMesh catMesh, Transform[] bones, GameObject visualRoot)
+    {
+        var collection = visualRoot.AddComponent<AttractorCollection>();
+        if (catMesh?.Attractors == null || catMesh.Attractors.Count == 0)
+            return;
+
+        Transform visualTransform = visualRoot.transform;
+
+        for (int i = 0; i < catMesh.Attractors.Count; i++)
+        {
+            RDBCatMesh.Attractor src = catMesh.Attractors[i];
+            if (src == null)
+                continue;
+
+            string name = string.IsNullOrEmpty(src.Name) ? $"Attractor_{i}" : src.Name.Trim();
+            if (!AttractorPlaceUtil.TryParse(name, out AttractorPlace place))
+            {
+                Debug.LogWarning($"CatMeshLoader: Unknown attractor name '{name}', skipping.");
+                continue;
+            }
+
+            Transform parent = visualTransform;
+            int jointIndex = src.BoneIdx;
+            if (bones != null && jointIndex >= 0 && jointIndex < bones.Length && bones[jointIndex] != null)
+                parent = bones[jointIndex];
+
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = ToUnity(src.Position);
+            go.transform.localRotation = ToUnity(src.Rotation);
+
+            float scale = src.Scale;
+            go.transform.localScale = scale > 0f ? Vector3.one * scale : Vector3.one;
+
+            var attractor = go.AddComponent<Attractor>();
+            collection.Add(place, attractor);
+        }
+    }
+
+    static Vector3 ToUnity(AoVector3 v) => new Vector3(v.X, v.Y, v.Z);
+
+    static Quaternion ToUnity(AoQuaternion q) => new Quaternion(q.X, q.Y, q.Z, q.W);
 
     CATAnim TryLoadRestPoseAnim(int monsterDataId, int animSet)
     {
@@ -259,6 +296,90 @@ public sealed class CatMeshLoader
 
         UnityEngine.Object.Destroy(visualRoot);
         visualRoot = null;
+    }
+
+    static bool TryBuildAppearanceName(
+        Breed breed,
+        Gender gender,
+        Fatness fatness,
+        bool robe,
+        out string name)
+    {
+        name = null;
+
+        string breedName = breed switch
+        {
+            Breed.Solitus => "solitus",
+            Breed.Opifex => "opifex",
+            Breed.Nanomage => "nanomage",
+            Breed.Atrox => "athrox",
+            _ => null
+        };
+
+        string genderName = gender switch
+        {
+            Gender.Male => "male",
+            Gender.Female => "female",
+            Gender.Uni => "male",
+            _ => null
+        };
+
+        if (breedName == null || genderName == null)
+            return false;
+
+        string fatnessSuffix = fatness switch
+        {
+            Fatness.Thin => "_thin",
+            Fatness.Fat => "_fat",
+            _ => string.Empty
+        };
+
+        string robeSuffix = robe ? "_robe" : string.Empty;
+        name = $"{breedName}_{genderName}{fatnessSuffix}{robeSuffix}.cir";
+        return true;
+    }
+
+    void EnsureCatMeshNameCache()
+    {
+        if (_catMeshNameToId != null)
+            return;
+
+        _catMeshNameToId = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (_database?.Rdb == null)
+            return;
+
+        try
+        {
+            InfoObject info = _database.Get<InfoObject>(1);
+            if (info?.Types == null)
+                return;
+
+            if (!info.Types.TryGetValue(ResourceTypeId.CatMesh, out Dictionary<int, string> names) || names == null)
+                return;
+
+            foreach (KeyValuePair<int, string> pair in names)
+            {
+                string normalized = NormalizeCatMeshName(pair.Value);
+                if (string.IsNullOrEmpty(normalized))
+                    continue;
+
+                if (!_catMeshNameToId.ContainsKey(normalized))
+                    _catMeshNameToId[normalized] = pair.Key;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"CatMeshLoader: Failed to load InfoObject CatMesh names ({ex.Message}).");
+            _catMeshNameToId = new Dictionary<string, int>(StringComparer.Ordinal);
+        }
+    }
+
+    static string NormalizeCatMeshName(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+            return name;
+
+        return name.Trim().Trim('\0').ToLowerInvariant();
     }
 }
 

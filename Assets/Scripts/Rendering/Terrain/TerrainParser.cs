@@ -281,13 +281,7 @@ public sealed class TerrainParser
 
     static Material CreateAtlasMaterial(Texture2D atlas)
     {
-        Shader shader = Shader.Find("HDRP/Lit");
-        if (shader == null)
-            shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null)
-            shader = Shader.Find("Standard");
-
-        var material = new Material(shader) { name = "PlayfieldTerrain" };
+        Material material = HdrpLitMaterialFactory.Create("PlayfieldTerrain");
         if (material.HasProperty("_BaseColorMap"))
             material.SetTexture("_BaseColorMap", atlas);
         else if (material.HasProperty("_MainTex"))

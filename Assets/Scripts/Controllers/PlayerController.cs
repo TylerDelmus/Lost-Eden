@@ -1,0 +1,209 @@
+using System;
+using Reflex.Attributes;
+using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
+using UnityEngine;
+using MovementAction = AOSharp.Common.GameData.MovementAction;
+
+[RequireComponent(typeof(InputController))]
+[DefaultExecutionOrder(-100)]
+public class PlayerController : MonoBehaviour
+{
+    static readonly (MovementFlags Flag, MovementAction Start, MovementAction Stop)[] FlagActions =
+    {
+        (MovementFlags.Forward, MovementAction.ForwardStart, MovementAction.ForwardStop),
+        (MovementFlags.Backward, MovementAction.BackwardStart, MovementAction.BackwardStop),
+        (MovementFlags.StrafeLeft, MovementAction.StrafeLeftStart, MovementAction.StrafeLeftStop),
+        (MovementFlags.StrafeRight, MovementAction.StrafeRightStart, MovementAction.StrafeRightStop),
+        (MovementFlags.TurnLeft, MovementAction.TurnLeftStart, MovementAction.TurnLeftStop),
+        (MovementFlags.TurnRight, MovementAction.TurnRightStart, MovementAction.TurnRightStop),
+        (MovementFlags.Jump, MovementAction.JumpStart, MovementAction.JumpStop),
+    };
+
+    const MovementFlags NetworkFlags =
+        MovementFlags.Forward | MovementFlags.Backward |
+        MovementFlags.StrafeLeft | MovementFlags.StrafeRight |
+        MovementFlags.TurnLeft | MovementFlags.TurnRight |
+        MovementFlags.Jump;
+
+    [SerializeField]
+    private InputController _inputController;
+
+    [SerializeField]
+    internal CameraController CameraController;
+
+    [SerializeField]
+    internal TargetingController TargetingController;
+
+    [Inject] NetworkClient _networkClient;
+
+    private Quaternion _lastSentRotation;
+    private MovementFlags _lastSentFlags;
+
+    public Action<Collider> OnInteraction;
+
+
+    internal bool IsLocalPlayer(Character character) => _localPlayer != null && _localPlayer == character;
+
+    internal bool TryGetLocalPlayer(out Character localPlayer) => (localPlayer = _localPlayer) != null;
+
+    private Character _localPlayer;
+
+    private void Start()
+    {
+        _inputController.InteractPressed += OnInteractPress;
+        _inputController.SelfTargetPressed += OnSelfTargetPress;
+        _inputController.TabPressed += OnTabPress;
+        _inputController.HotbarPressed += OnHotbarPress;
+        _inputController.CharacterPressed += OnCharacterPress;
+        _inputController.CancelPressed += OnCancelPress;
+    }
+
+    private void OnCharacterPress()
+    {
+        //UserInterface.Instance.ToggleCharacterPanel();
+    }
+
+    private void OnInteractPress()
+    {
+        if (_localPlayer == null)
+            return;
+    }
+
+    private void Update()
+    {
+        if (_localPlayer == null)
+            return;
+
+        CameraController.SetInputs(_inputController.ActorInput);
+        TargetingController.Tick(_inputController.ActorInput);
+
+        var rotation = Quaternion.AngleAxis(CameraController.GetViewAngles().y, Vector3.up);
+        var flags = _inputController.ActorInput.ToMovementFlags();
+        _localPlayer.Motor.SetInputs(flags, rotation);
+
+        SyncMovementToServer(flags, rotation);
+    }
+
+    void SyncMovementToServer(MovementFlags flags, Quaternion rotation)
+    {
+        if (_networkClient == null || !_networkClient.InPlay)
+            return;
+
+        MovementFlags networkFlags = flags & NetworkFlags;
+        MovementFlags changed = networkFlags ^ _lastSentFlags;
+
+        // Stops first, then starts — e.g. Forward+StrafeLeft becomes two CharDCMoves.
+        if (changed != MovementFlags.None)
+        {
+            for (int i = 0; i < FlagActions.Length; i++)
+            {
+                var (flag, _, stop) = FlagActions[i];
+                if ((changed & flag) == 0)
+                    continue;
+                if ((networkFlags & flag) == 0)
+                    SendMove(stop, rotation);
+            }
+
+            for (int i = 0; i < FlagActions.Length; i++)
+            {
+                var (flag, start, _) = FlagActions[i];
+                if ((changed & flag) == 0)
+                    continue;
+                if ((networkFlags & flag) != 0)
+                    SendMove(start, rotation);
+            }
+
+            _lastSentFlags = networkFlags;
+        }
+
+        bool mouseTurn = (flags & MovementFlags.MouseTurn) != 0;
+        if (mouseTurn && rotation != _lastSentRotation)
+        {
+            SendMove(MovementAction.Update, rotation);
+            _lastSentRotation = rotation;
+        }
+        else if (!mouseTurn)
+        {
+            _lastSentRotation = rotation;
+        }
+    }
+
+    void SendMove(MovementAction action, Quaternion rotation)
+    {
+        _networkClient.Send(new CharDCMoveMessage
+        {
+            MoveType = action,
+            Position = _localPlayer.Position.ToAo(),
+            Heading = rotation.ToAo(),
+        });
+    }
+
+    internal void SetLocalPlayer(Character player)
+    {
+        _localPlayer = player;
+        _lastSentFlags = MovementFlags.None;
+        _lastSentRotation = player != null ? player.transform.rotation : Quaternion.identity;
+        // _localPlayer.Nameplate.Hide();
+        CameraController.SetTarget(_localPlayer);
+        TargetingController.Initialize(_localPlayer);
+        TargetingController.TargetChanged += OnTargetChanged;
+    }
+
+    private void OnTargetChanged(Dynel dynel, TargetingController.TargetType type)
+    {
+        if (dynel == null)
+            return;
+
+        //if (type == TargetingController.TargetType.Interact && dynel is Character character)
+        //    _localPlayer.StartAttackCmd(character);
+    }
+
+    private void OnSelfTargetPress()
+    {
+        if (_localPlayer == null)
+            return;
+
+        TargetingController.SelectSelf();
+    }
+
+    private void OnTabPress()
+    {
+        if (_localPlayer == null)
+            return;
+
+        TargetingController.SelectNextClosest();
+    }
+
+    private void OnCancelPress()
+    {
+        if (_localPlayer == null)
+            return;
+
+        //if (_localPlayer.FightingTarget != null)
+        //    _localPlayer.StopAttackCmd();
+
+        TargetingController.ClearTarget();
+    }
+
+    private void OnHotbarPress(int slot)
+    {
+        if (_localPlayer == null)
+            return;
+
+        Debug.Log($"[Hotbar] Slot {slot} pressed");
+
+        //DEV
+        //if (slot == 1)
+        //    _localPlayer.CastSpellCmd(1001);
+        //DEV
+    }
+
+    private void OnDestroy()
+    {
+        _inputController.InteractPressed -= OnInteractPress;
+        _inputController.SelfTargetPressed -= OnSelfTargetPress;
+        _inputController.TabPressed -= OnTabPress;
+        _inputController.HotbarPressed -= OnHotbarPress;
+        _inputController.CancelPressed -= OnCancelPress;
+    }
+}

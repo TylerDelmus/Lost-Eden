@@ -12,7 +12,8 @@ GameObject:
   - component: {fileID: 7692480211410184713}
   - component: {fileID: 7692480211410184714}
   - component: {fileID: 7692480211410184712}
-  m_Layer: 0
+  - component: {fileID: 8398990210114871965}
+  m_Layer: 3
   m_Name: Character
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -71,8 +72,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8f7b6d33d1b0421994a0c5601c54817f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterMotor
-  _walkSpeed: 1.5
   _turnRateDegrees: 90
+  _acceleration: 10
+  _deceleration: 14
 --- !u!114 &7692480211410184712
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -85,3 +87,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b83eca4d5a294e5d8328b9437bdee9eb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Character
+--- !u!114 &8398990210114871965
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8964414636715039620}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: de775f82aca59284aa637ce0fe72532b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VisualDynel

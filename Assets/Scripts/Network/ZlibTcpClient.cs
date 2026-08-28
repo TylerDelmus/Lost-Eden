@@ -69,7 +69,7 @@ class ZlibTcpClient : TcpClient
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Network] BeginRecv error: {e}");
+            Debug.LogWarning($"[Network] BeginReceive failed: {e.Message}");
             Disconnected?.Invoke();
         }
     }
@@ -95,7 +95,7 @@ class ZlibTcpClient : TcpClient
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Network] Error on EndRead:\n{e}");
+            Debug.LogError($"[Network] Receive error: {e.Message}");
             Disconnected?.Invoke();
             return;
         }
@@ -114,6 +114,16 @@ class ZlibTcpClient : TcpClient
                 _usingZlib = true;
                 _zlibStream = new ZlibStream(GetStream(), CompressionMode.Decompress);
                 _zlibStream.FlushMode = FlushType.Sync;
+
+                if (_buffer.Count < header.Size)
+                    break;
+
+                PacketRecv?.Invoke(_buffer.Take(header.Size).ToArray());
+
+                int initiatePadding = header.Size % 4 == 0 ? 0 : 4 - header.Size % 4;
+                _buffer.RemoveRange(0, header.Size + initiatePadding);
+                _buffer.Clear();
+                break;
             }
 
             if (_buffer.Count < header.Size)

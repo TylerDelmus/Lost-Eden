@@ -44,9 +44,41 @@ public sealed class CatAnimResolver
             ? variant
             : DummyAnimSetVariants[0];
 
-        int bestId = 0;
-        string bestName = null;
-        int bestScore = int.MinValue;
+        if (!TryFindBest(candidates, action, preferredVariant, out int bestId, out string bestName, out int bestScore)
+            || bestScore < 0)
+        {
+            string fallback = action switch
+            {
+                "run" => "walk",
+                "run-back" => "walk-back",
+                "walk-left" or "walk-right" => "walk",
+                _ => null,
+            };
+
+            if (fallback == null
+                || !TryFindBest(candidates, fallback, preferredVariant, out bestId, out bestName, out bestScore)
+                || bestScore < 0)
+            {
+                return false;
+            }
+        }
+
+        animId = bestId;
+        resolvedName = bestName;
+        return true;
+    }
+
+    bool TryFindBest(
+        List<int> candidates,
+        string action,
+        string preferredVariant,
+        out int bestId,
+        out string bestName,
+        out int bestScore)
+    {
+        bestId = 0;
+        bestName = null;
+        bestScore = int.MinValue;
 
         for (int i = 0; i < candidates.Count; i++)
         {
@@ -67,21 +99,23 @@ public sealed class CatAnimResolver
             bestName = name;
         }
 
-        if (bestId <= 0 || bestScore < 0)
-            return false;
-
-        animId = bestId;
-        resolvedName = bestName;
-        return true;
+        return bestId > 0;
     }
 
     static string NormalizeAction(string logicalName)
     {
         string trimmed = logicalName.Trim().ToLowerInvariant();
-        if (trimmed == "idle" || trimmed == "run")
-            return trimmed;
-
-        return null;
+        return trimmed switch
+        {
+            "idle" => "idle",
+            "run" => "run",
+            "run-back" => "run-back",
+            "walk-left" => "walk-left",
+            "walk-right" => "walk-right",
+            "walk" => "walk",
+            "walk-back" => "walk-back",
+            _ => null,
+        };
     }
 
     static int ScoreCandidate(string rawName, string action, string preferredVariant)
@@ -93,16 +127,50 @@ public sealed class CatAnimResolver
         if (!name.Contains(action))
             return int.MinValue;
 
-        // Reject directional / social / misc mismatches when looking for base locomotion.
-        if (action == "run")
+        // Reject directional / social / misc mismatches when looking for base forward locomotion.
+        if (action == "run" || action == "walk")
         {
-            if (name.Contains("run-back") || name.Contains("run_back"))
+            if (name.Contains(action + "-back") || name.Contains(action + "_back"))
                 return -50;
-            if (name.Contains("run-2h") || name.Contains("run_2h"))
+            if (name.Contains(action + "-left") || name.Contains(action + "_left"))
+                return -50;
+            if (name.Contains(action + "-right") || name.Contains(action + "_right"))
+                return -50;
+            if (name.Contains(action + "-2h") || name.Contains(action + "_2h"))
             {
                 if (preferredVariant != "2h")
                     return -40;
             }
+        }
+
+        if (action == "run-back"
+            && !name.Contains("run-back")
+            && !name.Contains("run_back"))
+        {
+            return int.MinValue;
+        }
+
+        if (action == "walk-back"
+            && !name.Contains("walk-back")
+            && !name.Contains("walk_back")
+            && !name.Contains("walk-backwards")
+            && !name.Contains("walk_backwards"))
+        {
+            return int.MinValue;
+        }
+
+        if (action == "walk-left"
+            && !name.Contains("walk-left")
+            && !name.Contains("walk_left"))
+        {
+            return int.MinValue;
+        }
+
+        if (action == "walk-right"
+            && !name.Contains("walk-right")
+            && !name.Contains("walk_right"))
+        {
+            return int.MinValue;
         }
 
         if (name.Contains("social-") || name.Contains("social_"))
@@ -126,9 +194,14 @@ public sealed class CatAnimResolver
                 score += 10;
         }
 
-        // Prefer exact action token boundaries: "_run_" / "_run." / ending with run variants.
-        if (action == "run" && (name.Contains("_run_") || name.Contains("_run.") || name.EndsWith("_run", StringComparison.Ordinal)))
+        // Prefer exact action token boundaries: "_run_" / "_walk_" / ending with the action.
+        if ((action == "run" || action == "walk")
+            && (name.Contains("_" + action + "_")
+                || name.Contains("_" + action + ".")
+                || name.EndsWith("_" + action, StringComparison.Ordinal)))
+        {
             score += 30;
+        }
 
         // Slight preference for shorter / simpler names (fewer modifiers).
         int hyphenCount = 0;

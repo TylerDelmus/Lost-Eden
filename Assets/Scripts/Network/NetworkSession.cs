@@ -17,6 +17,8 @@ class SessionCookie
 
 class NetworkSession
 {
+    const float ZoneLoginDelaySeconds = 3f;
+
     readonly NetworkClient _client;
     readonly MessageSerializer _serializer = new MessageSerializer();
     readonly ConcurrentQueue<byte[]> _inboundPacketQueue = new ConcurrentQueue<byte[]>();
@@ -24,6 +26,7 @@ class NetworkSession
     ZlibTcpClient _tcpClient;
     SessionCookie _sessionCookie;
     ushort _messageId = 1;
+    float _zoneLoginAt = -1f;
 
     public bool Connected => _tcpClient != null && _tcpClient.Connected;
 
@@ -36,6 +39,12 @@ class NetworkSession
     {
         while (_inboundPacketQueue.TryDequeue(out byte[] packet))
             ProcessPacket(packet);
+
+        if (_zoneLoginAt > 0f && Time.realtimeSinceStartup >= _zoneLoginAt)
+        {
+            _zoneLoginAt = -1f;
+            SendZoneLogin();
+        }
     }
 
     public void ConnectToLoginServer()
@@ -67,6 +76,9 @@ class NetworkSession
         _client.SetPhase(SessionPhase.Connecting);
 
         CloseSocket();
+
+        if (_sessionCookie != null)
+            _messageId = 1;
 
         _tcpClient = new ZlibTcpClient();
         _tcpClient.Disconnected += OnSocketDisconnected;
@@ -133,6 +145,8 @@ class NetworkSession
 
     public void CloseSocket()
     {
+        _zoneLoginAt = -1f;
+
         if (_tcpClient == null)
             return;
 
@@ -156,6 +170,7 @@ class NetworkSession
         CloseSocket();
         _sessionCookie = null;
         _messageId = 1;
+        _zoneLoginAt = -1f;
 
         while (_inboundPacketQueue.TryDequeue(out _))
         {
@@ -268,7 +283,7 @@ class NetworkSession
     void HandleN3Message(N3Message n3Msg)
     {
         if (n3Msg.N3MessageType == N3MessageType.FullCharacter)
-            _client.OnFullCharacter();
+            _client.OnFullCharacter((FullCharacterMessage)n3Msg);
         else if (n3Msg.N3MessageType == N3MessageType.PlayfieldAnarchyF)
             _client.OnPlayfieldAnarchyF((PlayfieldAnarchyFMessage)n3Msg);
         else if (n3Msg.N3MessageType == N3MessageType.SimpleCharFullUpdate)
@@ -281,6 +296,8 @@ class NetworkSession
             _client.OnFollowTarget((FollowTargetMessage)n3Msg);
         else if (n3Msg.N3MessageType == N3MessageType.Despawn)
             _client.OnDynelDespawn((DespawnMessage)n3Msg);
+        else if (n3Msg.N3MessageType == N3MessageType.AppearanceUpdate)
+            _client.OnAppearanceUpdate((AppearanceUpdateMessage)n3Msg);
     }
 
     void OnZoneInfo(ZoneInfoMessage zoneInfo)
@@ -301,6 +318,11 @@ class NetworkSession
     }
 
     void OnInitiateCompression()
+    {
+        _zoneLoginAt = Time.realtimeSinceStartup + ZoneLoginDelaySeconds;
+    }
+
+    void SendZoneLogin()
     {
         Send(new ZoneLoginMessage
         {

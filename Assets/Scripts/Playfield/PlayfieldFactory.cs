@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using AOSharp.Common.GameData;
 using Reflex.Attributes;
 using Reflex.Core;
+using SmokeLounge.AOtomation.Messaging.GameData;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -17,9 +18,11 @@ public class PlayfieldFactory : MonoBehaviour
     [Inject] ResourceDatabase _resourceDatabase;
     [Inject] Container _container;
     [Inject] NetworkClient _networkClient;
+    [Inject] PlayerController _playerController;
     [Inject] LoadingScreen _loadingScreen;
 
     readonly Dictionary<Identity, SimpleCharFullUpdateMessage> _pendingCharacters = new();
+    FullCharacterMessage _pendingFullCharacter;
 
     Coroutine _loadRoutine;
     Transform _playfieldRoot;
@@ -34,20 +37,24 @@ public class PlayfieldFactory : MonoBehaviour
     {
         _networkClient.PlayfieldAnarchyFReceived += OnNetworkPlayfieldReceived;
         _networkClient.SimpleCharFullUpdateReceived += OnSimpleCharFullUpdate;
+        _networkClient.FullCharacterReceived += OnFullCharacter;
         _networkClient.StatReceived += OnStat;
         _networkClient.CharDCMoveReceived += OnCharDCMove;
         _networkClient.FollowTargetReceived += OnFollowTarget;
         _networkClient.DynelDespawned += OnDynelDespawn;
+        _networkClient.AppearanceUpdateReceived += OnAppearanceUpdate;
     }
 
     void OnDisable()
     {
         _networkClient.PlayfieldAnarchyFReceived -= OnNetworkPlayfieldReceived;
         _networkClient.SimpleCharFullUpdateReceived -= OnSimpleCharFullUpdate;
+        _networkClient.FullCharacterReceived -= OnFullCharacter;
         _networkClient.StatReceived -= OnStat;
         _networkClient.CharDCMoveReceived -= OnCharDCMove;
         _networkClient.FollowTargetReceived -= OnFollowTarget;
         _networkClient.DynelDespawned -= OnDynelDespawn;
+        _networkClient.AppearanceUpdateReceived -= OnAppearanceUpdate;
     }
 
     void OnNetworkPlayfieldReceived(int zoneId)
@@ -63,6 +70,42 @@ public class PlayfieldFactory : MonoBehaviour
         if (!NetworkDriven)
             return;
 
+        // DEBUG: log movement status for local player / unknown movement bytes when present
+        bool isLocalPlayer = msg.Identity.Instance == _networkClient.LocalDynelId;
+        byte[] unkMovementStatus = msg.UnkMovementStatus;
+        bool hasUnkMovementStatus = unkMovementStatus != null && unkMovementStatus.Length > 0;
+
+        if (isLocalPlayer || hasUnkMovementStatus)
+        {
+            if (isLocalPlayer)
+            {
+                if (msg.MovementStatus.HasValue)
+                {
+                    CharMovementStatus ms = msg.MovementStatus.Value;
+                    Debug.LogWarning(
+                        $"[PlayfieldFactory] Local player SCFU MovementStatus: " +
+                        $"ModeId={ms.ModeId}, FwdState={ms.FwdState}, FwdDir={ms.FwdDir}, " +
+                        $"StrafeState={ms.StrafeState}, StrafeDir={ms.StrafeDir}, " +
+                        $"ElevateState={ms.ElevateState}, ElevateDir={ms.ElevateDir}, " +
+                        $"TurnState={ms.TurnState}, TurnDir={ms.TurnDir}, " +
+                        $"JumpState={ms.JumpState}, LastSpeedMode={ms.LastSpeedMode}");
+                }
+                else
+                {
+                    Debug.LogError("[PlayfieldFactory] Local player SCFU MovementStatus: null");
+                }
+            }
+
+            if (hasUnkMovementStatus)
+            {
+                Debug.LogError(
+                    $"[PlayfieldFactory] SCFU UnkMovementStatus " +
+                    $"({msg.Identity.Type}:{msg.Identity.Instance}, {unkMovementStatus.Length}): " +
+                    $"[{string.Join(", ", unkMovementStatus)}]");
+            }
+        }
+        // DEBUG END
+
         if (!_playfieldReady)
         {
             _pendingCharacters[msg.Identity] = msg;
@@ -71,6 +114,17 @@ public class PlayfieldFactory : MonoBehaviour
         }
 
         _current.SpawnDynel(msg);
+        TryApplyPendingFullCharacter(msg.Identity);
+    }
+
+    void OnFullCharacter(FullCharacterMessage msg)
+    {
+        if (!NetworkDriven)
+            return;
+
+        _pendingFullCharacter = msg;
+        Debug.Log($"[PlayfieldFactory] FullCharacter received (awaiting local SCFU if needed): {msg.Identity.Type}:{msg.Identity.Instance}");
+        TryApplyPendingFullCharacter(LocalPlayerIdentity());
     }
 
     void OnStat(StatMessage msg)
@@ -84,6 +138,10 @@ public class PlayfieldFactory : MonoBehaviour
     void OnCharDCMove(CharDCMoveMessage msg)
     {
         if (!NetworkDriven || _current == null)
+            return;
+
+        // Local movement is predicted client-side; ignore our own echo.
+        if (msg.Identity.Instance == _networkClient.LocalDynelId)
             return;
 
         _current.ApplyCharDCMove(msg);
@@ -108,6 +166,14 @@ public class PlayfieldFactory : MonoBehaviour
             return;
 
         _current.DespawnDynel(identity);
+    }
+
+    void OnAppearanceUpdate(AppearanceUpdateMessage msg)
+    {
+        if (!NetworkDriven || _current == null)
+            return;
+
+        _current.ApplyAppearanceUpdate(msg);
     }
 
     public void Load(int zoneId)
@@ -150,6 +216,7 @@ public class PlayfieldFactory : MonoBehaviour
             yield break;
 
         _pendingCharacters.Clear();
+        _pendingFullCharacter = null;
         Destroy(_playfieldRoot.gameObject);
         _playfieldRoot = null;
         _current = null;
@@ -180,6 +247,8 @@ public class PlayfieldFactory : MonoBehaviour
         Debug.Log($"[PlayfieldFactory] Playfield ready for dynels (id={zoneId}, prefab={(_characterPrefab != null ? _characterPrefab.name : "MISSING")})");
         PlayfieldReady?.Invoke(zoneId);
 
+        // Always dismiss loading UI once zone geometry is ready, even if dynel
+        // spawning hit recoverable errors (otherwise builds can soft-lock).
         if (NetworkDriven)
             _loadingScreen.HideFade();
     }
@@ -191,8 +260,48 @@ public class PlayfieldFactory : MonoBehaviour
 
         Debug.Log($"[PlayfieldFactory] Flushing {_pendingCharacters.Count} queued SimpleCharFullUpdate(s)");
         foreach (SimpleCharFullUpdateMessage msg in _pendingCharacters.Values)
-            _current.SpawnDynel(msg);
+        {
+            try
+            {
+                _current.SpawnDynel(msg);
+                TryApplyPendingFullCharacter(msg.Identity);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[PlayfieldFactory] Failed to spawn dynel {msg.Identity.Type}:{msg.Identity.Instance} \"{msg.Name}\": {ex}");
+            }
+        }
 
         _pendingCharacters.Clear();
     }
+
+    void TryApplyPendingFullCharacter(Identity identity)
+    {
+        if (_pendingFullCharacter == null || _current == null || identity != LocalPlayerIdentity())
+            return;
+
+        if (!_current.TryGetCharacter(identity, out Character localPlayer))
+            return;
+
+        try
+        {
+            ApplyFullCharacter(localPlayer, _pendingFullCharacter);
+            _pendingFullCharacter = null;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[PlayfieldFactory] Failed to apply FullCharacter for local player: {ex}");
+        }
+    }
+
+    void ApplyFullCharacter(Character localPlayer, FullCharacterMessage msg)
+    {
+        localPlayer.Apply(msg);
+        _playerController.SetLocalPlayer(localPlayer);
+        _networkClient.EnterPlay();
+        Debug.Log($"[PlayfieldFactory] Local player set from FullCharacter: {localPlayer.Identity.Type}:{localPlayer.Identity.Instance} \"{localPlayer.Name}\"");
+    }
+
+    Identity LocalPlayerIdentity()
+        => new Identity(IdentityType.SimpleChar, _networkClient.LocalDynelId);
 }

@@ -9,7 +9,7 @@ public enum LoadingScreenKind
 
 public sealed class LoadingScreen
 {
-    const string LoginRelativePath = @"cd_image\gui\Default\gfx\welcome_to_rubika.jpg";
+    const string LoginRelativePath = "cd_image/gui/Default/gfx/welcome_to_rubika.jpg";
 
     readonly LoadingScreenView _view;
     readonly ResourceDatabase _database;
