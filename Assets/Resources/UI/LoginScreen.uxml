@@ -1,6 +1,17 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
     <Style src="project://database/Assets/Resources/UI/LoginScreen.uss?fileID=7433441132597879392&amp;guid=94b031093aa7941449364315d54e2a18&amp;type=3#LoginScreen"/>
     <ui:VisualElement name="root" class="login-root">
+        <ui:VisualElement name="aopath-panel" class="panel aopath-panel hidden" style="display: flex;">
+            <ui:VisualElement name="aopath-content" class="login-content">
+                <ui:Label text="Locate Anarchy Online" class="title"/>
+                <ui:Label text="Select your Anarchy Online installation folder." class="field-label"/>
+                <ui:TextField name="aopath-field" class="text-field"/>
+                <ui:Button name="browse-button" text="Browse..." class="browse-button"/>
+                <ui:VisualElement class="flex-spacer"/>
+                <ui:Label name="aopath-status-text" text="" class="status-text"/>
+            </ui:VisualElement>
+            <ui:Button name="aopath-confirm-button" text="Continue" class="connect-button"/>
+        </ui:VisualElement>
         <ui:VisualElement name="login-panel" class="panel login-panel hidden" style="display: flex;">
             <ui:VisualElement name="login-content" class="login-content">
                 <ui:Label text="Username" class="field-label"/>

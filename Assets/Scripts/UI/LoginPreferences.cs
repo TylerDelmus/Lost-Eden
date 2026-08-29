@@ -30,13 +30,14 @@ static class LoginPreferences
         EnsureLoaded();
         _cached.Username = username ?? string.Empty;
         _cached.DimensionId = dimensionId ?? string.Empty;
+        Write();
+    }
 
-        string path = ConfigPath;
-        string directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
-            Directory.CreateDirectory(directory);
-
-        File.WriteAllText(path, JsonConvert.SerializeObject(_cached, JsonSettings));
+    public static void SaveAoPath(string aoPath)
+    {
+        EnsureLoaded();
+        _cached.AoPath = aoPath ?? string.Empty;
+        Write();
     }
 
     public static string GetUsername()
@@ -51,7 +52,23 @@ static class LoginPreferences
         return _cached.DimensionId ?? string.Empty;
     }
 
+    public static string GetAoPath()
+    {
+        EnsureLoaded();
+        return _cached.AoPath ?? string.Empty;
+    }
+
     public static int GetPlayfieldId() => DefaultPlayfieldId;
+
+    static void Write()
+    {
+        string path = ConfigPath;
+        string directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory))
+            Directory.CreateDirectory(directory);
+
+        File.WriteAllText(path, JsonConvert.SerializeObject(_cached, JsonSettings));
+    }
 
     static void EnsureLoaded()
     {
@@ -82,5 +99,6 @@ static class LoginPreferences
     {
         public string Username;
         public string DimensionId;
+        public string AoPath;
     }
 }

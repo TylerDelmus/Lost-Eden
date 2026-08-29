@@ -6,6 +6,8 @@ public sealed class ResourceDatabase
 {
     public RdbController Rdb { get; private set; }
 
+    public bool IsInitialized => Rdb != null;
+
     public void Initialize(string aoBasePath)
     {
         Rdb?.Dispose();

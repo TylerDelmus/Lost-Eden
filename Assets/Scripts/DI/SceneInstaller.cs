@@ -3,17 +3,17 @@ using UnityEngine;
 
 public class SceneInstaller : MonoBehaviour, IInstaller
 {
-    const string DefaultAoBasePath = @"C:\Program Files (x86)\Steam\steamapps\common\Anarchy Online";
-
     [SerializeField] PlayerController _playerController;
     [SerializeField] PlayfieldFactory _playfieldFactory;
     [SerializeField] LoadingScreenView _loadingScreenView;
-    [SerializeField] string _aoBasePath = DefaultAoBasePath;
 
     public void InstallBindings(ContainerBuilder containerBuilder)
     {
         var resourceDatabase = new ResourceDatabase();
-        resourceDatabase.Initialize(_aoBasePath);
+
+        string aoPath = LoginPreferences.GetAoPath();
+        if (AoInstallPath.IsValid(aoPath))
+            resourceDatabase.Initialize(AoInstallPath.Normalize(aoPath));
 
         var abiffMaterials = new AbiffMaterialFactory(resourceDatabase);
         var catMeshMaterials = new CatMeshMaterialFactory(abiffMaterials);

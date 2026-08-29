@@ -20,9 +20,12 @@ public class LoginScreenView : MonoBehaviour
 
     public TextField UsernameField => _ui?.UsernameField;
     public TextField PasswordField => _ui?.PasswordField;
+    public TextField AoPathField => _ui?.AoPathField;
     public DropdownField DimensionDropdown => _ui?.DimensionDropdown;
     public Button ConnectButton => _ui?.ConnectButton;
     public Button BackButton => _ui?.BackButton;
+    public Button BrowseButton => _ui?.BrowseButton;
+    public Button AoPathConfirmButton => _ui?.AoPathConfirmButton;
 
     void Awake()
     {
@@ -37,6 +40,7 @@ public class LoginScreenView : MonoBehaviour
         _ui = LoginScreenElements.Bind(_menu.Root);
         ApplyFormAppearance();
 
+        UserInterface.SetVisible(_ui.AoPathPanel, false);
         UserInterface.SetVisible(_ui.LoginPanel, false);
         UserInterface.SetVisible(_ui.CharacterPanel, false);
     }
@@ -59,6 +63,23 @@ public class LoginScreenView : MonoBehaviour
         _ui.BackButton.clicked += handler;
     }
 
+    public void SetBrowseHandler(Action handler)
+    {
+        if (!IsReady || handler == null)
+            return;
+
+        _ui.BrowseButton.clicked += handler;
+    }
+
+    public void SetAoPathConfirmHandler(Action handler)
+    {
+        if (!IsReady || handler == null)
+            return;
+
+        _ui.AoPathConfirmButton.clicked += handler;
+        RegisterSubmitOnEnter(_ui.AoPathField, handler);
+    }
+
     void RegisterSubmitOnEnter(TextField field, Action handler)
     {
         if (field == null)
@@ -70,7 +91,7 @@ public class LoginScreenView : MonoBehaviour
             if (!IsSubmitKey(evt))
                 return;
 
-            if (!field.enabledSelf || !_ui.ConnectButton.enabledSelf)
+            if (!field.enabledSelf)
                 return;
 
             handler();
@@ -96,11 +117,18 @@ public class LoginScreenView : MonoBehaviour
     {
         UserInterface.StyleTextField(_ui.UsernameField);
         UserInterface.StyleTextField(_ui.PasswordField);
+        UserInterface.StyleTextField(_ui.AoPathField);
         UserInterface.StyleDropdown(_ui.DimensionDropdown);
         UserInterface.StyleButton(_ui.ConnectButton);
+        UserInterface.StyleButton(_ui.BrowseButton);
+        UserInterface.StyleButton(_ui.AoPathConfirmButton);
 
         UserInterface.StyleLabel(_ui.StatusText);
         UserInterface.StyleLabel(_ui.CharacterStatusText);
+        UserInterface.StyleLabel(_ui.AoPathStatusText);
+
+        foreach (Label label in _ui.AoPathPanel.Query<Label>().ToList())
+            UserInterface.StyleLabel(label);
 
         foreach (Label label in _ui.LoginPanel.Query<Label>().ToList())
             UserInterface.StyleLabel(label);
@@ -130,9 +158,22 @@ public class LoginScreenView : MonoBehaviour
     {
         if (!IsReady)
             return;
+        UserInterface.SetVisible(_ui.AoPathPanel, false);
         UserInterface.SetVisible(_ui.LoginPanel, false);
         UserInterface.SetVisible(_ui.CharacterPanel, false);
         _menu.Hide();
+    }
+
+    public void ShowAoPathSetup(string path = null)
+    {
+        if (!IsReady)
+            return;
+        _menu.Show();
+        UserInterface.SetVisible(_ui.AoPathPanel, true);
+        UserInterface.SetVisible(_ui.LoginPanel, false);
+        UserInterface.SetVisible(_ui.CharacterPanel, false);
+        _ui.AoPathField.value = path ?? string.Empty;
+        SetAoPathStatus(string.Empty);
     }
 
     public void ShowLoginForm()
@@ -140,6 +181,7 @@ public class LoginScreenView : MonoBehaviour
         if (!IsReady)
             return;
         _menu.Show();
+        UserInterface.SetVisible(_ui.AoPathPanel, false);
         UserInterface.SetVisible(_ui.LoginPanel, true);
         UserInterface.SetVisible(_ui.CharacterPanel, false);
         SetFormInteractable(true);
@@ -150,6 +192,7 @@ public class LoginScreenView : MonoBehaviour
         if (!IsReady)
             return;
         _menu.Show();
+        UserInterface.SetVisible(_ui.AoPathPanel, false);
         UserInterface.SetVisible(_ui.LoginPanel, false);
         UserInterface.SetVisible(_ui.CharacterPanel, true);
     }
@@ -175,6 +218,13 @@ public class LoginScreenView : MonoBehaviour
         if (!IsReady)
             return;
         _ui.StatusText.text = message ?? string.Empty;
+    }
+
+    public void SetAoPathStatus(string message)
+    {
+        if (!IsReady)
+            return;
+        _ui.AoPathStatusText.text = message ?? string.Empty;
     }
 
     public void SetCharacterStatus(string message)
@@ -220,15 +270,20 @@ public class LoginScreenView : MonoBehaviour
 sealed class LoginScreenElements
 {
     public VisualElement Root;
+    public VisualElement AoPathPanel;
     public VisualElement LoginPanel;
     public VisualElement CharacterPanel;
     public TextField UsernameField;
     public TextField PasswordField;
+    public TextField AoPathField;
     public DropdownField DimensionDropdown;
     public Button ConnectButton;
     public Button BackButton;
+    public Button BrowseButton;
+    public Button AoPathConfirmButton;
     public Label StatusText;
     public Label CharacterStatusText;
+    public Label AoPathStatusText;
     public VisualElement CharacterList;
 
     public static LoginScreenElements Bind(VisualElement root)
@@ -236,15 +291,20 @@ sealed class LoginScreenElements
         return new LoginScreenElements
         {
             Root = root,
+            AoPathPanel = root.Q<VisualElement>("aopath-panel"),
             LoginPanel = root.Q<VisualElement>("login-panel"),
             CharacterPanel = root.Q<VisualElement>("character-panel"),
             UsernameField = root.Q<TextField>("username-field"),
             PasswordField = root.Q<TextField>("password-field"),
+            AoPathField = root.Q<TextField>("aopath-field"),
             DimensionDropdown = root.Q<DropdownField>("dimension-dropdown"),
             ConnectButton = root.Q<Button>("connect-button"),
             BackButton = root.Q<Button>("back-button"),
+            BrowseButton = root.Q<Button>("browse-button"),
+            AoPathConfirmButton = root.Q<Button>("aopath-confirm-button"),
             StatusText = root.Q<Label>("status-text"),
             CharacterStatusText = root.Q<Label>("character-status-text"),
+            AoPathStatusText = root.Q<Label>("aopath-status-text"),
             CharacterList = root.Q<VisualElement>("character-list")
         };
     }

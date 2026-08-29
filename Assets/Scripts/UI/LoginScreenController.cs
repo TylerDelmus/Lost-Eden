@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using AOSharp.Common.GameData;
 using Reflex.Attributes;
 using SmokeLounge.AOtomation.Messaging.Messages.SystemMessages;
@@ -6,6 +7,7 @@ using UnityEngine;
 
 public enum LoginScreenState
 {
+    AwaitingAoPath,
     BootLoading,
     LoginBackdrop,
     Authenticating,
@@ -21,6 +23,7 @@ public class LoginScreenController : MonoBehaviour
     [Inject] PlayfieldFactory _playfieldFactory;
     [Inject] LoadingScreen _loadingScreen;
     [Inject] PlayerController _playerController;
+    [Inject] ResourceDatabase _resourceDatabase;
 
     [SerializeField] LoginScreenView _loginView;
 
@@ -29,6 +32,7 @@ public class LoginScreenController : MonoBehaviour
     [SerializeField] UnityEngine.Vector3 _loginCameraEulerAngles;
 
     const float AuthTimeoutSeconds = 30f;
+    const string DefaultBrowseHint = @"C:\Program Files (x86)\Steam\steamapps\common\Anarchy Online";
 
     LoginScreenState _state = LoginScreenState.BootLoading;
 
@@ -54,11 +58,18 @@ public class LoginScreenController : MonoBehaviour
         RestoreFormDefaults();
 
         _playfieldFactory.NetworkDriven = false;
-        _loadingScreen.Show("Loading...", LoadingScreenKind.Login);
         _loginView.SetConnectHandler(OnConnectClicked);
         _loginView.SetBackHandler(OnBackFromCharacterSelect);
+        _loginView.SetBrowseHandler(OnBrowseAoPathClicked);
+        _loginView.SetAoPathConfirmHandler(OnAoPathConfirmClicked);
 
-        LoadBackdrop(LoginPreferences.GetPlayfieldId());
+        if (!EnsureResourceDatabase())
+        {
+            BeginAoPathSetup();
+            return;
+        }
+
+        BeginBootLoading();
     }
 
     bool ValidateView()
@@ -82,6 +93,86 @@ public class LoginScreenController : MonoBehaviour
         }
 
         return true;
+    }
+
+    void BeginAoPathSetup()
+    {
+        _state = LoginScreenState.AwaitingAoPath;
+        _loadingScreen.Hide();
+        string saved = LoginPreferences.GetAoPath();
+        _loginView.ShowAoPathSetup(string.IsNullOrWhiteSpace(saved) ? string.Empty : saved);
+        _loginView.SetAoPathStatus("Anarchy Online install path is required.");
+    }
+
+    void BeginBootLoading()
+    {
+        _state = LoginScreenState.BootLoading;
+        _loginView.HideLoginUi();
+        _loadingScreen.Show("Loading...", LoadingScreenKind.Login);
+        LoadBackdrop(LoginPreferences.GetPlayfieldId());
+    }
+
+    bool EnsureResourceDatabase()
+    {
+        if (_resourceDatabase != null && _resourceDatabase.IsInitialized)
+            return true;
+
+        string path = AoInstallPath.Normalize(LoginPreferences.GetAoPath());
+        if (!AoInstallPath.IsValid(path))
+            return false;
+
+        try
+        {
+            _resourceDatabase.Initialize(path);
+            return true;
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[LoginScreen] Failed to open AO database at '{path}': {ex.Message}");
+            return false;
+        }
+    }
+
+    void OnBrowseAoPathClicked()
+    {
+        if (_state != LoginScreenState.AwaitingAoPath)
+            return;
+
+        string current = _loginView.AoPathField.value;
+        string initial = Directory.Exists(current) ? current : DefaultBrowseHint;
+
+        if (!NativeFolderDialog.TryPickFolder("Select Anarchy Online Folder", initial, out string selected))
+            return;
+
+        _loginView.AoPathField.value = selected;
+        _loginView.SetAoPathStatus(string.Empty);
+    }
+
+    void OnAoPathConfirmClicked()
+    {
+        if (_state != LoginScreenState.AwaitingAoPath)
+            return;
+
+        string path = AoInstallPath.Normalize(_loginView.AoPathField.value);
+        if (!AoInstallPath.IsValid(path))
+        {
+            _loginView.SetAoPathStatus("Select a valid Anarchy Online install (must contain cd_image/data/db).");
+            return;
+        }
+
+        try
+        {
+            _resourceDatabase.Initialize(path);
+        }
+        catch (System.Exception ex)
+        {
+            _loginView.SetAoPathStatus($"Failed to open database: {ex.Message}");
+            return;
+        }
+
+        LoginPreferences.SaveAoPath(path);
+        _loginView.AoPathField.value = path;
+        BeginBootLoading();
     }
 
     void Update()
@@ -356,7 +447,7 @@ public class LoginScreenController : MonoBehaviour
 
     void OnDisconnected()
     {
-        if (_state == LoginScreenState.BootLoading)
+        if (_state == LoginScreenState.BootLoading || _state == LoginScreenState.AwaitingAoPath)
             return;
 
         if (_ignoreNextDisconnect)
