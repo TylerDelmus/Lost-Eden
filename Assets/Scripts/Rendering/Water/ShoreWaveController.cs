@@ -24,6 +24,7 @@ public sealed class ShoreWaveController : MonoBehaviour
     {
         public Vector3 Position;
         public Quaternion Rotation;
+        public float AmplitudeScale;
     }
 
     readonly List<OceanBodyRegistration> _bodies = new List<OceanBodyRegistration>();
@@ -33,6 +34,7 @@ public sealed class ShoreWaveController : MonoBehaviour
 
     ShoreWaveSettings _poolSettings = ShoreWaveSettings.Defaults;
     Material _sharedMaterial;
+    readonly List<Material> _instanceMaterials = new List<Material>();
     ResourceDatabase _database;
     int _playfieldId;
     bool _built;
@@ -63,16 +65,27 @@ public sealed class ShoreWaveController : MonoBehaviour
         _playfieldId = playfieldId;
         _database = database;
         MergePoolSettings();
+
+        Vector2 regionSize = _poolSettings.ResolveRegionSize();
+        _poolSettings.RegionSizeX = regionSize.x;
+        _poolSettings.RegionSizeZ = regionSize.y;
+        _poolSettings.Wavelength = _poolSettings.ResolveWavelength(regionSize);
+        _poolSettings.ResolveBreaking(regionSize, out Vector2 breaking, out Vector2 deepFoam);
+        _poolSettings.BreakingRange = breaking;
+        _poolSettings.DeepFoamRange = deepFoam;
+        _poolSettings.WaveOffset = _poolSettings.ResolveWaveOffset(regionSize);
+
         _sharedMaterial = shoreWaveMaterialOverride != null
             ? new Material(shoreWaveMaterialOverride) { name = "ShoreWaveRuntime", hideFlags = HideFlags.HideAndDontSave }
             : CreateShoreWaveMaterial(_poolSettings);
-        ApplyMaterialProperties(_sharedMaterial, _poolSettings, new Vector2(_poolSettings.RegionSizeX, _poolSettings.RegionSizeZ));
+        ApplyMaterialProperties(_sharedMaterial, _poolSettings, regionSize);
 
         BakeSlots();
         CreatePool();
 
         Debug.Log(
-            $"[ShoreWave] playfield={playfieldId} bodies={_bodies.Count} slots={_slots.Length} pool={_pool.Length}");
+            $"[ShoreWave] playfield={playfieldId} bodies={_bodies.Count} slots={_slots.Length} pool={_pool.Length} " +
+            $"region=({regionSize.x:F1},{regionSize.y:F1}) wavelength={_poolSettings.Wavelength:F1}");
     }
 
     void Update()
@@ -105,6 +118,14 @@ public sealed class ShoreWaveController : MonoBehaviour
 
     void OnDestroy()
     {
+        for (int i = 0; i < _instanceMaterials.Count; i++)
+        {
+            if (_instanceMaterials[i] != null)
+                Destroy(_instanceMaterials[i]);
+        }
+
+        _instanceMaterials.Clear();
+
         if (_sharedMaterial != null && _sharedMaterial.name.StartsWith("ShoreWaveRuntime", StringComparison.Ordinal))
             Destroy(_sharedMaterial);
     }
@@ -154,6 +175,12 @@ public sealed class ShoreWaveController : MonoBehaviour
         _slots = candidates.ToArray();
     }
 
+    struct ShoreSeed
+    {
+        public Vector2 Position;
+        public Vector2 OutwardNormal;
+    }
+
     void BakeBodySlots(
         Tilemap tilemap,
         int tileSize,
@@ -164,9 +191,216 @@ public sealed class ShoreWaveController : MonoBehaviour
     {
         ShoreWaveSettings settings = body.Settings;
         float landThreshold = body.WaterLevel + settings.ShoreHeightEpsilon;
-        float spacingSq = settings.Spacing * settings.Spacing;
-        Vector3 lastKept = new Vector3(float.PositiveInfinity, 0f, float.PositiveInfinity);
+        var heightField = new HeightField(tilemap, tileSize, cols, rows, landThreshold);
 
+        var seeds = new List<ShoreSeed>(512);
+        CollectShoreSeeds(tilemap, tileSize, cols, rows, landThreshold, seeds);
+        if (seeds.Count == 0)
+            return;
+
+        // Average outward normals along the coast so cove walls don't yank waves inland.
+        float smoothRadius = Mathf.Max(settings.Spacing * 2.5f, settings.DistanceFromLand * 0.75f);
+        SmoothShoreNormals(seeds, smoothRadius);
+
+        var landEdgePoints = new List<Vector2>(seeds.Count);
+        for (int i = 0; i < seeds.Count; i++)
+            landEdgePoints.Add(seeds[i].Position);
+
+        var rng = new System.Random(unchecked(_playfieldId * 73856093 ^ seeds.Count * 19349663));
+        Vector2 regionSize = settings.ResolveRegionSize();
+        float pad = regionSize.x * 0.5f + settings.RegionSizeZ;
+
+        var candidates = new List<ShoreSlot>(seeds.Count);
+        for (int i = 0; i < seeds.Count; i++)
+        {
+            if (rng.NextDouble() < settings.SpawnSkipChance)
+                continue;
+
+            ShoreSeed seed = seeds[i];
+            Vector2 n = seed.OutwardNormal;
+            if (n.sqrMagnitude < 0.01f)
+                continue;
+
+            float angleRad = (float)((rng.NextDouble() * 2.0 - 1.0) * settings.SpawnJitterAngleDeg * Mathf.Deg2Rad);
+            float cos = Mathf.Cos(angleRad);
+            float sin = Mathf.Sin(angleRad);
+            Vector2 outward = new Vector2(n.x * cos - n.y * sin, n.x * sin + n.y * cos).normalized;
+            Vector2 tangent = new Vector2(-outward.y, outward.x);
+
+            float dist = settings.DistanceFromLand * (1f + (float)(rng.NextDouble() * 2.0 - 1.0) * settings.SpawnJitterDistance);
+            dist = Mathf.Max(1f, dist);
+            float along = settings.AlongShoreOffset
+                + (float)(rng.NextDouble() * 2.0 - 1.0) * settings.Spacing * settings.SpawnJitterAlong;
+
+            Vector2 waveXz = seed.Position + outward * dist + tangent * along;
+
+            if (heightField.IsLand(waveXz.x, waveXz.y))
+                continue;
+
+            Vector3 wavePos = new Vector3(waveXz.x, body.WaterLevel, waveXz.y);
+            if (!ContainsXZ(body.WorldBounds, wavePos, padding: pad))
+                continue;
+
+            if (!TryFindClosest(landEdgePoints, waveXz, out Vector2 closestLand, out float clearance))
+                continue;
+
+            if (clearance < dist * 0.7f)
+                continue;
+
+            Vector2 toLand = (closestLand - waveXz).normalized;
+            if (Vector2.Dot(toLand, outward) > -0.15f)
+                continue;
+
+            Vector3 towardLand3 = new Vector3(toLand.x, 0f, toLand.y);
+            Quaternion rot = Quaternion.LookRotation(Vector3.Cross(towardLand3, Vector3.up), Vector3.up);
+            float ampScale = 0.75f + (float)rng.NextDouble() * 0.5f;
+            candidates.Add(new ShoreSlot
+            {
+                Position = wavePos,
+                Rotation = rot,
+                AmplitudeScale = ampScale
+            });
+        }
+
+        // Euclidean min-distance uses Spacing so coves cannot pack; keep Z-overlap allowed
+        // so a long coast still gets generators within alongCoastRange of the camera.
+        float minSeparation = Mathf.Max(settings.Spacing, regionSize.y * 0.35f);
+        AppendEvenlySpaced(candidates, minSeparation, settings.SpacingJitter, rng, output);
+    }
+
+    /// <summary>
+    /// Orders candidates around their centroid (coast loop) and keeps points at ~spacing
+    /// along that path so generators are evenly distributed instead of scan-order clumps.
+    /// Also enforces euclidean distance to every accepted slot so cove collapses cannot pack.
+    /// </summary>
+    static void AppendEvenlySpaced(
+        List<ShoreSlot> candidates,
+        float spacing,
+        float spacingJitter,
+        System.Random rng,
+        List<ShoreSlot> output)
+    {
+        if (candidates == null || candidates.Count == 0)
+            return;
+
+        spacing = Mathf.Max(1f, spacing);
+        if (candidates.Count == 1)
+        {
+            if (IsFarFromAccepted(output, candidates[0].Position, spacing))
+                output.Add(candidates[0]);
+            return;
+        }
+
+        Vector2 centroid = Vector2.zero;
+        for (int i = 0; i < candidates.Count; i++)
+            centroid += new Vector2(candidates[i].Position.x, candidates[i].Position.z);
+        centroid /= candidates.Count;
+
+        candidates.Sort((a, b) =>
+        {
+            float aa = Mathf.Atan2(a.Position.z - centroid.y, a.Position.x - centroid.x);
+            float bb = Mathf.Atan2(b.Position.z - centroid.y, b.Position.x - centroid.x);
+            return aa.CompareTo(bb);
+        });
+
+        // Rotate starting index so spacing phase isn't identical every load.
+        int rotate = rng.Next(0, candidates.Count);
+        if (rotate > 0)
+        {
+            var rotated = new List<ShoreSlot>(candidates.Count);
+            for (int i = 0; i < candidates.Count; i++)
+                rotated.Add(candidates[(i + rotate) % candidates.Count]);
+            candidates = rotated;
+        }
+
+        float dedupeSq = (spacing * 0.25f) * (spacing * 0.25f);
+        var ordered = new List<ShoreSlot>(candidates.Count) { candidates[0] };
+        for (int i = 1; i < candidates.Count; i++)
+        {
+            Vector3 prev = ordered[ordered.Count - 1].Position;
+            Vector3 cur = candidates[i].Position;
+            float dx = cur.x - prev.x;
+            float dz = cur.z - prev.z;
+            if (dx * dx + dz * dz >= dedupeSq)
+                ordered.Add(candidates[i]);
+        }
+
+        if (ordered.Count == 0)
+            return;
+
+        int startOutput = output.Count;
+        if (!TryAcceptSpaced(output, ordered[0], spacing))
+            return;
+
+        float traveled = 0f;
+        Vector3 lastPos = ordered[0].Position;
+        float nextGap = spacing * (1f + (float)(rng.NextDouble() * 2.0 - 1.0) * spacingJitter);
+        nextGap = Mathf.Max(spacing * 0.5f, nextGap);
+
+        for (int i = 1; i < ordered.Count; i++)
+        {
+            Vector3 cur = ordered[i].Position;
+            float dx = cur.x - lastPos.x;
+            float dz = cur.z - lastPos.z;
+            traveled += Mathf.Sqrt(dx * dx + dz * dz);
+            if (traveled < nextGap)
+                continue;
+
+            if (!TryAcceptSpaced(output, ordered[i], spacing))
+            {
+                // Still advance along the path so we don't stall on a packed cove cluster.
+                lastPos = cur;
+                traveled = 0f;
+                continue;
+            }
+
+            lastPos = cur;
+            traveled = 0f;
+            nextGap = spacing * (1f + (float)(rng.NextDouble() * 2.0 - 1.0) * spacingJitter);
+            nextGap = Mathf.Max(spacing * 0.5f, nextGap);
+        }
+
+        if (output.Count - startOutput >= 2)
+        {
+            Vector3 first = output[startOutput].Position;
+            Vector3 last = output[output.Count - 1].Position;
+            float closeDx = last.x - first.x;
+            float closeDz = last.z - first.z;
+            if (closeDx * closeDx + closeDz * closeDz < spacing * spacing)
+                output.RemoveAt(output.Count - 1);
+        }
+    }
+
+    static bool TryAcceptSpaced(List<ShoreSlot> output, ShoreSlot slot, float minDist)
+    {
+        if (!IsFarFromAccepted(output, slot.Position, minDist))
+            return false;
+        output.Add(slot);
+        return true;
+    }
+
+    static bool IsFarFromAccepted(List<ShoreSlot> output, Vector3 pos, float minDist)
+    {
+        float minSq = minDist * minDist;
+        for (int i = 0; i < output.Count; i++)
+        {
+            float dx = output[i].Position.x - pos.x;
+            float dz = output[i].Position.z - pos.z;
+            if (dx * dx + dz * dz < minSq)
+                return false;
+        }
+
+        return true;
+    }
+
+    static void CollectShoreSeeds(
+        Tilemap tilemap,
+        int tileSize,
+        int cols,
+        int rows,
+        float landThreshold,
+        List<ShoreSeed> seeds)
+    {
         for (int cy = 0; cy < rows; cy++)
         {
             for (int cx = 0; cx < cols; cx++)
@@ -184,117 +418,163 @@ public sealed class ShoreWaveController : MonoBehaviour
                 int heightCellsX = Math.Max(1, heightW - 1);
                 int heightCellsY = Math.Max(1, heightH - 1);
                 Vector3 anchor = new Vector3(tileSize * tilemap.MapScale * cx, 0f, tileSize * tilemap.MapScale * cy);
-                float worldPerSampleX = tileSize * tilemap.MapScale / heightCellsX;
-                float worldPerSampleY = tileSize * tilemap.MapScale / heightCellsY;
+                float wpx = tileSize * tilemap.MapScale / heightCellsX;
+                float wpz = tileSize * tilemap.MapScale / heightCellsY;
 
                 for (int sy = 0; sy < heightH; sy++)
                 {
                     for (int sx = 0; sx < heightW; sx++)
                     {
-                        bool land = heightmap[sx, sy] * tilemap.HeightMod > landThreshold;
-                        if (!land)
+                        if (heightmap[sx, sy] * tilemap.HeightMod <= landThreshold)
                             continue;
 
-                        // Right edge
-                        if (sx + 1 < heightW)
+                        Vector2 landXz = new Vector2(sx * wpx + anchor.x, sy * wpz + anchor.z);
+                        Vector2 outward = Vector2.zero;
+                        int waterNeighbors = 0;
+
+                        void Accrue(int nx, int nz)
                         {
-                            bool neighborLand = heightmap[sx + 1, sy] * tilemap.HeightMod > landThreshold;
-                            if (!neighborLand)
-                            {
-                                TryAddEdge(
-                                    sx, sy, sx + 1, sy,
-                                    worldPerSampleX, worldPerSampleY, anchor,
-                                    body, settings, spacingSq, ref lastKept, output,
-                                    intoWater: Vector3.right);
-                            }
+                            if (nx < 0 || nz < 0 || nx >= heightW || nz >= heightH)
+                                return;
+                            if (heightmap[nx, nz] * tilemap.HeightMod > landThreshold)
+                                return;
+
+                            Vector2 waterXz = new Vector2(nx * wpx + anchor.x, nz * wpz + anchor.z);
+                            Vector2 dir = waterXz - landXz;
+                            if (dir.sqrMagnitude < 1e-8f)
+                                return;
+                            outward += dir.normalized;
+                            waterNeighbors++;
                         }
 
-                        // Up (+Z) edge
-                        if (sy + 1 < heightH)
-                        {
-                            bool neighborLand = heightmap[sx, sy + 1] * tilemap.HeightMod > landThreshold;
-                            if (!neighborLand)
-                            {
-                                TryAddEdge(
-                                    sx, sy, sx, sy + 1,
-                                    worldPerSampleX, worldPerSampleY, anchor,
-                                    body, settings, spacingSq, ref lastKept, output,
-                                    intoWater: Vector3.forward);
-                            }
-                        }
-                    }
-                }
+                        Accrue(sx + 1, sy);
+                        Accrue(sx - 1, sy);
+                        Accrue(sx, sy + 1);
+                        Accrue(sx, sy - 1);
+                        Accrue(sx + 1, sy + 1);
+                        Accrue(sx - 1, sy + 1);
+                        Accrue(sx + 1, sy - 1);
+                        Accrue(sx - 1, sy - 1);
 
-                // Water→land edges where land is on the +X / +Z side (catch opposite transitions)
-                for (int sy = 0; sy < heightH; sy++)
-                {
-                    for (int sx = 0; sx < heightW; sx++)
-                    {
-                        bool water = heightmap[sx, sy] * tilemap.HeightMod <= landThreshold;
-                        if (!water)
+                        if (waterNeighbors == 0 || outward.sqrMagnitude < 1e-8f)
                             continue;
 
-                        if (sx + 1 < heightW)
+                        outward.Normalize();
+                        // Seed sits just into water from the land sample along the terrain normal.
+                        float step = Mathf.Max(wpx, wpz) * 0.5f;
+                        seeds.Add(new ShoreSeed
                         {
-                            bool neighborLand = heightmap[sx + 1, sy] * tilemap.HeightMod > landThreshold;
-                            if (neighborLand)
-                            {
-                                TryAddEdge(
-                                    sx, sy, sx + 1, sy,
-                                    worldPerSampleX, worldPerSampleY, anchor,
-                                    body, settings, spacingSq, ref lastKept, output,
-                                    intoWater: Vector3.left);
-                            }
-                        }
-
-                        if (sy + 1 < heightH)
-                        {
-                            bool neighborLand = heightmap[sx, sy + 1] * tilemap.HeightMod > landThreshold;
-                            if (neighborLand)
-                            {
-                                TryAddEdge(
-                                    sx, sy, sx, sy + 1,
-                                    worldPerSampleX, worldPerSampleY, anchor,
-                                    body, settings, spacingSq, ref lastKept, output,
-                                    intoWater: Vector3.back);
-                            }
-                        }
+                            Position = landXz + outward * step,
+                            OutwardNormal = outward
+                        });
                     }
                 }
             }
         }
     }
 
-    void TryAddEdge(
-        int sx0, int sy0, int sx1, int sy1,
-        float worldPerSampleX, float worldPerSampleY, Vector3 anchor,
-        OceanBodyRegistration body, ShoreWaveSettings settings, float spacingSq,
-        ref Vector3 lastKept, List<ShoreSlot> output, Vector3 intoWater)
+    static void SmoothShoreNormals(List<ShoreSeed> seeds, float radius)
     {
-        Vector3 p0 = SampleWorld(sx0, sy0, worldPerSampleX, worldPerSampleY, anchor, body.WaterLevel);
-        Vector3 p1 = SampleWorld(sx1, sy1, worldPerSampleX, worldPerSampleY, anchor, body.WaterLevel);
-        Vector3 shore = (p0 + p1) * 0.5f;
+        float radiusSq = radius * radius;
+        var smoothed = new Vector2[seeds.Count];
+        for (int i = 0; i < seeds.Count; i++)
+        {
+            Vector2 p = seeds[i].Position;
+            Vector2 sum = Vector2.zero;
+            int count = 0;
+            for (int j = 0; j < seeds.Count; j++)
+            {
+                if ((seeds[j].Position - p).sqrMagnitude > radiusSq)
+                    continue;
+                sum += seeds[j].OutwardNormal;
+                count++;
+            }
 
-        Vector3 n = intoWater.normalized;
-        Vector3 t = new Vector3(-n.z, 0f, n.x);
-        Vector3 pos = shore + n * settings.DistanceFromLand + t * settings.AlongShoreOffset;
+            Vector2 n = count > 0 ? sum : seeds[i].OutwardNormal;
+            if (n.sqrMagnitude > 1e-8f)
+                n.Normalize();
+            else
+                n = seeds[i].OutwardNormal;
+            smoothed[i] = n;
+        }
 
-        if (!ContainsXZ(body.WorldBounds, pos, padding: settings.DistanceFromLand + settings.RegionSizeX))
-            return;
-
-        if ((pos - lastKept).sqrMagnitude < spacingSq)
-            return;
-
-        // WaterDecal shore waves travel along local +X; aim +X toward land (-n).
-        Quaternion rot = Quaternion.LookRotation(Vector3.Cross(-n, Vector3.up), Vector3.up);
-
-        lastKept = pos;
-        output.Add(new ShoreSlot { Position = pos, Rotation = rot });
+        for (int i = 0; i < seeds.Count; i++)
+        {
+            ShoreSeed seed = seeds[i];
+            seed.OutwardNormal = smoothed[i];
+            seeds[i] = seed;
+        }
     }
 
-    static Vector3 SampleWorld(int sx, int sy, float wpx, float wpy, Vector3 anchor, float waterLevel)
+    sealed class HeightField
     {
-        return new Vector3(sx * wpx, waterLevel, sy * wpy) + anchor;
+        readonly Tilemap _tilemap;
+        readonly int _tileSize;
+        readonly int _cols;
+        readonly int _rows;
+        readonly float _landThreshold;
+
+        public HeightField(Tilemap tilemap, int tileSize, int cols, int rows, float landThreshold)
+        {
+            _tilemap = tilemap;
+            _tileSize = tileSize;
+            _cols = cols;
+            _rows = rows;
+            _landThreshold = landThreshold;
+        }
+
+        public bool IsLand(float worldX, float worldZ)
+        {
+            float mapScale = _tilemap.MapScale;
+            if (mapScale <= 0f)
+                return false;
+
+            float cell = _tileSize * mapScale;
+            int cx = Mathf.FloorToInt(worldX / cell);
+            int cy = Mathf.FloorToInt(worldZ / cell);
+            if (cx < 0 || cy < 0 || cx >= _cols || cy >= _rows)
+                return false;
+
+            int idx = _cols * cy + cx;
+            if (idx < 0 || idx >= _tilemap.Heightmap.Count)
+                return false;
+
+            ushort[,] heightmap = _tilemap.Heightmap[idx];
+            if (heightmap == null)
+                return false;
+
+            int heightW = heightmap.GetLength(0);
+            int heightH = heightmap.GetLength(1);
+            int heightCellsX = Math.Max(1, heightW - 1);
+            int heightCellsY = Math.Max(1, heightH - 1);
+            float localX = worldX - cx * cell;
+            float localZ = worldZ - cy * cell;
+            float wpx = cell / heightCellsX;
+            float wpz = cell / heightCellsY;
+            int sx = Mathf.Clamp(Mathf.RoundToInt(localX / wpx), 0, heightW - 1);
+            int sy = Mathf.Clamp(Mathf.RoundToInt(localZ / wpz), 0, heightH - 1);
+            return heightmap[sx, sy] * _tilemap.HeightMod > _landThreshold;
+        }
+    }
+
+    static bool TryFindClosest(List<Vector2> points, Vector2 query, out Vector2 closest, out float distance)
+    {
+        closest = default;
+        distance = float.PositiveInfinity;
+        if (points == null || points.Count == 0)
+            return false;
+
+        for (int i = 0; i < points.Count; i++)
+        {
+            float d = (points[i] - query).magnitude;
+            if (d < distance)
+            {
+                distance = d;
+                closest = points[i];
+            }
+        }
+
+        return distance < float.PositiveInfinity;
     }
 
     static bool ContainsXZ(Bounds bounds, Vector3 point, float padding)
@@ -313,20 +593,34 @@ public sealed class ShoreWaveController : MonoBehaviour
 
         var poolRoot = new GameObject("ShoreWavePool");
         poolRoot.transform.SetParent(transform, false);
+        var rng = new System.Random(unchecked(_playfieldId * 83492791 ^ count * 19349663));
+
+        Vector2 regionSize = new Vector2(_poolSettings.RegionSizeX, _poolSettings.RegionSizeZ);
+        int res = Mathf.Clamp(Mathf.RoundToInt(_poolSettings.RegionSizeX * 2f), 64, 256);
 
         for (int i = 0; i < count; i++)
         {
             var go = new GameObject($"ShoreWave_{i}");
             go.transform.SetParent(poolRoot.transform, false);
             var decal = go.AddComponent<WaterDecal>();
-            decal.regionSize = new Vector2(_poolSettings.RegionSizeX, _poolSettings.RegionSizeZ);
+            decal.regionSize = regionSize;
             decal.amplitude = _poolSettings.Amplitude;
             decal.surfaceFoamDimmer = _poolSettings.SurfaceFoamDimmer;
             decal.deepFoamDimmer = _poolSettings.DeepFoamDimmer;
-            // Keep resolution modest; shared material (no MPB) atlases as one slot.
-            decal.resolution = new Vector2Int(128, 128);
+            decal.resolution = new Vector2Int(res, Mathf.Max(64, res / 2));
             decal.updateMode = CustomRenderTextureUpdateMode.Realtime;
-            decal.material = _sharedMaterial;
+
+            // Unique mat so each generator can roll its own skip count around the average.
+            var mat = new Material(_sharedMaterial)
+            {
+                name = $"ShoreWaveRuntime_{i}",
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            int skipped = _poolSettings.RollSkippedWaves(rng);
+            mat.SetFloat("_Skipped_Waves", skipped);
+            _instanceMaterials.Add(mat);
+            decal.material = mat;
+
             go.SetActive(false);
             _pool[i] = decal;
         }
@@ -407,10 +701,11 @@ public sealed class ShoreWaveController : MonoBehaviour
         return dx * dx + dz * dz;
     }
 
-    static void ApplySlot(WaterDecal decal, ShoreSlot slot)
+    void ApplySlot(WaterDecal decal, ShoreSlot slot)
     {
         Transform t = decal.transform;
         t.SetPositionAndRotation(slot.Position, slot.Rotation);
+        decal.amplitude = _poolSettings.Amplitude * Mathf.Max(0.1f, slot.AmplitudeScale);
         if (!decal.gameObject.activeSelf)
             decal.gameObject.SetActive(true);
     }

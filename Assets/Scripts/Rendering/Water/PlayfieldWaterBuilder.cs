@@ -156,6 +156,9 @@ public sealed class PlayfieldWaterBuilder
             float region = waveSettings.ActivationRadius * 2f + 40f;
             water.decalRegionSize = new Vector2(region, region);
             water.largeWindSpeed = 20f;
+            water.foamPersistenceMultiplier = 0.5f;
+            water.foamTextureTiling = 0.15f;
+            water.simulationFoamAmount = 0.05f;
         }
 
         if (_renderConfig != null && _renderConfig.WaterMaterial != null)

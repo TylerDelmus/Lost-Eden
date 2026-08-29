@@ -71,8 +71,8 @@ public class DimensionInfo
     public string Host;
     public int Port;
     public string ClientVersion;
-    public string Seed1;
-    public string Seed2;
+    public string PrivateKey;
+    public string PublicKey;
 }
 
 class DimensionCatalogDto

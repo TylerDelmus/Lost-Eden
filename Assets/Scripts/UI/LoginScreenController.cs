@@ -36,6 +36,7 @@ public class LoginScreenController : MonoBehaviour
     bool _awaitingPlayfieldReady;
     bool _awaitingBackdropReload;
     bool _ignoreNextDisconnect;
+    string _pendingLoginStatus;
     float _authTimeoutAt = -1f;
 
     void Awake()
@@ -301,7 +302,8 @@ public class LoginScreenController : MonoBehaviour
             ApplyLoginCameraPose();
             _loginView.ShowLoginForm();
             _loginView.SetFormInteractable(true);
-            _loginView.SetStatus(string.Empty);
+            _loginView.SetStatus(_pendingLoginStatus ?? string.Empty);
+            _pendingLoginStatus = null;
             _loadingScreen.HideFade();
             Debug.Log($"[LoginScreen] Backdrop ready (id={zoneId})");
             return;
@@ -366,6 +368,7 @@ public class LoginScreenController : MonoBehaviour
         _networkClient.AbandonReconnect();
         _playfieldFactory.NetworkDriven = false;
         _awaitingPlayfieldReady = false;
+        _pendingLoginStatus = "Disconnected";
 
         _state = LoginScreenState.BootLoading;
         _loginView.ClearCharacterButtons();

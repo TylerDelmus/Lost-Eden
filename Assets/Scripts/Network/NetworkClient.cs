@@ -187,8 +187,8 @@ public class NetworkClient
                     Credentials = LoginEncryption.MakeChallengeResponse(
                         _credentials,
                         ((ServerSaltMessage)sysMsg).ServerSalt,
-                        _dimension.Seed1,
-                        _dimension.Seed2)
+                        _dimension.PrivateKey,
+                        _dimension.PublicKey)
                 });
                 break;
 

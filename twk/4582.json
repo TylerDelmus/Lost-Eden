@@ -4,7 +4,23 @@
       "index": 0,
       "surfaceType": "Ocean",
       "waves": {
-        "distanceFromLand": 24
+        "distanceFromLand": 80,
+        "alongCoastRange": 200,
+        "maxActive": 40,
+        "spacing": 20,
+        "speed": 24,
+        "regionSizeZ": 40,
+        "amplitude": 5,
+        "wavelength": 40,
+        "skippedWaves": 2,
+        "skippedWavesJitter": 1,
+        "spawnSkipChance": 0.2,
+        "spawnJitterAngleDeg": 25,
+        "breakingRange": [0.88, 0.97],
+        "deepFoamRange": [0.85, 1],
+        "surfaceFoamDimmer": 0.7,
+        "deepFoamDimmer": 1,
+        "startPhase": 1
       }
     }
   ]

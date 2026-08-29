@@ -33,15 +33,15 @@ public static class LoginEncryption
         return v.ToString("X").TrimStart('0');
     }
 
-    public static string MakeChallengeResponse(Credentials credentials, byte[] salt, string seed1, string seed2)
+    public static string MakeChallengeResponse(Credentials credentials, byte[] salt, string privateKey, string publicKey)
     {
-        if (string.IsNullOrEmpty(seed1) || string.IsNullOrEmpty(seed2))
-            throw new ArgumentException("Dimension seed1/seed2 are required for login encryption.");
+        if (string.IsNullOrEmpty(privateKey) || string.IsNullOrEmpty(publicKey))
+            throw new ArgumentException("Dimension privateKey/publicKey are required for login encryption.");
 
         var v3 = MakeRandomSeed(128);
 
-        var boff_100318DC = BigInteger.Parse("00" + seed1, NumberStyles.HexNumber);
-        var boff_100318D8 = BigInteger.Parse("00" + seed2, NumberStyles.HexNumber);
+        var boff_100318DC = BigInteger.Parse("00" + privateKey, NumberStyles.HexNumber);
+        var boff_100318D8 = BigInteger.Parse("00" + publicKey, NumberStyles.HexNumber);
         var bsub_100123C9 = BigInteger.Parse("00" + v3, NumberStyles.HexNumber);
 
         var v10 = sub_1001220D(boff_100318DC, boff_100318D8, bsub_100123C9);
