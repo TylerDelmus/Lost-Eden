@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading.Tasks;
 using AODB.Common.RDBObjects;
 using AOSharp.Common.GameData;
 using UnityEngine;
 using AoQuaternion = AODB.Common.Structs.Quaternion;
 using AoVector3 = AODB.Common.Structs.Vector3;
+using Debug = UnityEngine.Debug;
 using Matrix4x4 = UnityEngine.Matrix4x4;
 using Mesh = UnityEngine.Mesh;
 using Quaternion = UnityEngine.Quaternion;
@@ -13,10 +16,18 @@ using Vector3 = UnityEngine.Vector3;
 public sealed class CatMeshLoader
 {
     const string VisualRootName = "Visual";
+    const string CacheRootName = "CatMeshVisualCache";
 
     readonly ResourceDatabase _database;
     readonly CatMeshMaterialFactory _materials;
+    readonly Dictionary<(int catMeshId, int restAnimId), CatMeshCacheEntry> _visualCache = new();
+    readonly Dictionary<(int monsterDataId, int animSet), int> _restAnimIdCache = new();
+    readonly Dictionary<(int catMeshId, int restAnimId), TaskCompletionSource<bool>> _inflightBuilds = new();
+    readonly object _rdbGate = new object();
+    readonly object _cacheGate = new object();
+
     Dictionary<string, int> _catMeshNameToId;
+    Transform _cacheRoot;
 
     public CatMeshLoader(ResourceDatabase database, CatMeshMaterialFactory materials)
     {
@@ -44,6 +55,186 @@ public sealed class CatMeshLoader
             && catMeshId > 0;
     }
 
+    public bool TryGetCachedVisual(int catMeshId, int monsterDataId, int animSet, out CatMeshCacheEntry entry)
+    {
+        entry = null;
+        int restAnimId = ResolveRestAnimId(monsterDataId, animSet);
+        lock (_cacheGate)
+            return _visualCache.TryGetValue((catMeshId, restAnimId), out entry) && entry?.Prototype != null;
+    }
+
+    /// <summary>
+    /// Coordinates cold builds so only one coroutine constructs a given CatMesh prototype.
+    /// Waiters should yield on <paramref name="waitTask"/> then apply via cache hit.
+    /// </summary>
+    public CatMeshBuildRole BeginVisualBuild(
+        int catMeshId,
+        int monsterDataId,
+        int animSet,
+        out int restAnimId,
+        out Task<bool> waitTask)
+    {
+        restAnimId = ResolveRestAnimId(monsterDataId, animSet);
+        waitTask = Task.FromResult(true);
+        var key = (catMeshId, restAnimId);
+
+        lock (_cacheGate)
+        {
+            if (_visualCache.TryGetValue(key, out CatMeshCacheEntry entry) && entry?.Prototype != null)
+                return CatMeshBuildRole.CacheHit;
+
+            if (_inflightBuilds.TryGetValue(key, out TaskCompletionSource<bool> existing))
+            {
+                waitTask = existing.Task;
+                return CatMeshBuildRole.Waiter;
+            }
+
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _inflightBuilds[key] = tcs;
+            waitTask = tcs.Task;
+            return CatMeshBuildRole.Builder;
+        }
+    }
+
+    public void CompleteVisualBuild(int catMeshId, int restAnimId, bool success)
+    {
+        var key = (catMeshId, restAnimId);
+        TaskCompletionSource<bool> tcs;
+        lock (_cacheGate)
+        {
+            if (!_inflightBuilds.TryGetValue(key, out tcs))
+                return;
+            _inflightBuilds.Remove(key);
+        }
+
+        tcs.TrySetResult(success);
+    }
+
+    /// <summary>
+    /// Main-thread RDB fetch only. Pair with <see cref="BuildDataFromSources"/> on a worker.
+    /// </summary>
+    public bool TryFetchBuildSources(
+        int catMeshId,
+        int monsterDataId,
+        int animSet,
+        out RDBCatMesh catMesh,
+        out int restAnimId,
+        out CATAnim restAnim)
+    {
+        catMesh = null;
+        restAnimId = 0;
+        restAnim = null;
+
+        if (catMeshId <= 0 || _database?.Rdb == null)
+            return false;
+
+        var section = Stopwatch.StartNew();
+        lock (_rdbGate)
+        {
+            catMesh = _database.Get<RDBCatMesh>(ResourceTypeId.CatMesh, catMeshId);
+            restAnimId = ResolveRestAnimId(monsterDataId, animSet);
+            restAnim = restAnimId > 0 ? TryGetAnim(restAnimId) : null;
+        }
+
+        Debug.Log(
+            $"[CatMeshLoader] FetchBuildSources id={catMeshId} restAnim={restAnimId} " +
+            $"rdb={section.Elapsed.TotalMilliseconds:F1}ms");
+
+        if (catMesh == null)
+        {
+            Debug.LogWarning($"CatMeshLoader: CatMesh {catMeshId} not found.");
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Main-thread RDB fetch + CPU prep of rest-pose verts (prefer async fetch + BuildDataFromSources).
+    /// </summary>
+    public bool TryPrepareBuildData(int catMeshId, int monsterDataId, int animSet, out CatMeshBuildData build)
+    {
+        build = null;
+        if (!TryFetchBuildSources(catMeshId, monsterDataId, animSet, out RDBCatMesh catMesh, out int restAnimId, out CATAnim restAnim))
+            return false;
+
+        var section = Stopwatch.StartNew();
+        build = BuildDataFromSources(catMesh, catMeshId, restAnimId, restAnim);
+        Debug.Log(
+            $"[CatMeshLoader] PrepareBuildData id={catMeshId} restAnim={restAnimId} " +
+            $"submeshes={build.Submeshes.Length} snapshot={section.Elapsed.TotalMilliseconds:F1}ms");
+        return build.Submeshes.Length > 0;
+    }
+
+    /// <summary>
+    /// CPU-only rebuild from already-fetched RDB objects (safe for Task.Run).
+    /// </summary>
+    public static CatMeshBuildData BuildDataFromSources(
+        RDBCatMesh catMesh,
+        int catMeshId,
+        int restAnimId,
+        CATAnim restAnim)
+    {
+        int jointCount = catMesh?.Joints?.Count ?? 0;
+        var build = new CatMeshBuildData
+        {
+            CatMeshId = catMeshId,
+            RestAnimId = restAnimId,
+            JointParents = CatMeshSkeleton.BuildParentIndices(catMesh),
+            JointNames = new string[jointCount],
+            JointScales = new float[jointCount],
+            Attractors = ExtractAttractors(catMesh)
+        };
+
+        for (int i = 0; i < jointCount; i++)
+        {
+            RDBCatMesh.Joint joint = catMesh.Joints[i];
+            build.JointNames[i] = string.IsNullOrEmpty(joint?.Name) ? $"Joint_{i}" : joint.Name;
+            build.JointScales[i] = joint?.Scale > 0f ? joint.Scale : 1f;
+        }
+
+        if (restAnim != null && jointCount > 0)
+        {
+            CatMeshSkeleton.ExtractRestLocals(
+                jointCount,
+                restAnim,
+                out build.RestLocalPositions,
+                out build.RestLocalRotations);
+
+            Matrix4x4[] worlds = CatMeshSkeleton.ComputeWorldMatrices(
+                build.JointParents,
+                build.RestLocalPositions,
+                build.RestLocalRotations,
+                build.JointScales);
+
+            build.Submeshes = CatMeshSnapshot.FromRdbCatMesh(catMesh, worlds);
+            build.BindPoses = CatMeshSkeleton.CreateBindPoses(worlds);
+        }
+        else
+        {
+            CatMeshBindPose bindPose = CatMeshBindPose.FromRdbCatMesh(catMesh);
+            build.RestLocalPositions = new Vector3[jointCount];
+            build.RestLocalRotations = new Quaternion[jointCount];
+            for (int i = 0; i < jointCount; i++)
+            {
+                build.RestLocalPositions[i] = bindPose.GetPosition(i);
+                build.RestLocalRotations[i] = bindPose.GetRotation(i);
+            }
+
+            // Flat under root (no parent-relative conversion for bind-pose path).
+            for (int i = 0; i < build.JointParents.Length; i++)
+                build.JointParents[i] = -1;
+
+            build.Submeshes = CatMeshSnapshot.FromRdbCatMesh(catMesh);
+            var worlds = new Matrix4x4[jointCount];
+            for (int i = 0; i < jointCount; i++)
+                worlds[i] = Matrix4x4.TRS(build.RestLocalPositions[i], build.RestLocalRotations[i], Vector3.one * build.JointScales[i]);
+            build.BindPoses = CatMeshSkeleton.CreateBindPoses(worlds);
+        }
+
+        return build;
+    }
+
     public bool ApplyCatMeshVisual(
         Transform dynelRoot,
         int catMeshId,
@@ -67,12 +258,62 @@ public sealed class CatMeshLoader
             return false;
         }
 
-        RDBCatMesh catMesh = _database.Get<RDBCatMesh>(ResourceTypeId.CatMesh, catMeshId);
-        if (catMesh == null)
+        var total = Stopwatch.StartNew();
+        int restAnimId = ResolveRestAnimId(monsterDataId, animSet);
+
+        CatMeshCacheEntry cached;
+        lock (_cacheGate)
+            _visualCache.TryGetValue((catMeshId, restAnimId), out cached);
+
+        if (cached?.Prototype != null)
         {
-            Debug.LogWarning($"CatMeshLoader: CatMesh {catMeshId} not found.");
-            return false;
+            DestroyVisual(ref visualRoot);
+            visualRoot = UnityEngine.Object.Instantiate(cached.Prototype, dynelRoot, false);
+            visualRoot.name = VisualRootName;
+            visualRoot.SetActive(true);
+            // Prototype bones are already in idle pose; skip Play to avoid resolve+ApplyPose hitch.
+            FinalizeInstance(
+                visualRoot,
+                monsterDataId,
+                animSet,
+                playIdle: false,
+                ownsMeshes: false,
+                out double initMs,
+                out double playMs);
+            if (visualRoot.TryGetComponent(out AttractorCollection attractors))
+                attractors.RebuildFromChildren();
+            if (playIdle && monsterDataId > 0
+                && visualRoot.TryGetComponent(out CatAnimPlayer player))
+            {
+                player.PlayDeferred("idle");
+            }
+
+            Debug.Log(
+                $"[CatMeshLoader] ApplyCatMeshVisual id={catMeshId} CACHE_HIT restAnim={restAnimId} " +
+                $"init={initMs:F1}ms playIdle={playMs:F1}ms total={total.Elapsed.TotalMilliseconds:F1}ms");
+            return true;
         }
+
+        if (!TryPrepareBuildData(catMeshId, monsterDataId, animSet, out CatMeshBuildData build))
+            return false;
+
+        return ApplyBuildData(dynelRoot, build, monsterDataId, animSet, ref visualRoot, playIdle, cachePrototype: true);
+    }
+
+    public bool ApplyBuildData(
+        Transform dynelRoot,
+        CatMeshBuildData build,
+        int monsterDataId,
+        int animSet,
+        ref GameObject visualRoot,
+        bool playIdle,
+        bool cachePrototype)
+    {
+        if (dynelRoot == null || build == null || build.Submeshes == null || build.Submeshes.Length == 0)
+            return false;
+
+        var total = Stopwatch.StartNew();
+        var section = Stopwatch.StartNew();
 
         DestroyVisual(ref visualRoot);
 
@@ -82,42 +323,20 @@ public sealed class CatMeshLoader
         visualRoot.transform.localRotation = Quaternion.identity;
         visualRoot.transform.localScale = Vector3.one;
 
-        CATAnim restAnim = TryLoadRestPoseAnim(monsterDataId, animSet);
-        Transform[] bones;
-        CatMeshSubmeshSource[] submeshes;
+        Transform[] bones = CatMeshSkeleton.CreateHierarchyFromBuildData(build, visualRoot.transform);
+        double hierarchyMs = section.Elapsed.TotalMilliseconds;
 
-        if (restAnim != null)
-        {
-            // CirExport path: rest locals = first keyframe, verts from RelToJoint.
-            bones = CatMeshSkeleton.CreateHierarchy(catMesh, visualRoot.transform);
-            CatMeshSkeleton.ApplyFirstFramePose(bones, restAnim);
-            submeshes = CatMeshSnapshot.FromRdbCatMesh(catMesh, bones, visualRoot.transform);
-        }
-        else
-        {
-            CatMeshBindPose bindPose = CatMeshBindPose.FromRdbCatMesh(catMesh);
-            bones = CatMeshSkeleton.Create(catMesh, bindPose, visualRoot.transform);
-            submeshes = CatMeshSnapshot.FromRdbCatMesh(catMesh);
-        }
-
-        if (submeshes.Length == 0)
-        {
-            Debug.LogWarning($"CatMeshLoader: CatMesh {catMeshId} has no renderable meshes.");
-            DestroyVisual(ref visualRoot);
-            return false;
-        }
-
-        Matrix4x4[] bindPoses = CatMeshSkeleton.CreateBindPoses(bones, visualRoot.transform);
-        var createdMeshes = new List<Mesh>(submeshes.Length);
+        section.Restart();
+        var createdMeshes = new List<Mesh>(build.Submeshes.Length);
         var groupRoots = new Dictionary<string, Transform>();
 
-        for (int i = 0; i < submeshes.Length; i++)
+        for (int i = 0; i < build.Submeshes.Length; i++)
         {
-            CatMeshSubmeshSource sub = submeshes[i];
+            CatMeshSubmeshSource sub = build.Submeshes[i];
             if (sub.Positions == null || sub.Positions.Length == 0)
                 continue;
 
-            Mesh mesh = CatMeshFactory.CreateSkinnedMesh(sub, bindPoses, $"CatMesh_{catMeshId}_{i}");
+            Mesh mesh = CatMeshFactory.CreateSkinnedMesh(sub, build.BindPoses, $"CatMesh_{build.CatMeshId}_{i}");
             if (mesh == null)
                 continue;
 
@@ -126,9 +345,6 @@ public sealed class CatMeshLoader
             Transform groupRoot = GetOrCreateGroup(visualRoot.transform, groupRoots, sub.GroupName);
             var subGo = new GameObject($"Mesh_{i}");
             subGo.transform.SetParent(groupRoot, false);
-            subGo.transform.localPosition = Vector3.zero;
-            subGo.transform.localRotation = Quaternion.identity;
-            subGo.transform.localScale = Vector3.one;
 
             var renderer = subGo.AddComponent<SkinnedMeshRenderer>();
             renderer.sharedMesh = mesh;
@@ -138,6 +354,7 @@ public sealed class CatMeshLoader
             renderer.updateWhenOffscreen = true;
             renderer.sharedMaterial = _materials.Get(sub.Material);
         }
+        double meshMs = section.Elapsed.TotalMilliseconds;
 
         if (createdMeshes.Count == 0)
         {
@@ -145,74 +362,157 @@ public sealed class CatMeshLoader
             return false;
         }
 
-        var player = visualRoot.AddComponent<CatAnimPlayer>();
-        player.Initialize(_database, bones, monsterDataId, animSet);
+        section.Restart();
+        CreateAttractors(build.Attractors, bones, visualRoot);
+        double attractorMs = section.Elapsed.TotalMilliseconds;
 
-        var holder = visualRoot.AddComponent<CatMeshVisualHolder>();
-        holder.Set(createdMeshes, bones, player);
+        section.Restart();
+        // Apply rest/idle pose off this frame for cold builds too — Instantiation already paid enough.
+        FinalizeInstance(
+            visualRoot,
+            monsterDataId,
+            animSet,
+            playIdle: false,
+            ownsMeshes: true,
+            out double initMs,
+            out double playMs,
+            createdMeshes,
+            bones);
+        if (playIdle && monsterDataId > 0
+            && visualRoot.TryGetComponent(out CatAnimPlayer coldPlayer))
+        {
+            coldPlayer.PlayDeferred("idle");
+        }
+        double finalizeMs = section.Elapsed.TotalMilliseconds;
 
-        CreateAttractors(catMesh, bones, visualRoot);
+        if (cachePrototype)
+            StorePrototype(build.CatMeshId, build.RestAnimId, visualRoot, createdMeshes);
 
-        if (playIdle && monsterDataId > 0)
-            player.Play("idle");
-
+        Debug.Log(
+            $"[CatMeshLoader] ApplyBuildData id={build.CatMeshId} restAnim={build.RestAnimId} " +
+            $"meshes={createdMeshes.Count} hierarchy={hierarchyMs:F1}ms meshBuild={meshMs:F1}ms " +
+            $"attractors={attractorMs:F1}ms init={initMs:F1}ms playIdle={playMs:F1}ms " +
+            $"finalize={finalizeMs:F1}ms total={total.Elapsed.TotalMilliseconds:F1}ms");
         return true;
     }
 
-    static void CreateAttractors(RDBCatMesh catMesh, Transform[] bones, GameObject visualRoot)
+    void StorePrototype(int catMeshId, int restAnimId, GameObject visualRoot, List<Mesh> meshes)
     {
-        var collection = visualRoot.AddComponent<AttractorCollection>();
-        if (catMesh?.Attractors == null || catMesh.Attractors.Count == 0)
-            return;
-
-        Transform visualTransform = visualRoot.transform;
-
-        for (int i = 0; i < catMesh.Attractors.Count; i++)
+        var key = (catMeshId, restAnimId);
+        lock (_cacheGate)
         {
-            RDBCatMesh.Attractor src = catMesh.Attractors[i];
-            if (src == null)
-                continue;
+            if (_visualCache.ContainsKey(key) || visualRoot == null)
+                return;
+        }
 
-            string name = string.IsNullOrEmpty(src.Name) ? $"Attractor_{i}" : src.Name.Trim();
-            if (!AttractorPlaceUtil.TryParse(name, out AttractorPlace place))
+        Transform cacheRoot = EnsureCacheRoot();
+        GameObject prototype = UnityEngine.Object.Instantiate(visualRoot, cacheRoot, false);
+        prototype.name = $"Proto_{catMeshId}_{restAnimId}";
+        prototype.SetActive(false);
+
+        if (prototype.TryGetComponent(out CatMeshVisualHolder protoHolder))
+            protoHolder.SetOwnsMeshes(false);
+
+        if (prototype.TryGetComponent(out CatAnimPlayer protoPlayer))
+            protoPlayer.Paused = true;
+
+        lock (_cacheGate)
+        {
+            if (!_visualCache.ContainsKey(key))
             {
-                Debug.LogWarning($"CatMeshLoader: Unknown attractor name '{name}', skipping.");
-                continue;
+                _visualCache[key] = new CatMeshCacheEntry
+                {
+                    CatMeshId = catMeshId,
+                    RestAnimId = restAnimId,
+                    Prototype = prototype,
+                    SharedMeshes = meshes.ToArray()
+                };
             }
+            else
+            {
+                UnityEngine.Object.Destroy(prototype);
+            }
+        }
 
-            Transform parent = visualTransform;
-            int jointIndex = src.BoneIdx;
-            if (bones != null && jointIndex >= 0 && jointIndex < bones.Length && bones[jointIndex] != null)
-                parent = bones[jointIndex];
+        // Original instance no longer owns meshes — cache does.
+        if (visualRoot.TryGetComponent(out CatMeshVisualHolder holder))
+            holder.SetOwnsMeshes(false);
+    }
 
-            var go = new GameObject(name);
-            go.transform.SetParent(parent, false);
-            go.transform.localPosition = ToUnity(src.Position);
-            go.transform.localRotation = ToUnity(src.Rotation);
+    void FinalizeInstance(
+        GameObject visualRoot,
+        int monsterDataId,
+        int animSet,
+        bool playIdle,
+        bool ownsMeshes,
+        out double initMs,
+        out double playMs,
+        List<Mesh> createdMeshes = null,
+        Transform[] bones = null)
+    {
+        var sw = Stopwatch.StartNew();
+        if (!visualRoot.TryGetComponent(out CatMeshVisualHolder holder))
+            holder = visualRoot.AddComponent<CatMeshVisualHolder>();
 
-            float scale = src.Scale;
-            go.transform.localScale = scale > 0f ? Vector3.one * scale : Vector3.one;
+        if (!visualRoot.TryGetComponent(out CatAnimPlayer player))
+            player = visualRoot.AddComponent<CatAnimPlayer>();
 
-            var attractor = go.AddComponent<Attractor>();
-            collection.Add(place, attractor);
+        if (bones == null)
+            bones = holder.Bones;
+
+        if (bones == null)
+        {
+            var renderers = visualRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            if (renderers.Length > 0)
+                bones = renderers[0].bones;
+        }
+
+        player.Initialize(_database, bones, monsterDataId, animSet);
+        holder.Set(createdMeshes, bones, player, ownsMeshes);
+        initMs = sw.Elapsed.TotalMilliseconds;
+
+        sw.Restart();
+        if (playIdle && monsterDataId > 0)
+            player.Play("idle");
+        playMs = sw.Elapsed.TotalMilliseconds;
+    }
+
+    Transform EnsureCacheRoot()
+    {
+        if (_cacheRoot != null)
+            return _cacheRoot;
+
+        var go = new GameObject(CacheRootName);
+        UnityEngine.Object.DontDestroyOnLoad(go);
+        _cacheRoot = go.transform;
+        return _cacheRoot;
+    }
+
+    int ResolveRestAnimId(int monsterDataId, int animSet)
+    {
+        if (monsterDataId <= 0)
+            return 0;
+
+        var key = (monsterDataId, animSet);
+        lock (_rdbGate)
+        {
+            if (_restAnimIdCache.TryGetValue(key, out int cached))
+                return cached;
+
+            int id = TryResolveRestAnimIdUncached(monsterDataId, animSet);
+            _restAnimIdCache[key] = id;
+            return id;
         }
     }
 
-    static Vector3 ToUnity(AoVector3 v) => new Vector3(v.X, v.Y, v.Z);
-
-    static Quaternion ToUnity(AoQuaternion q) => new Quaternion(q.X, q.Y, q.Z, q.W);
-
-    CATAnim TryLoadRestPoseAnim(int monsterDataId, int animSet)
+    int TryResolveRestAnimIdUncached(int monsterDataId, int animSet)
     {
-        if (monsterDataId <= 0)
-            return null;
-
         if (!MonsterDataResolver.TryGetAnimIds(_database, monsterDataId, animSet, out List<int> animIds)
             || animIds == null
             || animIds.Count == 0)
-            return null;
+            return 0;
 
-        CATAnim best = null;
+        int bestId = 0;
         int bestScore = int.MinValue;
 
         for (int i = 0; i < animIds.Count; i++)
@@ -239,11 +539,86 @@ public sealed class CatMeshLoader
                 continue;
 
             bestScore = score;
-            best = candidate;
+            bestId = id;
         }
 
-        return best;
+        return bestId;
     }
+
+    CATAnim TryGetAnim(int animId)
+    {
+        if (animId <= 0)
+            return null;
+        try
+        {
+            return _database.Get<CATAnim>(ResourceTypeId.Anim, animId);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    static CatMeshAttractorData[] ExtractAttractors(RDBCatMesh catMesh)
+    {
+        if (catMesh?.Attractors == null || catMesh.Attractors.Count == 0)
+            return Array.Empty<CatMeshAttractorData>();
+
+        var list = new List<CatMeshAttractorData>(catMesh.Attractors.Count);
+        for (int i = 0; i < catMesh.Attractors.Count; i++)
+        {
+            RDBCatMesh.Attractor src = catMesh.Attractors[i];
+            if (src == null)
+                continue;
+
+            string name = string.IsNullOrEmpty(src.Name) ? $"Attractor_{i}" : src.Name.Trim();
+            if (!AttractorPlaceUtil.TryParse(name, out AttractorPlace place))
+                continue;
+
+            list.Add(new CatMeshAttractorData
+            {
+                Name = name,
+                Place = place,
+                BoneIndex = src.BoneIdx,
+                LocalPosition = ToUnity(src.Position),
+                LocalRotation = ToUnity(src.Rotation),
+                Scale = src.Scale
+            });
+        }
+
+        return list.ToArray();
+    }
+
+    static void CreateAttractors(CatMeshAttractorData[] attractors, Transform[] bones, GameObject visualRoot)
+    {
+        var collection = visualRoot.AddComponent<AttractorCollection>();
+        if (attractors == null || attractors.Length == 0)
+            return;
+
+        Transform visualTransform = visualRoot.transform;
+        for (int i = 0; i < attractors.Length; i++)
+        {
+            CatMeshAttractorData src = attractors[i];
+            Transform parent = visualTransform;
+            int jointIndex = src.BoneIndex;
+            if (bones != null && jointIndex >= 0 && jointIndex < bones.Length && bones[jointIndex] != null)
+                parent = bones[jointIndex];
+
+            var go = new GameObject(src.Name);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = src.LocalPosition;
+            go.transform.localRotation = src.LocalRotation;
+            go.transform.localScale = src.Scale > 0f ? Vector3.one * src.Scale : Vector3.one;
+
+            var attractor = go.AddComponent<Attractor>();
+            attractor.Place = src.Place;
+            collection.Add(src.Place, attractor);
+        }
+    }
+
+    static Vector3 ToUnity(AoVector3 v) => new Vector3(v.X, v.Y, v.Z);
+
+    static Quaternion ToUnity(AoQuaternion q) => new Quaternion(q.X, q.Y, q.Z, q.W);
 
     static int ScoreRestPoseCandidate(string rawName)
     {
@@ -388,20 +763,25 @@ public sealed class CatMeshVisualHolder : MonoBehaviour
     Mesh[] _meshes;
     Transform[] _bones;
     CatAnimPlayer _player;
+    bool _ownsMeshes = true;
 
     public Transform[] Bones => _bones;
     public CatAnimPlayer Player => _player;
 
-    public void Set(List<Mesh> meshes, Transform[] bones, CatAnimPlayer player)
+    public void Set(List<Mesh> meshes, Transform[] bones, CatAnimPlayer player, bool ownsMeshes = true)
     {
-        _meshes = meshes?.ToArray();
+        if (meshes != null)
+            _meshes = meshes.ToArray();
         _bones = bones;
         _player = player;
+        _ownsMeshes = ownsMeshes;
     }
+
+    public void SetOwnsMeshes(bool ownsMeshes) => _ownsMeshes = ownsMeshes;
 
     public void DestroyMeshes()
     {
-        if (_meshes == null)
+        if (!_ownsMeshes || _meshes == null)
             return;
 
         for (int i = 0; i < _meshes.Length; i++)

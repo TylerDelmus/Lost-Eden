@@ -22,19 +22,33 @@ public static class MonsterDataResolver
         return true;
     }
 
+    static readonly Dictionary<(int monsterDataId, int animSet), List<int>> AnimIdsCache =
+        new Dictionary<(int monsterDataId, int animSet), List<int>>();
+
     public static bool TryGetAnimIds(ResourceDatabase db, int monsterDataId, int animSet, out List<int> animIds)
     {
         animIds = null;
         if (monsterDataId <= 0 || db?.Rdb == null)
             return false;
 
+        var key = (monsterDataId, animSet);
+        if (AnimIdsCache.TryGetValue(key, out List<int> cached) && cached != null)
+        {
+            animIds = cached;
+            return cached.Count > 0;
+        }
+
         MonsterData monsterData = db.Get<MonsterData>(ResourceTypeId.MonsterData, monsterDataId);
         if (monsterData?.Anims == null || monsterData.Anims.Count == 0)
+        {
+            AnimIdsCache[key] = new List<int>();
             return false;
+        }
 
         if (monsterData.Anims.TryGetValue(animSet, out List<int> setIds) && setIds != null && setIds.Count > 0)
         {
             animIds = setIds;
+            AnimIdsCache[key] = setIds;
             return true;
         }
 
@@ -55,6 +69,7 @@ public static class MonsterDataResolver
             }
         }
 
+        AnimIdsCache[key] = union;
         if (union.Count == 0)
             return false;
 

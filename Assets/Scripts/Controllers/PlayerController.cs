@@ -1,8 +1,10 @@
 using System;
 using Reflex.Attributes;
+using SmokeLounge.AOtomation.Messaging.GameData;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using UnityEngine;
 using MovementAction = AOSharp.Common.GameData.MovementAction;
+using MovementState = AOSharp.Common.GameData.MovementState;
 
 [RequireComponent(typeof(InputController))]
 [DefaultExecutionOrder(-100)]
@@ -55,6 +57,7 @@ public class PlayerController : MonoBehaviour
         _inputController.TabPressed += OnTabPress;
         _inputController.HotbarPressed += OnHotbarPress;
         _inputController.CharacterPressed += OnCharacterPress;
+        _inputController.SitPressed += OnSitPress;
         _inputController.CancelPressed += OnCancelPress;
     }
 
@@ -77,16 +80,21 @@ public class PlayerController : MonoBehaviour
         CameraController.SetInputs(_inputController.ActorInput);
         TargetingController.Tick(_inputController.ActorInput);
 
-        var rotation = Quaternion.AngleAxis(CameraController.GetViewAngles().y, Vector3.up);
+        var cameraYaw = Quaternion.AngleAxis(CameraController.GetViewAngles().y, Vector3.up);
         var flags = _inputController.ActorInput.ToMovementFlags();
-        _localPlayer.Motor.SetInputs(flags, rotation);
+        _localPlayer.Motor.SetInputs(flags, cameraYaw);
 
-        SyncMovementToServer(flags, rotation);
+        // Network heading is character facing, not camera look (they diverge without mouse-turn).
+        var facing = Quaternion.AngleAxis(_localPlayer.transform.eulerAngles.y, Vector3.up);
+        SyncMovementToServer(flags, facing);
     }
 
     void SyncMovementToServer(MovementFlags flags, Quaternion rotation)
     {
         if (_networkClient == null || !_networkClient.InPlay)
+            return;
+
+        if (_localPlayer.Motor.State == MovementState.Sit)
             return;
 
         MovementFlags networkFlags = flags & NetworkFlags;
@@ -136,6 +144,31 @@ public class PlayerController : MonoBehaviour
             Position = _localPlayer.Position.ToAo(),
             Heading = rotation.ToAo(),
         });
+    }
+
+    void SendCharacterAction(CharacterActionType action)
+    {
+        _networkClient.Send(new CharacterActionMessage { Action = action });
+    }
+
+    void OnSitPress()
+    {
+        if (_localPlayer == null || _networkClient == null || !_networkClient.InPlay)
+            return;
+
+        var facing = Quaternion.AngleAxis(_localPlayer.transform.eulerAngles.y, Vector3.up);
+        var motor = _localPlayer.Motor;
+
+        if (motor.State == MovementState.Sit)
+        {
+            motor.ApplyAction(MovementAction.LeaveSit);
+            SendCharacterAction(CharacterActionType.StandUp);
+            return;
+        }
+
+        motor.ApplyAction(MovementAction.SwitchToSit);
+        SendMove(MovementAction.SwitchToSit, facing);
+        _lastSentFlags = MovementFlags.None;
     }
 
     internal void SetLocalPlayer(Character player)
@@ -204,6 +237,7 @@ public class PlayerController : MonoBehaviour
         _inputController.SelfTargetPressed -= OnSelfTargetPress;
         _inputController.TabPressed -= OnTabPress;
         _inputController.HotbarPressed -= OnHotbarPress;
+        _inputController.SitPressed -= OnSitPress;
         _inputController.CancelPressed -= OnCancelPress;
     }
 }

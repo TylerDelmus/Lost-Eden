@@ -28,7 +28,7 @@ public class LoginScreenController : MonoBehaviour
     [SerializeField] UnityEngine.Vector3 _loginCameraPosition;
     [SerializeField] UnityEngine.Vector3 _loginCameraEulerAngles;
 
-    const float AuthTimeoutSeconds = 10f;
+    const float AuthTimeoutSeconds = 30f;
 
     LoginScreenState _state = LoginScreenState.BootLoading;
 
@@ -140,6 +140,27 @@ public class LoginScreenController : MonoBehaviour
         _networkClient.LoginFailed -= OnLoginFailed;
         _networkClient.Disconnected -= OnDisconnected;
         _networkClient.PhaseChanged -= OnPhaseChanged;
+    }
+
+    void OnApplicationQuit()
+    {
+        ShutdownNetwork();
+    }
+
+    void OnDestroy()
+    {
+        // Safety net for editor play-mode stop / teardown if quit didn't run first.
+        ShutdownNetwork();
+    }
+
+    void ShutdownNetwork()
+    {
+        if (_networkClient == null)
+            return;
+
+        _ignoreNextDisconnect = true;
+        _networkClient.AbandonReconnect();
+        _networkClient.Disconnect();
     }
 
     void OnPhaseChanged(SessionPhase phase)

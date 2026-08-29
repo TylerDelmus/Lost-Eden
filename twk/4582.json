@@ -1,0 +1,11 @@
+{
+  "waterBodies": [
+    {
+      "index": 0,
+      "surfaceType": "Ocean",
+      "waves": {
+        "distanceFromLand": 24
+      }
+    }
+  ]
+}

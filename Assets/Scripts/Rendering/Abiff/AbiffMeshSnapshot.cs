@@ -16,7 +16,7 @@ public static class AbiffMeshSnapshot
         if (rdbMesh?.SubMeshes == null || rdbMesh.SubMeshes.Count == 0)
             return Array.Empty<AbiffSubmeshSource>();
 
-        List<AbiffMaterialDesc> materials = ExtractMaterialDescs(rdbMesh);
+        ExtractSubmeshExtras(rdbMesh, out List<AbiffMaterialDesc> materials, out List<UvClip> uvClips);
         var submeshes = new AbiffSubmeshSource[rdbMesh.SubMeshes.Count];
         for (int s = 0; s < rdbMesh.SubMeshes.Count; s++)
         {
@@ -24,18 +24,23 @@ public static class AbiffMeshSnapshot
             AbiffMaterialDesc material = s < materials.Count
                 ? materials[s]
                 : FallbackMaterialFromAo(sub.Material);
-            submeshes[s] = SnapshotSubmesh(sub, material);
+            UvClip uv = s < uvClips.Count ? uvClips[s] : default;
+            submeshes[s] = SnapshotSubmesh(sub, material, uv);
         }
 
         return submeshes;
     }
 
-    static List<AbiffMaterialDesc> ExtractMaterialDescs(RDBMesh rdbMesh)
+    static void ExtractSubmeshExtras(
+        RDBMesh rdbMesh,
+        out List<AbiffMaterialDesc> materials,
+        out List<UvClip> uvClips)
     {
-        var materials = new List<AbiffMaterialDesc>();
+        materials = new List<AbiffMaterialDesc>();
+        uvClips = new List<UvClip>();
         RDBMesh_t mesh = rdbMesh.RDBMesh_t;
         if (mesh?.Members == null)
-            return materials;
+            return;
 
         foreach (RDBMesh_t.RTriMesh_t tri in mesh.GetMembers<RDBMesh_t.RTriMesh_t>())
         {
@@ -44,6 +49,8 @@ public static class AbiffMeshSnapshot
             if (mesh.Members[tri.data] is not RDBMesh_t.FAFTriMeshData_t data || data.mesh == null)
                 continue;
 
+            UvClip uvClip = ResolveUvClip(mesh, tri.anim);
+
             for (int i = 0; i < data.mesh.Length; i++)
             {
                 int simpleIdx = data.mesh[i];
@@ -51,14 +58,44 @@ public static class AbiffMeshSnapshot
                     mesh.Members[simpleIdx] is not RDBMesh_t.SimpleMesh simple)
                 {
                     materials.Add(AbiffMaterialDesc.CreateDefault());
+                    uvClips.Add(uvClip);
                     continue;
                 }
 
                 materials.Add(BuildMaterialDesc(mesh, simple.material));
+                uvClips.Add(uvClip);
             }
         }
+    }
 
-        return materials;
+    static UvClip ResolveUvClip(RDBMesh_t mesh, int animIndex)
+    {
+        if (animIndex < 0 || animIndex >= mesh.Members.Count)
+            return default;
+        if (mesh.Members[animIndex] is not RDBMesh_t.FAFAnim_t anim)
+            return default;
+
+        RDBMesh_t.FAFAnim_t.UVKey[] src = anim.UVKeys;
+        if (src == null || src.Length == 0)
+            return default;
+
+        var keys = new AbiffUvKey[src.Length];
+        for (int i = 0; i < src.Length; i++)
+        {
+            keys[i] = new AbiffUvKey
+            {
+                Offset = new Vector2(src[i].Offset.X, src[i].Offset.Y),
+                Tiling = new Vector2(src[i].Tiling.X, src[i].Tiling.Y),
+                Time = src[i].Time
+            };
+        }
+
+        return new UvClip
+        {
+            Keys = keys,
+            Loop = anim.loop,
+            Duration = anim.tot_time
+        };
     }
 
     static AbiffMaterialDesc BuildMaterialDesc(RDBMesh_t mesh, int materialIndex)
@@ -176,7 +213,7 @@ public static class AbiffMeshSnapshot
         return desc;
     }
 
-    static AbiffSubmeshSource SnapshotSubmesh(RDBMesh_t.Submesh sub, AbiffMaterialDesc material)
+    static AbiffSubmeshSource SnapshotSubmesh(RDBMesh_t.Submesh sub, AbiffMaterialDesc material, UvClip uv)
     {
         AoVertex[] verts = sub.Vertices ?? Array.Empty<AoVertex>();
         var positions = new Vector3[verts.Length];
@@ -187,10 +224,10 @@ public static class AbiffMeshSnapshot
         {
             AoVector3 pos = verts[i].Position;
             AoVector3 nrm = verts[i].Normal;
-            AoVector2 uv = verts[i].UVs;
+            AoVector2 uvCoord = verts[i].UVs;
             positions[i] = new Vector3(pos.X, pos.Y, pos.Z);
             normals[i] = new Vector3(nrm.X, nrm.Y, nrm.Z);
-            uvs[i] = new Vector2(uv.X, uv.Y);
+            uvs[i] = new Vector2(uvCoord.X, uvCoord.Y);
         }
 
         int[] triangles = sub.Triangles != null
@@ -212,8 +249,18 @@ public static class AbiffMeshSnapshot
             Triangles = triangles,
             BasePosition = new Vector3(basePos.X, basePos.Y, basePos.Z),
             BaseRotation = new Quaternion(baseRot.X, baseRot.Y, baseRot.Z, baseRot.W),
-            Material = material
+            Material = material,
+            UvKeys = uv.Keys,
+            UvLoop = uv.Loop,
+            UvDuration = uv.Duration
         };
+    }
+
+    struct UvClip
+    {
+        public AbiffUvKey[] Keys;
+        public bool Loop;
+        public float Duration;
     }
 
     enum TextureChannelType

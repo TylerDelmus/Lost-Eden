@@ -90,6 +90,15 @@ public class Playfield : MonoBehaviour
             character.Apply(msg);
     }
 
+    public void ApplyCharacterAction(CharacterActionMessage msg)
+    {
+        if (!_dynels.TryGetValue(msg.Identity, out Dynel dynel))
+            return;
+
+        if (dynel is Character character)
+            character.Apply(msg);
+    }
+
     public void ApplyFollowTarget(FollowTargetMessage msg)
     {
         if (!_dynels.TryGetValue(msg.Identity, out Dynel dynel))

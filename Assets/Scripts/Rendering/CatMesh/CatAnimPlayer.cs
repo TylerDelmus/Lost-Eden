@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using AODB.Common.RDBObjects;
 using UnityEngine;
@@ -18,6 +19,9 @@ public sealed class CatAnimPlayer : MonoBehaviour
     string _currentLogicalName;
 
     readonly Dictionary<int, CatAnimRuntimeClip> _clipCache = new Dictionary<int, CatAnimRuntimeClip>();
+    static readonly Dictionary<(int animId, int boneCount), CatAnimRuntimeClip> SharedClipCache =
+        new Dictionary<(int animId, int boneCount), CatAnimRuntimeClip>();
+    static readonly object SharedClipGate = new object();
 
     CatAnimRuntimeClip _clipA;
     CatAnimRuntimeClip _clipB;
@@ -29,11 +33,33 @@ public sealed class CatAnimPlayer : MonoBehaviour
     bool _isCrossFading;
     bool _hasPose;
     float _loopSmoothSeconds = DefaultLoopSmoothSeconds;
+    bool _isOneShot;
+    Action _oneShotComplete;
+
+    // Overlay layer (e.g. jump-land blended on top of locomotion).
+    CatAnimRuntimeClip _overlayClip;
+    float _overlayTime;
+    float _overlayWeight;
+    float _overlayFadeDuration;
+    float _overlayFadeElapsed;
+    bool _overlayFadingIn;
+    bool _overlayFadingOut;
+    bool _overlayOneShot;
+    Action _overlayComplete;
+    string _overlayLogicalName;
 
     public int MonsterDataId => _monsterDataId;
     public int AnimSet => _animSet;
     public string CurrentLogicalName => _currentLogicalName;
     public CatAnimRuntimeClip CurrentClip => _weightB >= 0.5f && _clipB != null ? _clipB : _clipA;
+    public int CurrentAnimId
+    {
+        get
+        {
+            CatAnimRuntimeClip clip = CurrentClip;
+            return clip != null ? clip.AnimId : 0;
+        }
+    }
     public bool Paused { get; set; }
     public float PlaybackSpeed { get; set; } = 1f;
 
@@ -91,6 +117,7 @@ public sealed class CatAnimPlayer : MonoBehaviour
         _weightB = 0f;
         _isCrossFading = false;
         _hasPose = false;
+        ClearOverlay(invokeComplete: false);
         _clipCache.Clear();
 
         CacheBindPose();
@@ -138,6 +165,9 @@ public sealed class CatAnimPlayer : MonoBehaviour
         if (string.Equals(_currentLogicalName, normalized, StringComparison.Ordinal) && !_isCrossFading)
             return true;
 
+        _isOneShot = false;
+        _oneShotComplete = null;
+
         if (!_resolver.TryResolve(_monsterDataId, _animSet, normalized, out int animId, out _))
         {
             Debug.LogWarning(
@@ -147,6 +177,115 @@ public sealed class CatAnimPlayer : MonoBehaviour
 
         if (!PlayAnimId(animId, blendSeconds))
             return false;
+
+        _currentLogicalName = normalized;
+        return true;
+    }
+
+    /// <summary>
+    /// Resolve/play on the next frame so Instantiate + ApplyPose don't stack on the load frame.
+    /// </summary>
+    public void PlayDeferred(string logicalName, float blendSeconds = 0f)
+    {
+        if (!isActiveAndEnabled)
+        {
+            Play(logicalName, blendSeconds);
+            return;
+        }
+
+        StartCoroutine(PlayDeferredRoutine(logicalName, blendSeconds));
+    }
+
+    IEnumerator PlayDeferredRoutine(string logicalName, float blendSeconds)
+    {
+        yield return null;
+        Play(logicalName, blendSeconds);
+    }
+
+    public void CancelOneShot()
+    {
+        _isOneShot = false;
+        _oneShotComplete = null;
+    }
+
+    public void CancelOverlay()
+    {
+        ClearOverlay(invokeComplete: false);
+    }
+
+    public bool HasOverlay => _overlayClip != null && _overlayWeight > 0.001f;
+
+    /// <summary>
+    /// Play a one-shot blended on top of the current base clip (locomotion keeps playing).
+    /// </summary>
+    public bool PlayOverlayOnce(string logicalName, float blendSeconds, Action onComplete)
+    {
+        if (_database?.Rdb == null || _bones == null || _bones.Length == 0 || _resolver == null)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(logicalName))
+            return false;
+
+        string normalized = logicalName.Trim().ToLowerInvariant();
+        if (!_resolver.TryResolve(_monsterDataId, _animSet, normalized, out int animId, out _))
+        {
+            Debug.LogWarning(
+                $"CatAnimPlayer: No overlay anim for '{normalized}' (MonsterData={_monsterDataId}, AnimSet={_animSet}).");
+            onComplete?.Invoke();
+            return false;
+        }
+
+        CatAnimRuntimeClip clip = EnsureClip(animId);
+        if (clip == null)
+        {
+            onComplete?.Invoke();
+            return false;
+        }
+
+        ClearOverlay(invokeComplete: false);
+
+        _overlayClip = clip;
+        _overlayTime = 0f;
+        _overlayLogicalName = normalized;
+        _overlayOneShot = true;
+        _overlayComplete = onComplete;
+        _overlayFadeDuration = Mathf.Max(0.01f, blendSeconds);
+        _overlayFadeElapsed = 0f;
+        _overlayFadingIn = blendSeconds > 0f;
+        _overlayFadingOut = false;
+        _overlayWeight = _overlayFadingIn ? 0f : 1f;
+        _hasPose = true;
+        ApplyPose();
+        return true;
+    }
+
+    public bool PlayOnce(string logicalName, float blendSeconds, Action onComplete)
+    {
+        if (_database?.Rdb == null || _bones == null || _bones.Length == 0 || _resolver == null)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(logicalName))
+            return false;
+
+        string normalized = logicalName.Trim().ToLowerInvariant();
+        if (!_resolver.TryResolve(_monsterDataId, _animSet, normalized, out int animId, out _))
+        {
+            Debug.LogWarning(
+                $"CatAnimPlayer: No anim for '{normalized}' (MonsterData={_monsterDataId}, AnimSet={_animSet}).");
+            onComplete?.Invoke();
+            return false;
+        }
+
+        _isOneShot = true;
+        _oneShotComplete = onComplete;
+
+        if (!PlayAnimId(animId, blendSeconds))
+        {
+            _isOneShot = false;
+            _oneShotComplete = null;
+            onComplete?.Invoke();
+            return false;
+        }
 
         _currentLogicalName = normalized;
         return true;
@@ -216,6 +355,17 @@ public sealed class CatAnimPlayer : MonoBehaviour
         if (_clipCache.TryGetValue(animId, out CatAnimRuntimeClip cached) && cached != null)
             return cached;
 
+        int boneCount = _bones.Length;
+        var sharedKey = (animId, boneCount);
+        lock (SharedClipGate)
+        {
+            if (SharedClipCache.TryGetValue(sharedKey, out CatAnimRuntimeClip shared) && shared != null)
+            {
+                _clipCache[animId] = shared;
+                return shared;
+            }
+        }
+
         CATAnim catAnim;
         try
         {
@@ -233,12 +383,20 @@ public sealed class CatAnimPlayer : MonoBehaviour
             return null;
         }
 
-        CatAnimRuntimeClip clip = CatAnimRuntimeClip.Create(catAnim, animId, _bones.Length);
+        CatAnimRuntimeClip clip = CatAnimRuntimeClip.Create(catAnim, animId, boneCount);
         if (clip == null)
         {
             Debug.LogWarning(
-                $"CatAnimPlayer: CATAnim {animId} produced no bone tracks (BoneCount={catAnim.BoneCount}, bones={_bones.Length}).");
+                $"CatAnimPlayer: CATAnim {animId} produced no bone tracks (BoneCount={catAnim.BoneCount}, bones={boneCount}).");
             return null;
+        }
+
+        lock (SharedClipGate)
+        {
+            if (SharedClipCache.TryGetValue(sharedKey, out CatAnimRuntimeClip raced) && raced != null)
+                clip = raced;
+            else
+                SharedClipCache[sharedKey] = clip;
         }
 
         _clipCache[animId] = clip;
@@ -273,16 +431,10 @@ public sealed class CatAnimPlayer : MonoBehaviour
         if (!Paused)
         {
             float dt = UnityEngine.Time.deltaTime * PlaybackSpeed;
-            _timeA += dt;
-            if (_clipA.Duration > 0f)
-                _timeA %= _clipA.Duration;
+            AdvanceClipTime(ref _timeA, _clipA, dt, isClipA: true);
 
             if (_clipB != null)
-            {
-                _timeB += dt;
-                if (_clipB.Duration > 0f)
-                    _timeB %= _clipB.Duration;
-            }
+                AdvanceClipTime(ref _timeB, _clipB, dt, isClipA: false);
 
             if (_isCrossFading && _clipB != null)
             {
@@ -297,9 +449,148 @@ public sealed class CatAnimPlayer : MonoBehaviour
                     _isCrossFading = false;
                 }
             }
+
+            // Overlay advances at authored rate (not locomotion playback scaling).
+            AdvanceOverlay(UnityEngine.Time.deltaTime);
         }
 
         ApplyPose();
+    }
+
+    void AdvanceOverlay(float dt)
+    {
+        if (_overlayClip == null)
+            return;
+
+        if (_overlayFadingIn)
+        {
+            _overlayFadeElapsed += dt;
+            _overlayWeight = Mathf.Clamp01(_overlayFadeElapsed / _overlayFadeDuration);
+            if (_overlayWeight >= 1f)
+            {
+                _overlayWeight = 1f;
+                _overlayFadingIn = false;
+                _overlayFadeElapsed = 0f;
+            }
+        }
+        else if (_overlayFadingOut)
+        {
+            _overlayFadeElapsed += dt;
+            _overlayWeight = 1f - Mathf.Clamp01(_overlayFadeElapsed / _overlayFadeDuration);
+            if (_overlayWeight <= 0f)
+            {
+                ClearOverlay(invokeComplete: false);
+                return;
+            }
+        }
+
+        if (!_overlayOneShot)
+            return;
+
+        float end = _overlayClip.GetOneShotDuration();
+        _overlayTime += dt;
+        if (_overlayTime < end)
+            return;
+
+        _overlayTime = end;
+        _overlayOneShot = false;
+        Action callback = _overlayComplete;
+        _overlayComplete = null;
+
+        // Fade overlay out while locomotion continues underneath.
+        _overlayFadingOut = true;
+        _overlayFadingIn = false;
+        _overlayFadeElapsed = 0f;
+        if (_overlayFadeDuration <= 0.01f)
+        {
+            ClearOverlay(invokeComplete: false);
+            callback?.Invoke();
+            return;
+        }
+
+        callback?.Invoke();
+    }
+
+    void ClearOverlay(bool invokeComplete)
+    {
+        Action callback = invokeComplete ? _overlayComplete : null;
+        _overlayClip = null;
+        _overlayTime = 0f;
+        _overlayWeight = 0f;
+        _overlayFadeDuration = 0f;
+        _overlayFadeElapsed = 0f;
+        _overlayFadingIn = false;
+        _overlayFadingOut = false;
+        _overlayOneShot = false;
+        _overlayComplete = null;
+        _overlayLogicalName = null;
+        callback?.Invoke();
+    }
+
+    void AdvanceClipTime(ref float time, CatAnimRuntimeClip clip, float dt, bool isClipA)
+    {
+        if (clip == null)
+            return;
+
+        bool oneShotClip = _isOneShot && IsOneShotClip(isClipA);
+        float clipDuration = oneShotClip ? clip.GetOneShotDuration() : clip.Duration;
+        if (clipDuration <= 0f)
+            return;
+
+        time += dt;
+
+        // Outgoing clip during crossfade must hold its final frame — wrapping back to t=0
+        // causes a one-frame flash (especially after one-shot sit/stand transitions).
+        if (_isCrossFading && isClipA)
+        {
+            time = Mathf.Min(time, clipDuration);
+            return;
+        }
+
+        if (_clipB != null)
+        {
+            // Incoming one-shot holds at its end during the fade; don't wrap into the loop region.
+            if (oneShotClip)
+            {
+                if (time > clipDuration)
+                    time = clipDuration;
+                return;
+            }
+
+            if (time > clipDuration)
+                time %= clipDuration;
+            return;
+        }
+
+        if (_isOneShot)
+        {
+            if (time >= clipDuration)
+            {
+                time = clipDuration;
+                _isOneShot = false;
+                // Absolute one-shots end at LoopStart in source time. Remap to loop-local 0 so a
+                // same-frame Play crossfade doesn't sample LoopStart+LoopStart.
+                if (clip.HasLoopTiming && clip.LoopStart > 0.001f)
+                    time = 0f;
+
+                Action callback = _oneShotComplete;
+                _oneShotComplete = null;
+                callback?.Invoke();
+            }
+
+            return;
+        }
+
+        time %= clipDuration;
+    }
+
+    bool IsOneShotClip(bool isClipA)
+    {
+        // One-shot is always the incoming/current clip, never the fade-out source.
+        if (_clipB != null)
+            return !isClipA;
+
+        return isClipA;
     }
 
     void ApplyPose()
@@ -331,9 +622,29 @@ public sealed class CatAnimPlayer : MonoBehaviour
                     rot = Quaternion.Slerp(rot, rotB.Value, _weightB);
             }
 
+            if (_overlayClip != null && _overlayWeight > 0f)
+            {
+                EvaluateOverlayBone(i, out Vector3? posO, out Quaternion? rotO);
+                if (posO.HasValue)
+                    pos = Vector3.Lerp(pos, posO.Value, _overlayWeight);
+                if (rotO.HasValue)
+                    rot = Quaternion.Slerp(rot, rotO.Value, _overlayWeight);
+            }
+
             bone.localPosition = pos;
             bone.localRotation = rot;
         }
+    }
+
+    void EvaluateOverlayBone(int boneIndex, out Vector3? localPosition, out Quaternion? localRotation)
+    {
+        _overlayClip.Evaluate(boneIndex, _overlayTime, absoluteSourceTime: true, out localPosition, out localRotation);
+
+        float duration = _overlayClip.GetOneShotDuration();
+        if (_overlayTime >= duration)
+            return;
+
+        // No loop-smooth on overlay one-shots.
     }
 
     void EvaluateBone(
@@ -343,10 +654,18 @@ public sealed class CatAnimPlayer : MonoBehaviour
         out Vector3? localPosition,
         out Quaternion? localRotation)
     {
-        clip.Evaluate(boneIndex, time, out localPosition, out localRotation);
+        bool absoluteSourceTime = UsesAbsoluteSourceTime(clip);
+        clip.Evaluate(boneIndex, time, absoluteSourceTime, out localPosition, out localRotation);
+
+        float duration = absoluteSourceTime ? clip.GetOneShotDuration() : clip.Duration;
+        // Held final frame (one-shot end, crossfade source) — do not blend back toward t=0.
+        if (time >= duration)
+            return;
 
         float blend = _loopSmoothSeconds;
-        float duration = clip.Duration;
+        if (_isOneShot || (_isCrossFading && clip == _clipA))
+            blend = 0f;
+
         if (blend <= 0f || duration <= blend)
             return;
 
@@ -366,6 +685,18 @@ public sealed class CatAnimPlayer : MonoBehaviour
             localRotation = Quaternion.Slerp(localRotation.Value, startRot.Value, w);
         else if (startRot.HasValue)
             localRotation = startRot;
+    }
+
+    bool UsesAbsoluteSourceTime(CatAnimRuntimeClip clip)
+    {
+        if (!_isOneShot || clip == null)
+            return false;
+
+        // One-shot target uses source timeline (0 → loopstart/source end).
+        if (_clipB != null)
+            return clip == _clipB;
+
+        return clip == _clipA;
     }
 
     void CacheBindPose()

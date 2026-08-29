@@ -68,6 +68,7 @@ public class NetworkClient
     public event Action<FullCharacterMessage> FullCharacterReceived;
     public event Action<StatMessage> StatReceived;
     public event Action<CharDCMoveMessage> CharDCMoveReceived;
+    public event Action<CharacterActionMessage> CharacterActionReceived;
     public event Action<FollowTargetMessage> FollowTargetReceived;
     public event Action<Identity> DynelDespawned;
     public event Action<AppearanceUpdateMessage> AppearanceUpdateReceived;
@@ -99,7 +100,13 @@ public class NetworkClient
     {
         _wantSession = false;
         _reconnectAt = -1f;
+
+        bool alreadyDown = _phase == SessionPhase.Disconnected && !_session.Connected;
         _session.ResetSession();
+
+        if (alreadyDown)
+            return;
+
         SetPhase(SessionPhase.Disconnected);
         Disconnected?.Invoke();
     }
@@ -235,6 +242,11 @@ public class NetworkClient
     internal void OnCharDCMove(CharDCMoveMessage msg)
     {
         CharDCMoveReceived?.Invoke(msg);
+    }
+
+    internal void OnCharacterAction(CharacterActionMessage msg)
+    {
+        CharacterActionReceived?.Invoke(msg);
     }
 
     internal void OnFollowTarget(FollowTargetMessage msg)

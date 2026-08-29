@@ -55,7 +55,7 @@ CharacterController:
   serializedVersion: 3
   m_Height: 2
   m_Radius: 0.4
-  m_SlopeLimit: 45
+  m_SlopeLimit: 60
   m_StepOffset: 0.3
   m_SkinWidth: 0.08
   m_MinMoveDistance: 0.001
@@ -72,9 +72,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8f7b6d33d1b0421994a0c5601c54817f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterMotor
-  _turnRateDegrees: 90
-  _acceleration: 10
-  _deceleration: 14
+  _movementConfig: {fileID: 11400000, guid: d4e8f1a26c9b4f7e8a1d3c5b7e9f2048, type: 2}
 --- !u!114 &7692480211410184712
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -87,6 +85,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b83eca4d5a294e5d8328b9437bdee9eb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Character
+  _movementConfig: {fileID: 11400000, guid: d4e8f1a26c9b4f7e8a1d3c5b7e9f2048, type: 2}
 --- !u!114 &8398990210114871965
 MonoBehaviour:
   m_ObjectHideFlags: 0

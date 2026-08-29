@@ -1106,6 +1106,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Controllers
       objectReference: {fileID: 0}
+    - target: {fileID: 7590008607886415303, guid: 0840f0fb60bd91f4a86f0427b957dddb, type: 3}
+      propertyPath: antialiasing
+      value: 3
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

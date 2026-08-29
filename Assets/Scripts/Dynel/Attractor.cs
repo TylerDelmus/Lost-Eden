@@ -4,6 +4,8 @@ public class Attractor : MonoBehaviour
 {
     const float GizmoRadius = 0.04f;
 
+    public AttractorPlace Place;
+
     void OnDrawGizmos()
     {
         DrawGizmo(selected: false);

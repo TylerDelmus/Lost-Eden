@@ -5,12 +5,17 @@ using UnityEngine;
 
 public static class TerrainChunkBuilder
 {
-    const float UvPadding = 0.001f;
+    const float UvPadding = 0.01f;
 
+    /// <summary>
+    /// Height/geometry follows AODB Chunk.CreateMesh: physicalSize = chunkSize (height
+    /// blob side), 1:1 height samples, chunk origin at (chunkSize-1)*mapScale*(x,y).
+    /// Tile UVs still use game tile_size² indexing into the tile blob.
+    /// </summary>
     public static TerrainChunkMeshData Build(
         int chunkX,
         int chunkY,
-        int chunkSize,
+        int tileSize,
         float heightMod,
         float mapScale,
         ushort[,] heightmap,
@@ -18,28 +23,40 @@ public static class TerrainChunkBuilder
         Rect[] texBounds,
         int lod)
     {
-        // Every LOD must span the same world footprint: (chunkSize - 1) * mapScale.
-        int fullExtent = chunkSize - 1;
-        int step = 1 << Mathf.Max(0, lod);
-        int segments = (fullExtent + step - 1) / step;
-        if (segments <= 0)
+        if (tileData == null || tileData.Count == 0 || texBounds == null || texBounds.Length == 0 || heightmap == null)
+            return EmptyMesh();
+
+        int chunkSize = heightmap.GetLength(0);
+        if (chunkSize <= 1 || heightmap.GetLength(1) != chunkSize)
+            return EmptyMesh();
+
+        tileSize = Math.Max(1, tileSize);
+
+        // AODB Chunk.CreateMesh LOD sizing
+        int meshLod = Mathf.Max(0, lod);
+        int sizeMultiplier = 1;
+        int physicalSize = chunkSize / sizeMultiplier;
+        for (int i = 0; i < meshLod; i++)
         {
-            return new TerrainChunkMeshData
-            {
-                Vertices = Array.Empty<Vector3>(),
-                Normals = Array.Empty<Vector3>(),
-                UVs = Array.Empty<Vector2>(),
-                Triangles = Array.Empty<int>()
-            };
+            physicalSize /= 2;
+            sizeMultiplier *= 2;
         }
 
-        int heightW = heightmap.GetLength(0);
-        int heightH = heightmap.GetLength(1);
-        Vector3 anchorOffset = new Vector3(
-            fullExtent * mapScale * chunkX,
-            0f,
-            fullExtent * mapScale * chunkY);
+        if (meshLod != 0)
+            physicalSize++;
 
+        if (physicalSize <= 1)
+            return EmptyMesh();
+
+        // Patch grid is game tile_size (7×7 on map 57). CreateMesh's
+        // (chunkSize-1)*chunk origin assumes non-overlapping CS-1 strides and would
+        // blow past the map with 7 columns — keep tile_size spacing, CreateMesh locals.
+        Vector3 anchorOffset = new Vector3(
+            tileSize * mapScale * chunkX,
+            0f,
+            tileSize * mapScale * chunkY);
+
+        int segments = physicalSize - 1;
         int vertexCount = segments * segments * 4;
         var vertices = new Vector3[vertexCount];
         var uvs = new Vector2[vertexCount];
@@ -49,39 +66,47 @@ public static class TerrainChunkBuilder
         int tIndex = 0;
         bool flip = true;
 
+        // Quads over the CreateMesh grid. Positions/heights match:
+        //   (x * sizeMultiplier) * mapScale, heightmap[x*sm, y*sm]
         for (int y = 0; y < segments; y++)
         {
             for (int x = 0; x < segments; x++)
             {
-                int hx0 = Mathf.Min(x * step, fullExtent);
-                int hy0 = Mathf.Min(y * step, fullExtent);
-                int hx1 = Mathf.Min((x + 1) * step, fullExtent);
-                int hy1 = Mathf.Min((y + 1) * step, fullExtent);
+                int hx0 = x * sizeMultiplier;
+                int hy0 = y * sizeMultiplier;
+                int hx1 = (x + 1) * sizeMultiplier;
+                int hy1 = (y + 1) * sizeMultiplier;
 
-                int sx0 = Mathf.Min(hx0, heightW - 1);
-                int sy0 = Mathf.Min(hy0, heightH - 1);
-                int sx1 = Mathf.Min(hx1, heightW - 1);
-                int sy1 = Mathf.Min(hy1, heightH - 1);
+                if (hx1 >= chunkSize) hx1 = chunkSize - 1;
+                if (hy1 >= chunkSize) hy1 = chunkSize - 1;
 
-                vertices[vIdx] = new Vector3(hx0 * mapScale, heightmap[sx0, sy0] * heightMod, hy0 * mapScale) + anchorOffset;
-                vertices[vIdx + 1] = new Vector3(hx1 * mapScale, heightmap[sx1, sy0] * heightMod, hy0 * mapScale) + anchorOffset;
-                vertices[vIdx + 2] = new Vector3(hx0 * mapScale, heightmap[sx0, sy1] * heightMod, hy1 * mapScale) + anchorOffset;
-                vertices[vIdx + 3] = new Vector3(hx1 * mapScale, heightmap[sx1, sy1] * heightMod, hy1 * mapScale) + anchorOffset;
+                float wx0 = hx0 * mapScale;
+                float wz0 = hy0 * mapScale;
+                float wx1 = hx1 * mapScale;
+                float wz1 = hy1 * mapScale;
 
-                int tileX = Mathf.Min(hx0, fullExtent - 1);
-                int tileY = Mathf.Min(hy0, fullExtent - 1);
-                Tilemap.TileMapData tile = tileData[tileX + tileY * fullExtent];
-                Rect texBound = texBounds[tile.TextureId];
+                vertices[vIdx] = new Vector3(wx0, heightmap[hx0, hy0] * heightMod, wz0) + anchorOffset;
+                vertices[vIdx + 1] = new Vector3(wx1, heightmap[hx1, hy0] * heightMod, wz0) + anchorOffset;
+                vertices[vIdx + 2] = new Vector3(wx0, heightmap[hx0, hy1] * heightMod, wz1) + anchorOffset;
+                vertices[vIdx + 3] = new Vector3(wx1, heightmap[hx1, hy1] * heightMod, wz1) + anchorOffset;
 
-                // AODB atlas packs JPEG row0 (image top) at low V; Unity PackTextures is
-                // upright (image bottom at low V). Remap y/y2 so the original AO corner
-                // table still samples the same texels. Do NOT flip U — that breaks 90/270.
+                // Tile grid is game tile_size²; map CreateMesh cell → tile cell.
+                int tileX = Mathf.Min(hx0 * tileSize / Math.Max(1, chunkSize - 1), tileSize - 1);
+                int tileY = Mathf.Min(hy0 * tileSize / Math.Max(1, chunkSize - 1), tileSize - 1);
+                int tileIndex = tileX + tileY * tileSize;
+                if (tileIndex >= tileData.Count)
+                    tileIndex = tileData.Count - 1;
+
+                Tilemap.TileMapData tile = tileData[tileIndex];
+                int texIndex = Mathf.Clamp(tile.TextureId, 0, texBounds.Length - 1);
+                Rect texBound = texBounds[texIndex];
+
                 float aoX = texBound.x + UvPadding;
                 float aoX2 = texBound.x + texBound.width - UvPadding;
                 float unityLowV = texBound.y + UvPadding;
                 float unityHighV = texBound.y + texBound.height - UvPadding;
-                float aoY = unityHighV;  // AODB y  = top of image
-                float aoY2 = unityLowV; // AODB y2 = bottom of image
+                float aoY = unityHighV;
+                float aoY2 = unityLowV;
 
                 int v0 = vIdx;
                 int v1 = vIdx + 1;
@@ -90,6 +115,8 @@ public static class TerrainChunkBuilder
 
                 ApplyAodbRotationUvs(uvs, v0, v1, v2, v3, tile.Rotation, aoX, aoX2, aoY, aoY2);
 
+                // CreateMesh winding (two tris per cell), with our established flip variant
+                // for textured seams.
                 if (flip)
                 {
                     triangles[tIndex] = v0;
@@ -123,6 +150,17 @@ public static class TerrainChunkBuilder
             Normals = CalculateSmoothNormals(vertices, triangles),
             UVs = uvs,
             Triangles = triangles
+        };
+    }
+
+    static TerrainChunkMeshData EmptyMesh()
+    {
+        return new TerrainChunkMeshData
+        {
+            Vertices = Array.Empty<Vector3>(),
+            Normals = Array.Empty<Vector3>(),
+            UVs = Array.Empty<Vector2>(),
+            Triangles = Array.Empty<int>()
         };
     }
 
@@ -226,12 +264,6 @@ public static class TerrainChunkBuilder
             (float)Math.Round(v.z, 4));
     }
 
-    /// <summary>
-    /// Exact UV corner table from AODB.Chunk.CreateMeshTextured.
-    /// Vertex layout: v0=(minX,minZ), v1=(maxX,minZ), v2=(minX,maxZ), v3=(maxX,maxZ).
-    /// Rotation bytes: 0=0°, 64=90°, 128=180°, 192=270°.
-    /// x/x2/y/y2 must already be in the same content space AODB used (see call site V remap).
-    /// </summary>
     static void ApplyAodbRotationUvs(
         Vector2[] uvs,
         int v0,

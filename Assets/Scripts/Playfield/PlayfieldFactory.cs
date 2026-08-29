@@ -40,6 +40,7 @@ public class PlayfieldFactory : MonoBehaviour
         _networkClient.FullCharacterReceived += OnFullCharacter;
         _networkClient.StatReceived += OnStat;
         _networkClient.CharDCMoveReceived += OnCharDCMove;
+        _networkClient.CharacterActionReceived += OnCharacterAction;
         _networkClient.FollowTargetReceived += OnFollowTarget;
         _networkClient.DynelDespawned += OnDynelDespawn;
         _networkClient.AppearanceUpdateReceived += OnAppearanceUpdate;
@@ -52,6 +53,7 @@ public class PlayfieldFactory : MonoBehaviour
         _networkClient.FullCharacterReceived -= OnFullCharacter;
         _networkClient.StatReceived -= OnStat;
         _networkClient.CharDCMoveReceived -= OnCharDCMove;
+        _networkClient.CharacterActionReceived -= OnCharacterAction;
         _networkClient.FollowTargetReceived -= OnFollowTarget;
         _networkClient.DynelDespawned -= OnDynelDespawn;
         _networkClient.AppearanceUpdateReceived -= OnAppearanceUpdate;
@@ -147,6 +149,17 @@ public class PlayfieldFactory : MonoBehaviour
         _current.ApplyCharDCMove(msg);
     }
 
+    void OnCharacterAction(CharacterActionMessage msg)
+    {
+        if (!NetworkDriven || _current == null)
+            return;
+
+        if (msg.Identity.Instance == _networkClient.LocalDynelId)
+            return;
+
+        _current.ApplyCharacterAction(msg);
+    }
+
     void OnFollowTarget(FollowTargetMessage msg)
     {
         if (!NetworkDriven || _current == null)
@@ -220,6 +233,7 @@ public class PlayfieldFactory : MonoBehaviour
         Destroy(_playfieldRoot.gameObject);
         _playfieldRoot = null;
         _current = null;
+        PlayfieldTweakCatalog.ClearCache();
         yield return null;
     }
 

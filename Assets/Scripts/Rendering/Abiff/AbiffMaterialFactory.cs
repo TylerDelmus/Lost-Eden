@@ -7,6 +7,14 @@ using UnityEngine.Rendering.HighDefinition;
 
 public sealed class AbiffMaterialFactory
 {
+    // Legacy shin → HDRP smoothness: quadratic remap then hard cap.
+    // Old D3D shin values read too glossy under physically based lighting.
+    const float SmoothnessPower = 2f;
+    const float SmoothnessCap = 0.35f;
+
+    const float SpecularAaVariance = 0.15f;
+    const float SpecularAaThreshold = 0.2f;
+
     readonly ResourceDatabase _database;
     readonly Dictionary<AbiffMaterialDesc, Material> _materialCache = new Dictionary<AbiffMaterialDesc, Material>();
     readonly Dictionary<int, Texture2D> _textureCache = new Dictionary<int, Texture2D>();
@@ -69,10 +77,7 @@ public sealed class AbiffMaterialFactory
                 material.SetTexture("_MainTex", diffuse);
         }
 
-        // aogltf: roughness = 1 - shin/128  =>  smoothness = shin/128
-        float smoothness = desc.SpecularEnabled
-            ? Mathf.Clamp01(desc.Shininess / 128f)
-            : 0f;
+        float smoothness = RemapSmoothness(desc);
         if (material.HasProperty("_Smoothness"))
             material.SetFloat("_Smoothness", smoothness);
         if (material.HasProperty("_Metallic"))
@@ -81,7 +86,19 @@ public sealed class AbiffMaterialFactory
         bool isHdrp = material.shader != null && material.shader.name.StartsWith("HDRP/", StringComparison.Ordinal);
 
         if (isHdrp)
+        {
+            if (material.HasProperty("_EnableGeometricSpecularAA"))
+            {
+                material.SetFloat("_EnableGeometricSpecularAA", 1f);
+                if (material.HasProperty("_SpecularAAScreenSpaceVariance"))
+                    material.SetFloat("_SpecularAAScreenSpaceVariance", SpecularAaVariance);
+                if (material.HasProperty("_SpecularAAThreshold"))
+                    material.SetFloat("_SpecularAAThreshold", SpecularAaThreshold);
+                material.EnableKeyword("_ENABLE_GEOMETRIC_SPECULAR_AA");
+            }
+
             HDMaterial.SetEmissiveColor(material, desc.Emissive);
+        }
         else if (material.HasProperty("_EmissiveColor"))
             material.SetColor("_EmissiveColor", desc.Emissive);
         else if (material.HasProperty("_EmissionColor"))
@@ -119,5 +136,18 @@ public sealed class AbiffMaterialFactory
             HDMaterial.ValidateMaterial(material);
 
         return material;
+    }
+
+    /// <summary>
+    /// aogltf: roughness = 1 - shin/128 ⇒ linear smoothness = shin/128.
+    /// Softened with a quadratic curve and hard cap for HDRP.
+    /// </summary>
+    static float RemapSmoothness(AbiffMaterialDesc desc)
+    {
+        if (!desc.SpecularEnabled)
+            return 0f;
+
+        float t = Mathf.Clamp01(desc.Shininess / 128f);
+        return Mathf.Min(Mathf.Pow(t, SmoothnessPower) * SmoothnessCap, SmoothnessCap);
     }
 }

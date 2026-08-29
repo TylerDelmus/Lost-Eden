@@ -33,7 +33,10 @@ public readonly struct ActorInput
         var flags = MovementFlags.None;
         Vector3 moveInput = MoveInput;
 
-        if (moveInput.z > 0)
+        // Both mouse buttons held = run forward (classic MMO dual-click)
+        if (LeftClickHeld && RightClickHeld)
+            flags |= MovementFlags.Forward;
+        else if (moveInput.z > 0)
             flags |= MovementFlags.Forward;
         else if (moveInput.z < 0)
             flags |= MovementFlags.Backward;
@@ -112,8 +115,10 @@ internal class InputController : MonoBehaviour
     private InputAction _cancelAction;
     private InputAction _strafeAction;
     private InputAction _characterAction;
+    private InputAction _sitAction;
 
     public Action CharacterPressed;
+    public Action SitPressed;
     public Action InteractPressed;
     public Action SelfTargetPressed;
     public Action TabPressed;
@@ -140,8 +145,10 @@ internal class InputController : MonoBehaviour
         _cancelAction = InputSystem.actions.FindAction("Cancel");
         _strafeAction = InputSystem.actions.FindAction("Strafe");
         _characterAction = InputSystem.actions.FindAction("Character");
-       
+        _sitAction = InputSystem.actions.FindAction("Sit");
+
         _characterAction.performed += OnCharacterPerformed;
+        _sitAction.performed += OnSitPerformed;
 
         _jumpAction.performed += OnJumpPerformed;
         _jumpAction.canceled += OnJumpCanceled;
@@ -163,6 +170,11 @@ internal class InputController : MonoBehaviour
     private void OnCharacterPerformed(InputAction.CallbackContext ctx)
     {
         CharacterPressed?.Invoke();
+    }
+
+    private void OnSitPerformed(InputAction.CallbackContext ctx)
+    {
+        SitPressed?.Invoke();
     }
 
     private void OnJumpPerformed(InputAction.CallbackContext ctx)
@@ -261,7 +273,8 @@ internal class InputController : MonoBehaviour
     {
         _actorInputRaw.IsLeftClickHeld = false;
         _actorInputRaw.IsLeftClickReleasedAtOrigin = Mouse.current.position.ReadValue() == _actorInputRaw.LeftClickOrigin;
-        ShowCursor();
+        if (!_actorInputRaw.IsRightClickHeld)
+            ShowCursor();
     }
 
     private void OnRightClickStarted(InputAction.CallbackContext ctx)
@@ -281,7 +294,8 @@ internal class InputController : MonoBehaviour
     {
         _actorInputRaw.IsRightClickHeld = false;
         _actorInputRaw.IsRightClickReleasedAtOrigin = Mouse.current.position.ReadValue() == _actorInputRaw.RightClickOrigin;
-        ShowCursor();
+        if (!_actorInputRaw.IsLeftClickHeld)
+            ShowCursor();
     }
 
     private Vector2 _savedCursorPosition;
@@ -340,5 +354,6 @@ internal class InputController : MonoBehaviour
         _cancelAction.performed -= OnCancelPerformed;
 
         _characterAction.performed -= OnCharacterPerformed;
+        _sitAction.performed -= OnSitPerformed;
     }
 }

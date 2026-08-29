@@ -17,6 +17,10 @@ MonoBehaviour:
   - 0.25
   - 0.08
   _terrainAtlasMaxSize: 8192
-  _terrainAtlasPadding: 0
+  _terrainAtlasPadding: 16
+  _terrainAtlasFirstMipToSoften: 2
+  _terrainAtlasMipBlurPasses: 3
+  _terrainAtlasAnisoLevel: 8
+  _terrainAtlasMipBias: 0.5
   _waterSurfaceType: 2
   _waterMaterial: {fileID: 0}

@@ -8,6 +8,7 @@ using UnityEngine;
 enum DynelDebugTab
 {
     Stats,
+    Motor,
     Textures
 }
 
@@ -15,10 +16,11 @@ public sealed class DynelDebugWindow : EditorWindow
 {
     const float TexturePreviewSize = 96f;
 
-    static readonly string[] TabLabels = { "Stats", "Textures" };
+    static readonly string[] TabLabels = { "Stats", "Motor", "Textures" };
 
     Dynel _dynel;
     VisualDynel _visual;
+    CharacterMotor _motor;
     DynelDebugTab _tab;
     string _statSearch = string.Empty;
     UnityEngine.Vector2 _statsScroll;
@@ -48,7 +50,9 @@ public sealed class DynelDebugWindow : EditorWindow
 
     void Update()
     {
-        if (_tab == DynelDebugTab.Textures && EditorApplication.isPlaying && _visual != null)
+        if ((_tab == DynelDebugTab.Motor || _tab == DynelDebugTab.Textures)
+            && EditorApplication.isPlaying
+            && (_motor != null || _visual != null))
             Repaint();
     }
 
@@ -74,6 +78,7 @@ public sealed class DynelDebugWindow : EditorWindow
         UnbindStatChanged();
         _dynel = FindSelectedDynel();
         _visual = FindVisual(_dynel);
+        _motor = FindMotor(_dynel);
         BindStatChanged();
     }
 
@@ -123,6 +128,20 @@ public sealed class DynelDebugWindow : EditorWindow
         return dynel.GetComponentInChildren<VisualDynel>(true);
     }
 
+    static CharacterMotor FindMotor(Dynel dynel)
+    {
+        if (dynel == null)
+            return null;
+
+        if (dynel is Character character && character.Motor != null)
+            return character.Motor;
+
+        if (dynel.TryGetComponent(out CharacterMotor onSelf))
+            return onSelf;
+
+        return dynel.GetComponentInChildren<CharacterMotor>(true);
+    }
+
     void OnGUI()
     {
         DrawHeader();
@@ -141,6 +160,9 @@ public sealed class DynelDebugWindow : EditorWindow
         {
             case DynelDebugTab.Stats:
                 DrawStatsTab();
+                break;
+            case DynelDebugTab.Motor:
+                DrawMotorTab();
                 break;
             case DynelDebugTab.Textures:
                 DrawTexturesTab();
@@ -218,6 +240,49 @@ public sealed class DynelDebugWindow : EditorWindow
         }
 
         EditorGUILayout.EndScrollView();
+    }
+
+    void DrawMotorTab()
+    {
+        if (_motor == null)
+        {
+            EditorGUILayout.HelpBox("Selected Dynel has no CharacterMotor component.", MessageType.Warning);
+            return;
+        }
+
+        if (!EditorApplication.isPlaying)
+        {
+            EditorGUILayout.HelpBox("Enter Play Mode to inspect live motor values.", MessageType.Info);
+            return;
+        }
+
+        using (new EditorGUI.DisabledScope(true))
+        {
+            EditorGUILayout.EnumPopup("State", _motor.State);
+
+            EditorGUILayout.Space(4f);
+            EditorGUILayout.LabelField("Movement Flags", EditorStyles.boldLabel);
+            MovementFlags flags = _motor.MovementFlags;
+            EditorGUILayout.TextField("Flags", flags == MovementFlags.None ? "None" : flags.ToString());
+            DrawMovementFlag("Forward", flags, MovementFlags.Forward);
+            DrawMovementFlag("Backward", flags, MovementFlags.Backward);
+            DrawMovementFlag("Strafe Left", flags, MovementFlags.StrafeLeft);
+            DrawMovementFlag("Strafe Right", flags, MovementFlags.StrafeRight);
+            DrawMovementFlag("Turn Left", flags, MovementFlags.TurnLeft);
+            DrawMovementFlag("Turn Right", flags, MovementFlags.TurnRight);
+            DrawMovementFlag("Jump", flags, MovementFlags.Jump);
+            DrawMovementFlag("Mouse Turn", flags, MovementFlags.MouseTurn);
+
+            EditorGUILayout.Space(4f);
+            EditorGUILayout.FloatField("Current Vel", _motor.CurrentSpeed);
+            EditorGUILayout.FloatField("Max Vel", _motor.LocomotionMaxSpeed);
+            EditorGUILayout.FloatField("Max Force", _motor.MaxForce);
+        }
+    }
+
+    static void DrawMovementFlag(string label, MovementFlags flags, MovementFlags flag)
+    {
+        EditorGUILayout.Toggle(label, (flags & flag) != 0);
     }
 
     void DrawTexturesTab()

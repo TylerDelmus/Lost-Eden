@@ -39,18 +39,33 @@ public sealed class PlayfieldWaterBuilder
         if (waterMeshes == null || waterMeshes.Count == 0)
             yield break;
 
+        PlayfieldTweakFile tweak = PlayfieldTweakCatalog.Get(playfieldId);
+
         var root = new GameObject($"Water_{playfieldId}");
         root.transform.SetParent(parent, false);
 
+        ShoreWaveController shoreWaves = null;
+
         for (int i = 0; i < waterMeshes.Count; i++)
         {
-            CreateWaterBody(root.transform, waterMeshes[i], i);
+            CreateWaterBody(root.transform, waterMeshes[i], i, tweak, ref shoreWaves);
             if ((i + 1) % 8 == 0)
                 yield return null;
         }
+
+        if (shoreWaves != null)
+        {
+            Material overrideMat = _renderConfig != null ? _renderConfig.ShoreWaveMaterial : null;
+            shoreWaves.Build(playfieldId, _database, overrideMat);
+        }
     }
 
-    void CreateWaterBody(Transform parent, PfWaterMeshData source, int index)
+    void CreateWaterBody(
+        Transform parent,
+        PfWaterMeshData source,
+        int index,
+        PlayfieldTweakFile tweak,
+        ref ShoreWaveController shoreWaves)
     {
         if (source?.Vertices == null || source.Vertices.Length == 0 ||
             source.Triangles == null || source.Triangles.Length < 3)
@@ -68,7 +83,11 @@ public sealed class PlayfieldWaterBuilder
         mesh.SetTriangles(source.Triangles, 0, calculateBounds: false);
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
+        Bounds worldBounds = mesh.bounds;
         mesh.UploadMeshData(markNoLongerReadable: true);
+
+        WaterSurfaceType surfaceType = PlayfieldTweakCatalog.ResolveSurfaceType(tweak, index);
+        ShoreWaveSettings waveSettings = PlayfieldTweakCatalog.ResolveWaves(tweak, index);
 
         var surfaceGo = new GameObject($"WaterBody_{index}");
         surfaceGo.transform.SetParent(parent, false);
@@ -89,16 +108,23 @@ public sealed class PlayfieldWaterBuilder
         renderer.receiveShadows = false;
 
         var water = surfaceGo.AddComponent<WaterSurface>();
-        ConfigureWaterSurface(water, renderer);
+        ConfigureWaterSurface(water, renderer, surfaceType, waveSettings);
+
+        if (surfaceType == WaterSurfaceType.OceanSeaLake && waveSettings.Enabled)
+        {
+            if (shoreWaves == null)
+                shoreWaves = parent.gameObject.AddComponent<ShoreWaveController>();
+
+            shoreWaves.AddOceanBody(waterLevel, worldBounds, waveSettings);
+        }
     }
 
-    void ConfigureWaterSurface(WaterSurface water, MeshRenderer renderer)
+    void ConfigureWaterSurface(
+        WaterSurface water,
+        MeshRenderer renderer,
+        WaterSurfaceType surfaceType,
+        ShoreWaveSettings waveSettings)
     {
-        WaterSurfaceType surfaceType = _renderConfig != null
-            ? _renderConfig.WaterSurfaceType
-            : WaterSurfaceType.Pool;
-
-        // Calm AO-style bodies: pool preset values with custom mesh geometry.
         water.surfaceType = surfaceType;
         water.geometryType = WaterGeometryType.Custom;
         water.meshRenderers = new List<MeshRenderer> { renderer };
@@ -120,7 +146,17 @@ public sealed class PlayfieldWaterBuilder
         water.caustics = true;
         water.causticsPlaneBlendDistance = 2f;
         water.underWater = false;
-        water.foam = false;
+
+        bool ocean = surfaceType == WaterSurfaceType.OceanSeaLake;
+        water.foam = ocean;
+        water.deformation = ocean;
+
+        if (ocean)
+        {
+            float region = waveSettings.ActivationRadius * 2f + 40f;
+            water.decalRegionSize = new Vector2(region, region);
+            water.largeWindSpeed = 20f;
+        }
 
         if (_renderConfig != null && _renderConfig.WaterMaterial != null)
             water.customMaterial = _renderConfig.WaterMaterial;

@@ -17,7 +17,7 @@ class SessionCookie
 
 class NetworkSession
 {
-    const float ZoneLoginDelaySeconds = 3f;
+    const float ZoneConnectDelaySeconds = 5f;
 
     readonly NetworkClient _client;
     readonly MessageSerializer _serializer = new MessageSerializer();
@@ -26,7 +26,8 @@ class NetworkSession
     ZlibTcpClient _tcpClient;
     SessionCookie _sessionCookie;
     ushort _messageId = 1;
-    float _zoneLoginAt = -1f;
+    float _zoneConnectAt = -1f;
+    IPEndPoint _pendingZoneEndpoint;
 
     public bool Connected => _tcpClient != null && _tcpClient.Connected;
 
@@ -40,10 +41,12 @@ class NetworkSession
         while (_inboundPacketQueue.TryDequeue(out byte[] packet))
             ProcessPacket(packet);
 
-        if (_zoneLoginAt > 0f && Time.realtimeSinceStartup >= _zoneLoginAt)
+        if (_zoneConnectAt > 0f && Time.realtimeSinceStartup >= _zoneConnectAt)
         {
-            _zoneLoginAt = -1f;
-            SendZoneLogin();
+            _zoneConnectAt = -1f;
+            IPEndPoint endpoint = _pendingZoneEndpoint;
+            _pendingZoneEndpoint = null;
+            Connect(endpoint);
         }
     }
 
@@ -145,7 +148,8 @@ class NetworkSession
 
     public void CloseSocket()
     {
-        _zoneLoginAt = -1f;
+        _zoneConnectAt = -1f;
+        _pendingZoneEndpoint = null;
 
         if (_tcpClient == null)
             return;
@@ -170,7 +174,8 @@ class NetworkSession
         CloseSocket();
         _sessionCookie = null;
         _messageId = 1;
-        _zoneLoginAt = -1f;
+        _zoneConnectAt = -1f;
+        _pendingZoneEndpoint = null;
 
         while (_inboundPacketQueue.TryDequeue(out _))
         {
@@ -214,7 +219,9 @@ class NetworkSession
         using (var stream = new MemoryStream())
         {
             _serializer.Serialize(stream, message);
-            _tcpClient.Send(stream.ToArray());
+            byte[] packet = stream.ToArray();
+            NetworkDebug.LogPacket("TX", packet, message);
+            _tcpClient.Send(packet);
         }
 
         _messageId++;
@@ -229,6 +236,8 @@ class NetworkSession
             Message message = _serializer.Deserialize(packet);
             if (message == null)
                 return;
+
+            NetworkDebug.LogPacket("RX", packet, message);
 
             if (message.Header.Sender != _client.ServerId)
                 _client.ServerId = message.Header.Sender;
@@ -292,12 +301,20 @@ class NetworkSession
             _client.OnStat((StatMessage)n3Msg);
         else if (n3Msg.N3MessageType == N3MessageType.CharDCMove)
             _client.OnCharDCMove((CharDCMoveMessage)n3Msg);
+        else if (n3Msg.N3MessageType == N3MessageType.CharacterAction)
+            _client.OnCharacterAction((CharacterActionMessage)n3Msg);
         else if (n3Msg.N3MessageType == N3MessageType.FollowTarget)
             _client.OnFollowTarget((FollowTargetMessage)n3Msg);
         else if (n3Msg.N3MessageType == N3MessageType.Despawn)
             _client.OnDynelDespawn((DespawnMessage)n3Msg);
         else if (n3Msg.N3MessageType == N3MessageType.AppearanceUpdate)
             _client.OnAppearanceUpdate((AppearanceUpdateMessage)n3Msg);
+    }
+
+    void ScheduleZoneConnect(IPEndPoint endpoint)
+    {
+        _pendingZoneEndpoint = endpoint;
+        _zoneConnectAt = Time.realtimeSinceStartup + ZoneConnectDelaySeconds;
     }
 
     void OnZoneInfo(ZoneInfoMessage zoneInfo)
@@ -308,18 +325,18 @@ class NetworkSession
             Cookie2 = zoneInfo.Cookie2
         };
 
-        Connect(new IPEndPoint(zoneInfo.ServerIpAddress, zoneInfo.ServerPort));
+        ScheduleZoneConnect(new IPEndPoint(zoneInfo.ServerIpAddress, zoneInfo.ServerPort));
     }
 
     void OnZoneRedirection(ZoneRedirectionMessage zoneRed)
     {
         Debug.Log($"[Network] Zone redirection to {zoneRed.ServerIpAddress}:{zoneRed.ServerPort}");
-        Connect(new IPEndPoint(zoneRed.ServerIpAddress, zoneRed.ServerPort));
+        ScheduleZoneConnect(new IPEndPoint(zoneRed.ServerIpAddress, zoneRed.ServerPort));
     }
 
     void OnInitiateCompression()
     {
-        _zoneLoginAt = Time.realtimeSinceStartup + ZoneLoginDelaySeconds;
+        SendZoneLogin();
     }
 
     void SendZoneLogin()

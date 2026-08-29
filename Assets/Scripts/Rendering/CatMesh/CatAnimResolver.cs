@@ -17,6 +17,9 @@ public sealed class CatAnimResolver
 
     readonly ResourceDatabase _database;
     Dictionary<int, string> _animNames;
+    static readonly Dictionary<(int monsterDataId, int animSet, string action), int> ResolveCache =
+        new Dictionary<(int monsterDataId, int animSet, string action), int>();
+    static readonly object ResolveCacheGate = new object();
 
     public CatAnimResolver(ResourceDatabase database)
     {
@@ -35,6 +38,17 @@ public sealed class CatAnimResolver
         if (action == null)
             return false;
 
+        var cacheKey = (monsterDataId, animSet, action);
+        lock (ResolveCacheGate)
+        {
+            if (ResolveCache.TryGetValue(cacheKey, out int cachedId) && cachedId > 0)
+            {
+                animId = cachedId;
+                resolvedName = GetAnimName(cachedId);
+                return true;
+            }
+        }
+
         if (!MonsterDataResolver.TryGetAnimIds(_database, monsterDataId, animSet, out List<int> candidates))
             return false;
 
@@ -43,6 +57,14 @@ public sealed class CatAnimResolver
         string preferredVariant = DummyAnimSetVariants.TryGetValue(animSet, out string variant)
             ? variant
             : DummyAnimSetVariants[0];
+
+        if (TryResolveSitSemantic(action, candidates, preferredVariant, out animId, out resolvedName)
+            || TryResolveJumpSemantic(action, candidates, preferredVariant, out animId, out resolvedName))
+        {
+            lock (ResolveCacheGate)
+                ResolveCache[cacheKey] = animId;
+            return true;
+        }
 
         if (!TryFindBest(candidates, action, preferredVariant, out int bestId, out string bestName, out int bestScore)
             || bestScore < 0)
@@ -65,6 +87,8 @@ public sealed class CatAnimResolver
 
         animId = bestId;
         resolvedName = bestName;
+        lock (ResolveCacheGate)
+            ResolveCache[cacheKey] = animId;
         return true;
     }
 
@@ -102,6 +126,105 @@ public sealed class CatAnimResolver
         return bestId > 0;
     }
 
+    bool TryResolveSitSemantic(
+        string semantic,
+        List<int> candidates,
+        string preferredVariant,
+        out int animId,
+        out string resolvedName)
+    {
+        animId = 0;
+        resolvedName = null;
+
+        if (!TryGetSitAliases(semantic, out string[] aliases))
+            return false;
+
+        for (int i = 0; i < aliases.Length; i++)
+        {
+            if (!TryFindBest(candidates, aliases[i], preferredVariant, out int id, out string name, out int score)
+                || score < 0)
+            {
+                continue;
+            }
+
+            animId = id;
+            resolvedName = name;
+            return true;
+        }
+
+        return false;
+    }
+
+    bool TryResolveJumpSemantic(
+        string semantic,
+        List<int> candidates,
+        string preferredVariant,
+        out int animId,
+        out string resolvedName)
+    {
+        animId = 0;
+        resolvedName = null;
+
+        if (!TryGetJumpAliases(semantic, out string[] aliases))
+            return false;
+
+        for (int i = 0; i < aliases.Length; i++)
+        {
+            if (!TryFindBest(candidates, aliases[i], preferredVariant, out int id, out string name, out int score)
+                || score < 0)
+            {
+                continue;
+            }
+
+            animId = id;
+            resolvedName = name;
+            return true;
+        }
+
+        return false;
+    }
+
+    static bool TryGetSitAliases(string semantic, out string[] aliases)
+    {
+        switch (semantic)
+        {
+            case "idle-sit":
+                aliases = new[] { "idle-ground", "idle-sit", "sit_idle" };
+                return true;
+            case "sit-start":
+                aliases = new[] { "ground-start", "sit-start", "sit_down" };
+                return true;
+            case "sit-stop":
+                aliases = new[] { "ground-stop", "sit-stop", "stand_up" };
+                return true;
+            default:
+                aliases = null;
+                return false;
+        }
+    }
+
+    static bool TryGetJumpAliases(string semantic, out string[] aliases)
+    {
+        switch (semantic)
+        {
+            case "jump-stand":
+                // Humanoids use jump-stand; many creatures only have bare jump_01.
+                aliases = new[] { "jump-stand", "jump" };
+                return true;
+            case "jump-forward":
+                aliases = new[] { "jump-forward" };
+                return true;
+            case "jump-land-idle":
+            case "jump-land-walk":
+            case "jump-land-run":
+                aliases = new[] { semantic };
+                return true;
+            default:
+                aliases = null;
+                return false;
+        }
+    }
+
     static string NormalizeAction(string logicalName)
     {
         string trimmed = logicalName.Trim().ToLowerInvariant();
@@ -114,6 +237,14 @@ public sealed class CatAnimResolver
             "walk-right" => "walk-right",
             "walk" => "walk",
             "walk-back" => "walk-back",
+            "idle-sit" => "idle-sit",
+            "sit-start" => "sit-start",
+            "sit-stop" => "sit-stop",
+            "jump-stand" => "jump-stand",
+            "jump-forward" => "jump-forward",
+            "jump-land-idle" => "jump-land-idle",
+            "jump-land-walk" => "jump-land-walk",
+            "jump-land-run" => "jump-land-run",
             _ => null,
         };
     }
@@ -137,6 +268,42 @@ public sealed class CatAnimResolver
             if (name.Contains(action + "-right") || name.Contains(action + "_right"))
                 return -50;
             if (name.Contains(action + "-2h") || name.Contains(action + "_2h"))
+            {
+                if (preferredVariant != "2h")
+                    return -40;
+            }
+        }
+
+        if (action == "jump" || action == "jump-stand" || action == "jump-forward")
+        {
+            if (action != "jump-forward"
+                && (name.Contains("jump-forward") || name.Contains("jump_forward")))
+            {
+                return int.MinValue;
+            }
+
+            if (action == "jump-forward"
+                && !name.Contains("jump-forward")
+                && !name.Contains("jump_forward"))
+            {
+                return int.MinValue;
+            }
+
+            if (name.Contains("jump-land") || name.Contains("jump_land"))
+                return int.MinValue;
+            if (name.Contains("attack")
+                || name.Contains("roundkick")
+                || name.Contains("jumpslam")
+                || name.Contains("jumpbite")
+                || name.Contains("hoverboard"))
+            {
+                return int.MinValue;
+            }
+        }
+
+        if (action.StartsWith("jump-land", StringComparison.Ordinal))
+        {
+            if (name.Contains("-2h") || name.Contains("_2h"))
             {
                 if (preferredVariant != "2h")
                     return -40;

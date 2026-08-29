@@ -53,6 +53,18 @@ public sealed class CatAnimRuntimeClip
         Tracks = tracks;
     }
 
+    /// <summary>
+    /// One-shots play the authored prefix (0 → loopstart) when loop markers exist,
+    /// otherwise the full source clip. Looping playback still uses <see cref="Duration"/>.
+    /// </summary>
+    public float GetOneShotDuration()
+    {
+        if (HasLoopTiming && LoopStart > 0.001f)
+            return Mathf.Min(LoopStart, SourceDuration);
+
+        return SourceDuration;
+    }
+
     public static CatAnimRuntimeClip Create(
         CATAnim catAnim,
         int animId,
@@ -115,11 +127,19 @@ public sealed class CatAnimRuntimeClip
     }
 
     public void Evaluate(int boneIndex, float time, out Vector3? localPosition, out Quaternion? localRotation)
+        => Evaluate(boneIndex, time, absoluteSourceTime: false, out localPosition, out localRotation);
+
+    public void Evaluate(
+        int boneIndex,
+        float time,
+        bool absoluteSourceTime,
+        out Vector3? localPosition,
+        out Quaternion? localRotation)
     {
         localPosition = null;
         localRotation = null;
 
-        float sourceTime = LoopStart + time;
+        float sourceTime = absoluteSourceTime ? time : LoopStart + time;
 
         for (int i = 0; i < Tracks.Length; i++)
         {

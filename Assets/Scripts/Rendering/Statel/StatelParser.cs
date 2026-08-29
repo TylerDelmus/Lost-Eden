@@ -104,6 +104,7 @@ public sealed class StatelParser
             : placement.Scale;
 
         Dictionary<int, int> overrides = BuildOverrideMap(placement.TextureOverrides);
+        bool hasUvAnim = false;
 
         for (int s = 0; s < source.Submeshes.Length; s++)
         {
@@ -126,9 +127,18 @@ public sealed class StatelParser
             if (overrides != null && overrides.TryGetValue(s, out int overridden) && overridden > 0)
                 material = material.WithDiffuseTexture(overridden);
             renderer.sharedMaterial = _materials.Get(material);
+
+            if (sub.UvKeys != null && sub.UvKeys.Length >= 2)
+            {
+                hasUvAnim = true;
+                var animator = subGo.AddComponent<AbiffUvAnimator>();
+                animator.Init(sub.UvKeys, sub.UvLoop, sub.UvDuration);
+            }
         }
 
-        go.isStatic = true;
+        // UV-animated materials need per-instance property blocks; static batching would freeze them.
+        if (!hasUvAnim)
+            go.isStatic = true;
     }
 
     static List<MeshVariantKey> CollectMeshKeys(List<StatelPlacement> placements)

@@ -92,8 +92,19 @@ public sealed class AbiffLoader
             {
                 renderer.sharedMaterial = shared;
             }
+
+            TryAttachUvAnimator(subGo, sub);
         }
 
         return true;
+    }
+
+    static void TryAttachUvAnimator(GameObject subGo, AbiffSubmeshSource sub)
+    {
+        if (sub?.UvKeys == null || sub.UvKeys.Length < 2)
+            return;
+
+        var animator = subGo.AddComponent<AbiffUvAnimator>();
+        animator.Init(sub.UvKeys, sub.UvLoop, sub.UvDuration);
     }
 }

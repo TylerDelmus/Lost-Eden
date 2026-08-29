@@ -46,7 +46,34 @@ public static class CatMeshSnapshot
 
             string groupName = string.IsNullOrEmpty(group.Name) ? $"Group_{g}" : group.Name;
             for (int m = 0; m < group.Meshes.Count; m++)
-                submeshes.Add(SnapshotMesh(group.Meshes[m], catMesh.Materials, textureIds, groupName, g, m, bones, meshRoot));
+                submeshes.Add(SnapshotMesh(group.Meshes[m], catMesh.Materials, textureIds, groupName, g, m, bones, meshRoot, boneWorlds: null));
+        }
+
+        return submeshes.ToArray();
+    }
+
+    /// <summary>
+    /// Thread-safe rest-pose snapshot using precomputed bone world matrices (no Unity Transforms).
+    /// </summary>
+    public static CatMeshSubmeshSource[] FromRdbCatMesh(
+        RDBCatMesh catMesh,
+        Matrix4x4[] boneWorldMatrices)
+    {
+        if (catMesh?.MeshGroups == null || catMesh.MeshGroups.Count == 0)
+            return Array.Empty<CatMeshSubmeshSource>();
+
+        Dictionary<string, int> textureIds = CatMeshMaterialFactory.BuildTextureLookup(catMesh.Textures);
+        var submeshes = new List<CatMeshSubmeshSource>();
+
+        for (int g = 0; g < catMesh.MeshGroups.Count; g++)
+        {
+            RDBCatMesh.MeshGroup group = catMesh.MeshGroups[g];
+            if (group?.Meshes == null)
+                continue;
+
+            string groupName = string.IsNullOrEmpty(group.Name) ? $"Group_{g}" : group.Name;
+            for (int m = 0; m < group.Meshes.Count; m++)
+                submeshes.Add(SnapshotMesh(group.Meshes[m], catMesh.Materials, textureIds, groupName, g, m, bones: null, meshRoot: null, boneWorlds: boneWorldMatrices));
         }
 
         return submeshes.ToArray();
@@ -60,7 +87,8 @@ public static class CatMeshSnapshot
         int groupIndex,
         int meshIndex,
         Transform[] bones,
-        Transform meshRoot)
+        Transform meshRoot,
+        Matrix4x4[] boneWorlds)
     {
         AbiffMaterialDesc material = ResolveMaterial(mesh?.MaterialId ?? -1, materials, textureIds, groupIndex, meshIndex);
         if (mesh?.Vertices == null || mesh.Vertices.Count == 0)
@@ -82,13 +110,18 @@ public static class CatMeshSnapshot
         var normals = new Vector3[count];
         var uvs = new Vector2[count];
         var boneWeights = new BoneWeight[count];
-        bool useSkeletonVerts = bones != null && bones.Length > 0;
+        bool useMatrixVerts = boneWorlds != null && boneWorlds.Length > 0;
+        bool useSkeletonVerts = !useMatrixVerts && bones != null && bones.Length > 0;
 
         for (int i = 0; i < count; i++)
         {
             RDBCatMesh.Vertex vertex = mesh.Vertices[i];
 
-            if (useSkeletonVerts)
+            if (useMatrixVerts)
+            {
+                positions[i] = GetVertexSkeletonPos(vertex, boneWorlds);
+            }
+            else if (useSkeletonVerts)
             {
                 Vector3 world = GetVertexSkeletonPos(vertex, bones);
                 positions[i] = meshRoot != null ? meshRoot.InverseTransformPoint(world) : world;
@@ -143,6 +176,18 @@ public static class CatMeshSnapshot
         return Vector3.Lerp(world2, world1, Mathf.Clamp01(vertex.Joint1Weight));
     }
 
+    static Vector3 GetVertexSkeletonPos(RDBCatMesh.Vertex vertex, Matrix4x4[] boneWorlds)
+    {
+        AoVector3 rel1 = vertex.RelToJoint1;
+        AoVector3 rel2 = vertex.RelToJoint2;
+        Vector3 local1 = new Vector3(rel1.X, rel1.Y, rel1.Z);
+        Vector3 local2 = new Vector3(rel2.X, rel2.Y, rel2.Z);
+
+        Vector3 world1 = TransformBonePoint(boneWorlds, vertex.Joint1, local1);
+        Vector3 world2 = TransformBonePoint(boneWorlds, vertex.Joint2, local2);
+        return Vector3.Lerp(world2, world1, Mathf.Clamp01(vertex.Joint1Weight));
+    }
+
     static Vector3 TransformBonePoint(Transform[] bones, int boneIndex, Vector3 localPoint)
     {
         if (bones == null || boneIndex < 0 || boneIndex >= bones.Length || bones[boneIndex] == null)
@@ -150,6 +195,14 @@ public static class CatMeshSnapshot
 
         Transform bone = bones[boneIndex];
         return bone.position + bone.rotation * localPoint;
+    }
+
+    static Vector3 TransformBonePoint(Matrix4x4[] boneWorlds, int boneIndex, Vector3 localPoint)
+    {
+        if (boneWorlds == null || boneIndex < 0 || boneIndex >= boneWorlds.Length)
+            return localPoint;
+
+        return boneWorlds[boneIndex].MultiplyPoint3x4(localPoint);
     }
 
     static AbiffMaterialDesc ResolveMaterial(
