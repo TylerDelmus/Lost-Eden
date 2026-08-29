@@ -163,7 +163,9 @@ public sealed class ShoreWaveController : MonoBehaviour
         if (tilemap?.Heightmap == null || tilemap.Heightmap.Count == 0)
             return;
 
-        ComputePatchGrid(tilemap.MapWidth, tilemap.MapHeight, out int tileSize, out int cols, out int rows);
+        if (!TryGetChunkGrid(tilemap, out int tileSize, out int cols, out int rows))
+            return;
+
         var candidates = new List<ShoreSlot>(256);
 
         for (int b = 0; b < _bodies.Count; b++)
@@ -770,30 +772,23 @@ public sealed class ShoreWaveController : MonoBehaviour
     }
 
     /// <summary>
-    /// Matches <see cref="TerrainParser"/> patch grid: tile_size from ctz of (mapDim-1), capped at LOD 6.
+    /// Outdoor chunk grid from AODB Tilemap (ChunkedGround): step = ChunkSize-1, cols = GridWidth.
     /// </summary>
-    static void ComputePatchGrid(uint mapWidth, uint mapHeight, out int tileSize, out int cols, out int rows)
+    static bool TryGetChunkGrid(Tilemap tilemap, out int tileSize, out int cols, out int rows)
     {
-        int w = Math.Max(1, (int)mapWidth);
-        int h = Math.Max(1, (int)mapHeight);
-        int lod = Math.Min(Math.Min(CountTrailingZeros(w - 1), CountTrailingZeros(h - 1)), 6);
-        tileSize = 1 << lod;
-        cols = Math.Max(1, (w - 1) / tileSize);
-        rows = Math.Max(1, (h - 1) / tileSize);
-    }
+        tileSize = 0;
+        cols = 0;
+        rows = 0;
 
-    static int CountTrailingZeros(int value)
-    {
-        if (value == 0)
-            return 32;
+        if (tilemap == null || tilemap.ChunkSize <= 1 || tilemap.GridWidth <= 0)
+            return false;
 
-        int count = 0;
-        while ((value & 1) == 0)
-        {
-            value >>= 1;
-            count++;
-        }
+        tileSize = tilemap.ChunkSize - 1;
+        cols = tilemap.GridWidth;
+        if (tilemap.Heightmap.Count % cols != 0)
+            return false;
 
-        return count;
+        rows = tilemap.Heightmap.Count / cols;
+        return rows > 0;
     }
 }

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("InspectWater")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d86ac1e23b3c3964b71b686a8c5a212deb15cdbc")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+30d85f7cb47a2c6f9656c1c81c49b4041b7b4849")]
 [assembly: System.Reflection.AssemblyProductAttribute("InspectWater")]
 [assembly: System.Reflection.AssemblyTitleAttribute("InspectWater")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

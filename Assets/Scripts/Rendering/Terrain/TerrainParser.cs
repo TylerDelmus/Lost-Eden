@@ -34,30 +34,41 @@ public sealed class TerrainParser
             yield break;
         }
 
-        if (!TryCreateAtlas(tilemap, out Texture2D atlas, out Rect[] texBounds))
+        if (tilemap.Heightmap == null || tilemap.Heightmap.Count == 0 || tilemap.ChunkSize <= 1)
+        {
+            Debug.LogError($"TerrainParser: No outdoor chunked ground for playfield {playfieldId}.");
+            yield break;
+        }
+
+        if (tilemap.GridWidth <= 0 || tilemap.Heightmap.Count % tilemap.GridWidth != 0)
+        {
+            Debug.LogError(
+                $"TerrainParser: Invalid chunk grid for playfield {playfieldId} " +
+                $"(count={tilemap.Heightmap.Count}, gridWidth={tilemap.GridWidth}).");
+            yield break;
+        }
+
+        if (!TryCreateAtlas(tilemap.TextureIds, out Texture2D atlas, out Rect[] texBounds))
         {
             Debug.LogError($"TerrainParser: Failed to build atlas for playfield {playfieldId}.");
             yield break;
         }
 
-        Material material = CreateAtlasMaterial(atlas);
-        ComputePatchGrid(tilemap.MapWidth, tilemap.MapHeight, out int tileSize, out int chunksX, out int chunksY);
-
-        var chunks = CollectChunks(tilemap, chunksX, chunksY, tileSize);
+        List<ChunkSource> chunks = CollectChunks(tilemap);
         if (chunks.Count == 0)
         {
-            Debug.LogError($"TerrainParser: No heightmap chunks for playfield {playfieldId}.");
+            Debug.LogError($"TerrainParser: No usable chunks for playfield {playfieldId}.");
             yield break;
         }
+
+        Material material = CreateAtlasMaterial(atlas);
 
         var root = new GameObject($"Playfield_{playfieldId}");
         root.transform.SetParent(parent, false);
 
         var chunkViews = new ChunkView[chunks.Count];
         for (int i = 0; i < chunks.Count; i++)
-        {
             chunkViews[i] = CreateChunkView(root.transform, chunks[i], material);
-        }
 
         yield return null;
 
@@ -106,60 +117,39 @@ public sealed class TerrainParser
         }
     }
 
-    /// <summary>
-    /// Matches AnarchyGroundData_t: tile_size from ctz of (mapDim-1), capped at LOD 6.
-    /// map_width/height are vertex counts; cell span is dim-1.
-    /// </summary>
-    static void ComputePatchGrid(uint mapWidth, uint mapHeight, out int tileSize, out int cols, out int rows)
+    static List<ChunkSource> CollectChunks(Tilemap tilemap)
     {
-        int w = Math.Max(1, (int)mapWidth);
-        int h = Math.Max(1, (int)mapHeight);
-        int lod = Math.Min(Math.Min(CountTrailingZeros(w - 1), CountTrailingZeros(h - 1)), 6);
-        tileSize = 1 << lod;
-        cols = Math.Max(1, (w - 1) / tileSize);
-        rows = Math.Max(1, (h - 1) / tileSize);
-    }
-
-    static int CountTrailingZeros(int value)
-    {
-        if (value == 0)
-            return 32;
-
-        int count = 0;
-        while ((value & 1) == 0)
-        {
-            value >>= 1;
-            count++;
-        }
-
-        return count;
-    }
-
-    static List<ChunkSource> CollectChunks(Tilemap tilemap, int chunksX, int chunksY, int tileSize)
-    {
+        int chunkSize = tilemap.ChunkSize;
+        int gridWidth = tilemap.GridWidth;
         var chunks = new List<ChunkSource>(tilemap.Heightmap.Count);
-        for (int y = 0; y < chunksY; y++)
+
+        for (int i = 0; i < tilemap.Heightmap.Count; i++)
         {
-            for (int x = 0; x < chunksX; x++)
+            ushort[,] heightmap = tilemap.Heightmap[i];
+            if (heightmap == null ||
+                heightmap.GetLength(0) != chunkSize ||
+                heightmap.GetLength(1) != chunkSize)
             {
-                int idx = chunksX * y + x;
-                if (idx >= tilemap.Heightmap.Count)
-                    continue;
-
-                if (!tilemap.TileMapDatas.TryGetValue(idx, out List<Tilemap.TileMapData> tileData) || tileData == null)
-                    continue;
-
-                chunks.Add(new ChunkSource
-                {
-                    ChunkX = x,
-                    ChunkY = y,
-                    TileSize = tileSize,
-                    HeightMod = tilemap.HeightMod,
-                    MapScale = tilemap.MapScale,
-                    Heightmap = tilemap.Heightmap[idx],
-                    TileData = tileData
-                });
+                continue;
             }
+
+            if (!tilemap.TileMapDatas.TryGetValue(i, out List<Tilemap.TileMapData> tileData) ||
+                tileData == null ||
+                tileData.Count == 0)
+            {
+                continue;
+            }
+
+            chunks.Add(new ChunkSource
+            {
+                ChunkX = i % gridWidth,
+                ChunkY = i / gridWidth,
+                ChunkSize = chunkSize,
+                HeightMod = tilemap.HeightMod,
+                MapScale = tilemap.MapScale,
+                Heightmap = heightmap,
+                TileData = tileData
+            });
         }
 
         return chunks;
@@ -174,7 +164,7 @@ public sealed class TerrainParser
             result[i] = TerrainChunkBuilder.Build(
                 c.ChunkX,
                 c.ChunkY,
-                c.TileSize,
+                c.ChunkSize,
                 c.HeightMod,
                 c.MapScale,
                 c.Heightmap,
@@ -226,6 +216,7 @@ public sealed class TerrainParser
         }
 
         var collider = root.AddComponent<MeshCollider>();
+        GameLayers.SetLayerRecursively(root, GameLayers.Ground);
 
         return new ChunkView
         {
@@ -262,21 +253,21 @@ public sealed class TerrainParser
             mesh.UploadMeshData(markNoLongerReadable: true);
     }
 
-    bool TryCreateAtlas(Tilemap tilemap, out Texture2D atlas, out Rect[] texBounds)
+    bool TryCreateAtlas(short[] textureIds, out Texture2D atlas, out Rect[] texBounds)
     {
         atlas = null;
         texBounds = Array.Empty<Rect>();
 
-        if (tilemap.TextureIds == null || tilemap.TextureIds.Length == 0)
+        if (textureIds == null || textureIds.Length == 0)
             return false;
 
-        var textures = new Texture2D[tilemap.TextureIds.Length];
-        for (int i = 0; i < tilemap.TextureIds.Length; i++)
+        var textures = new Texture2D[textureIds.Length];
+        for (int i = 0; i < textureIds.Length; i++)
         {
-            var ground = _database.Get<GroundTexture>(tilemap.TextureIds[i]);
+            var ground = _database.Get<GroundTexture>(textureIds[i]);
             if (ground?.JpgData == null || ground.JpgData.Length == 0)
             {
-                Debug.LogError($"TerrainParser: Missing GroundTexture {tilemap.TextureIds[i]}.");
+                Debug.LogError($"TerrainParser: Missing GroundTexture {textureIds[i]}.");
                 DestroyTextures(textures);
                 return false;
             }
@@ -284,7 +275,7 @@ public sealed class TerrainParser
             var tex = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: false);
             if (!tex.LoadImage(ground.JpgData, markNonReadable: false))
             {
-                Debug.LogError($"TerrainParser: Failed to decode GroundTexture {tilemap.TextureIds[i]}.");
+                Debug.LogError($"TerrainParser: Failed to decode GroundTexture {textureIds[i]}.");
                 UnityEngine.Object.Destroy(tex);
                 DestroyTextures(textures);
                 return false;
@@ -293,37 +284,94 @@ public sealed class TerrainParser
             textures[i] = tex;
         }
 
-        int padding = Math.Max(
-            16,
-            Math.Max(
-                _renderConfig.TerrainAtlasPadding,
-                (1 << Mathf.Max(0, _renderConfig.TerrainAtlasFirstMipToSoften))
-                    + _renderConfig.TerrainAtlasMipBlurPasses));
-
+        bool softenMips = _renderConfig.TerrainAtlasMipBlurPasses > 0;
         atlas = new Texture2D(4, 4, TextureFormat.RGBA32, mipChain: true);
         texBounds = atlas.PackTextures(
             textures,
-            padding,
+            _renderConfig.TerrainAtlasPadding,
             _renderConfig.TerrainAtlasMaxSize,
-            makeNoLongerReadable: false);
-        if (texBounds == null || texBounds.Length == 0)
+            makeNoLongerReadable: !softenMips);
+        atlas.name = "PlayfieldAtlas";
+        atlas.wrapMode = TextureWrapMode.Clamp;
+        atlas.filterMode = FilterMode.Bilinear;
+        atlas.anisoLevel = _renderConfig.TerrainAtlasAnisoLevel;
+        atlas.mipMapBias = _renderConfig.TerrainAtlasMipBias;
+
+        if (softenMips)
         {
-            DestroyTextures(textures);
-            atlas = null;
-            return false;
+            SoftenAtlasMips(
+                atlas,
+                _renderConfig.TerrainAtlasFirstMipToSoften,
+                _renderConfig.TerrainAtlasMipBlurPasses);
         }
 
-        atlas = RebuildAtlasWithSoftMips(
-            atlas,
-            texBounds,
-            gutterRadius: padding,
-            firstMipToSoften: _renderConfig.TerrainAtlasFirstMipToSoften,
-            blurPasses: _renderConfig.TerrainAtlasMipBlurPasses,
-            anisoLevel: _renderConfig.TerrainAtlasAnisoLevel,
-            mipMapBias: _renderConfig.TerrainAtlasMipBias);
-
         DestroyTextures(textures);
-        return true;
+        return texBounds != null && texBounds.Length > 0;
+    }
+
+    /// <summary>
+    /// Box-blurs distant mip levels so far tiles average out without softening underfoot.
+    /// </summary>
+    static void SoftenAtlasMips(Texture2D atlas, int softMipStart, int baseBlurPasses)
+    {
+        if (atlas == null || baseBlurPasses <= 0)
+        {
+            atlas?.Apply(updateMipmaps: false, makeNoLongerReadable: true);
+            return;
+        }
+
+        int start = Mathf.Clamp(softMipStart, 1, atlas.mipmapCount - 1);
+        for (int mip = start; mip < atlas.mipmapCount; mip++)
+        {
+            int w = Mathf.Max(1, atlas.width >> mip);
+            int h = Mathf.Max(1, atlas.height >> mip);
+            Color[] pixels = atlas.GetPixels(mip);
+            if (pixels == null || pixels.Length != w * h)
+                continue;
+
+            int passes = baseBlurPasses + (mip - start);
+            for (int pass = 0; pass < passes; pass++)
+                pixels = BoxBlur3x3(pixels, w, h);
+
+            atlas.SetPixels(pixels, mip);
+        }
+
+        atlas.Apply(updateMipmaps: false, makeNoLongerReadable: true);
+    }
+
+    static Color[] BoxBlur3x3(Color[] src, int width, int height)
+    {
+        var dst = new Color[src.Length];
+        for (int y = 0; y < height; y++)
+        {
+            int row = y * width;
+            for (int x = 0; x < width; x++)
+            {
+                Color sum = Color.clear;
+                int count = 0;
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    int sy = y + dy;
+                    if ((uint)sy >= (uint)height)
+                        continue;
+
+                    int srow = sy * width;
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        int sx = x + dx;
+                        if ((uint)sx >= (uint)width)
+                            continue;
+
+                        sum += src[srow + sx];
+                        count++;
+                    }
+                }
+
+                dst[row + x] = count > 0 ? sum / count : src[row + x];
+            }
+        }
+
+        return dst;
     }
 
     static Material CreateAtlasMaterial(Texture2D atlas)
@@ -338,136 +386,8 @@ public sealed class TerrainParser
             material.SetFloat("_Smoothness", 0f);
         if (material.HasProperty("_Metallic"))
             material.SetFloat("_Metallic", 0f);
-        if (material.HasProperty("_BaseColor"))
-            material.SetColor("_BaseColor", Color.white);
 
         return material;
-    }
-
-    /// <summary>
-    /// Mip 0 stays sharp (underfoot). Higher mips are blurred and gutters sealed
-    /// so distant ground softens without mip bleeding between atlas tiles.
-    /// </summary>
-    static Texture2D RebuildAtlasWithSoftMips(
-        Texture2D packed,
-        Rect[] texBounds,
-        int gutterRadius,
-        int firstMipToSoften,
-        int blurPasses,
-        int anisoLevel,
-        float mipMapBias)
-    {
-        int width = packed.width;
-        int height = packed.height;
-        Color[] mip0 = packed.GetPixels(0);
-        DilateAtlasTileBorders(mip0, width, height, texBounds, Mathf.Max(1, gutterRadius));
-
-        var rebuilt = new Texture2D(width, height, TextureFormat.RGBA32, mipChain: true, linear: false);
-        rebuilt.name = "PlayfieldAtlas";
-        rebuilt.SetPixels(mip0);
-        rebuilt.Apply(updateMipmaps: true, makeNoLongerReadable: false);
-
-        firstMipToSoften = Mathf.Clamp(firstMipToSoften, 1, rebuilt.mipmapCount - 1);
-        blurPasses = Mathf.Max(0, blurPasses);
-
-        for (int mip = firstMipToSoften; mip < rebuilt.mipmapCount; mip++)
-        {
-            Color[] pixels = rebuilt.GetPixels(mip);
-            int mipW = Mathf.Max(1, width >> mip);
-            int mipH = Mathf.Max(1, height >> mip);
-            if (mipW * mipH != pixels.Length)
-            {
-                mipW = Mathf.Max(1, Mathf.RoundToInt(Mathf.Sqrt(pixels.Length)));
-                mipH = Mathf.Max(1, pixels.Length / mipW);
-            }
-
-            int passes = blurPasses + (mip - firstMipToSoften);
-            for (int pass = 0; pass < passes; pass++)
-                pixels = BoxBlur3x3(pixels, mipW, mipH);
-
-            DilateAtlasTileBorders(pixels, mipW, mipH, texBounds, Mathf.Max(1, gutterRadius >> mip));
-            rebuilt.SetPixels(pixels, mip);
-        }
-
-        rebuilt.Apply(updateMipmaps: false, makeNoLongerReadable: true);
-        rebuilt.wrapMode = TextureWrapMode.Clamp;
-        rebuilt.filterMode = FilterMode.Trilinear;
-        rebuilt.anisoLevel = Mathf.Clamp(anisoLevel, 0, 16);
-        rebuilt.mipMapBias = mipMapBias;
-
-        UnityEngine.Object.Destroy(packed);
-        return rebuilt;
-    }
-
-    static void DilateAtlasTileBorders(Color[] pixels, int width, int height, Rect[] texBounds, int radius)
-    {
-        if (pixels == null || texBounds == null || radius <= 0)
-            return;
-
-        for (int i = 0; i < texBounds.Length; i++)
-        {
-            Rect r = texBounds[i];
-            int x0 = Mathf.Clamp(Mathf.FloorToInt(r.x * width), 0, width - 1);
-            int y0 = Mathf.Clamp(Mathf.FloorToInt(r.y * height), 0, height - 1);
-            int x1 = Mathf.Clamp(Mathf.CeilToInt((r.x + r.width) * width), x0 + 1, width);
-            int y1 = Mathf.Clamp(Mathf.CeilToInt((r.y + r.height) * height), y0 + 1, height);
-
-            for (int d = 1; d <= radius; d++)
-            {
-                for (int y = y0; y < y1; y++)
-                {
-                    int left = x0 - d;
-                    if (left >= 0)
-                        pixels[y * width + left] = pixels[y * width + x0];
-
-                    int right = x1 - 1 + d;
-                    if (right < width)
-                        pixels[y * width + right] = pixels[y * width + (x1 - 1)];
-                }
-
-                for (int x = Math.Max(0, x0 - d); x < Math.Min(width, x1 + d); x++)
-                {
-                    int bottom = y0 - d;
-                    if (bottom >= 0)
-                    {
-                        int srcX = Mathf.Clamp(x, x0, x1 - 1);
-                        pixels[bottom * width + x] = pixels[y0 * width + srcX];
-                    }
-
-                    int top = y1 - 1 + d;
-                    if (top < height)
-                    {
-                        int srcX = Mathf.Clamp(x, x0, x1 - 1);
-                        pixels[top * width + x] = pixels[(y1 - 1) * width + srcX];
-                    }
-                }
-            }
-        }
-    }
-
-    static Color[] BoxBlur3x3(Color[] src, int width, int height)
-    {
-        var dst = new Color[src.Length];
-        for (int y = 0; y < height; y++)
-        {
-            int y0 = Math.Max(0, y - 1);
-            int y1 = y;
-            int y2 = Math.Min(height - 1, y + 1);
-            for (int x = 0; x < width; x++)
-            {
-                int x0 = Math.Max(0, x - 1);
-                int x1 = x;
-                int x2 = Math.Min(width - 1, x + 1);
-
-                Color sum =
-                    src[y0 * width + x0] + src[y0 * width + x1] + src[y0 * width + x2] +
-                    src[y1 * width + x0] + src[y1 * width + x1] + src[y1 * width + x2] +
-                    src[y2 * width + x0] + src[y2 * width + x1] + src[y2 * width + x2];
-                dst[y * width + x] = sum * (1f / 9f);
-            }
-        }
-
-        return dst;
     }
 
     static void DestroyTextures(Texture2D[] textures)
@@ -496,7 +416,7 @@ public sealed class TerrainParser
     {
         public int ChunkX;
         public int ChunkY;
-        public int TileSize;
+        public int ChunkSize;
         public float HeightMod;
         public float MapScale;
         public ushort[,] Heightmap;

@@ -256,6 +256,8 @@ public class PlayfieldFactory : MonoBehaviour
         var statelParser = new StatelParser(_resourceDatabase, _renderConfig, abiffMaterials);
         yield return statelParser.BuildCoroutine(zoneId, _playfieldRoot);
 
+        AttachLocality(zoneId);
+
         _playfieldReady = true;
         FlushPendingCharacters();
         Debug.Log($"[PlayfieldFactory] Playfield ready for dynels (id={zoneId}, prefab={(_characterPrefab != null ? _characterPrefab.name : "MISSING")})");
@@ -314,6 +316,21 @@ public class PlayfieldFactory : MonoBehaviour
         _playerController.SetLocalPlayer(localPlayer);
         _networkClient.EnterPlay();
         Debug.Log($"[PlayfieldFactory] Local player set from FullCharacter: {localPlayer.Identity.Type}:{localPlayer.Identity.Instance} \"{localPlayer.Name}\"");
+    }
+
+    void AttachLocality(int playfieldId)
+    {
+        if (_playfieldRoot == null)
+            return;
+
+        if (!PlayfieldLayoutFactory.TryCreate(_resourceDatabase, playfieldId, out IPlayfieldCellLayout layout))
+        {
+            Debug.LogWarning($"[PlayfieldFactory] Cell locality not attached for playfield {playfieldId}.");
+            return;
+        }
+
+        var locality = _playfieldRoot.gameObject.AddComponent<PlayfieldLocality>();
+        locality.Initialize(layout, _resourceDatabase, _playerController);
     }
 
     Identity LocalPlayerIdentity()

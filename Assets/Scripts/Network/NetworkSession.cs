@@ -17,7 +17,7 @@ class SessionCookie
 
 class NetworkSession
 {
-    const float ZoneConnectDelaySeconds = 5f;
+    const float ZoneConnectDelaySeconds = 0f;
 
     readonly NetworkClient _client;
     readonly MessageSerializer _serializer = new MessageSerializer();

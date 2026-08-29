@@ -49,7 +49,8 @@ public class CameraController : MonoBehaviour
     private float _currentFollowDistance;
 
     [SerializeField]
-    private LayerMask _aimLayerMask;
+    [UnityEngine.Serialization.FormerlySerializedAs("_aimLayerMask")]
+    private LayerMask _collisionMask;
 
     private EulerAngles _currentAngles = new EulerAngles();
     private EulerAngles _targetAngles = new EulerAngles();
@@ -115,10 +116,25 @@ public class CameraController : MonoBehaviour
         _followRoot = _pendingTarget.transform;
         _pendingTarget = null;
 
+        Vector3 characterForward = _followRoot.forward;
+        Vector3 characterForwardFlat = new Vector3(characterForward.x, 0f, characterForward.z);
+        if (characterForwardFlat.sqrMagnitude < 0.0001f)
+            characterForwardFlat = Vector3.forward;
+        else
+            characterForwardFlat.Normalize();
+
+        float yaw = Mathf.Atan2(characterForwardFlat.x, characterForwardFlat.z) * Mathf.Rad2Deg;
+        _currentAngles.Yaw = _targetAngles.Yaw = yaw;
+        _currentAngles.Pitch = _targetAngles.Pitch = 0f;
+
+        _targetFollowDistance = _defaultFollowDistance;
+        _currentFollowDistance = _defaultFollowDistance;
+
         Vector3 followPos = GetFollowPosition();
-        Vector3 directionToCamera = (transform.position - followPos).normalized;
-        _currentAngles.Yaw = _targetAngles.Yaw = Mathf.Atan2(directionToCamera.x, directionToCamera.z) * Mathf.Rad2Deg;
-        _currentAngles.Pitch = _targetAngles.Pitch = Mathf.Asin(directionToCamera.y) * Mathf.Rad2Deg;
+        Vector3 cameraDirection = Quaternion.Euler(0f, yaw, 0f) * Vector3.back;
+        transform.SetPositionAndRotation(
+            followPos + cameraDirection * _currentFollowDistance,
+            Quaternion.Euler(0f, yaw, 0f));
     }
 
     internal void ClearTarget()
@@ -190,7 +206,7 @@ public class CameraController : MonoBehaviour
         Vector3 cameraDirection = Quaternion.Euler(_currentAngles.Pitch, _currentAngles.Yaw, 0f) * Vector3.back;
         Vector3 followTargetPos = GetFollowPosition();
 
-        if (Physics.SphereCast(followTargetPos, 0.3f, -Camera.transform.forward, out RaycastHit hit, _targetFollowDistance, _aimLayerMask))
+        if (Physics.SphereCast(followTargetPos, 0.3f, -Camera.transform.forward, out RaycastHit hit, _targetFollowDistance, _collisionMask))
         {
             _currentFollowDistance = Vector3.Distance(hit.point, followTargetPos);
         }

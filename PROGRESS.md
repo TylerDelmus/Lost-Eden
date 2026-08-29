@@ -7,7 +7,7 @@
 |---------|--------|-------|
 | Terrain | Partial | All terrains load; needs mipmap shader for ground texture atlas |
 | Static Statels | Done | |
-| Collision (KDTree) | Not started | |
+| Collision (KDTree) | Partial | Cell locality streams SurfaceResource MeshColliders (Chebyshev ≤2 + warm cache); indoor rooms not started |
 
 ### Indoor Playfields
 | Feature | Status | Notes |

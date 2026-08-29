@@ -350,7 +350,7 @@ MonoBehaviour:
   _minFollowDistance: 1
   _maxFollowDistance: 15
   _zoomStep: 2
-  _aimLayerMask:
+  _collisionMask:
     serializedVersion: 2
     m_Bits: 0
   Camera: {fileID: 6632926322940167517}

@@ -29,4 +29,12 @@ public sealed class ResourceDatabase
 
         return Rdb.Get<T>(type, instance);
     }
+
+    public byte[] GetRaw(int recordType, int instance)
+    {
+        if (Rdb == null)
+            throw new InvalidOperationException("ResourceDatabase has not been initialized.");
+
+        return Rdb.GetRaw(recordType, instance);
+    }
 }
