@@ -291,7 +291,8 @@ public class PlayfieldFactory : MonoBehaviour
 
         AttachLocality(zoneId);
 
-        yield return BakeReflectionProbesRoutine();
+        if (_renderConfig == null || _renderConfig.UseReflectionProbe)
+            yield return BakeReflectionProbesRoutine();
 
         _playfieldReady = true;
         FlushPendingCharacters();

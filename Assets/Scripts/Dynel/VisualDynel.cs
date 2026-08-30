@@ -69,8 +69,8 @@ public class VisualDynel : MonoBehaviour
     bool _meshHeightValid;
 
     /// <summary>
-    /// AO GetIndicatorPosition: head attractor + 0.5 Y (clamp local Y to 1.5),
-    /// else plain mesh height + 0.3, else (0, 2, 0).
+    /// Indicator world position: head attractor + 0.5 Y,
+    /// else mesh height + 0.3, else (0, 2, 0).
     /// </summary>
     public bool TryGetIndicatorPosition(Transform dynelTransform, out UnityEngine.Vector3 worldPos)
     {
@@ -83,9 +83,6 @@ public class VisualDynel : MonoBehaviour
         if (TryGetAttractor(AttractorPlace.Head, out Attractor head) && head != null)
         {
             worldPos = head.transform.position + UnityEngine.Vector3.up * 0.5f;
-            float localY = worldPos.y - dynelTransform.position.y;
-            if (localY < 1.5f)
-                worldPos.y = dynelTransform.position.y + 1.5f;
             return true;
         }
 

@@ -27,3 +27,4 @@ MonoBehaviour:
   _shoreWaveMaterial: {fileID: 0}
   _applyAoPlayfieldTweaks: 1
   _applyAoSkyMeshes: 1
+  _useReflectionProbe: 0

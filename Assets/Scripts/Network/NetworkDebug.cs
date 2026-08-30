@@ -8,7 +8,7 @@ using UnityEngine;
 static class NetworkDebug
 {
     public const bool LogRawMessages = false;
-    public const bool LogLogin = true;
+    public const bool LogLogin = false;
     const int MaxHexBytes = 256;
 
     public static void LogPacket(string direction, byte[] raw, Message message)

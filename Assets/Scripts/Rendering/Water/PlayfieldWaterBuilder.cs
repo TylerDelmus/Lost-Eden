@@ -134,10 +134,10 @@ public sealed class PlayfieldWaterBuilder
         water.ripples = true;
         water.ripplesWindSpeed = 5f;
         water.ripplesChaos = 1f;
-        water.refractionColor = new Color(0.2f, 0.55f, 0.55f).linear;
+        water.refractionColor = new Color(0xE2 / 255f, 0xE2 / 255f, 0xE2 / 255f).linear;
         water.maxRefractionDistance = 0.35f;
         water.absorptionDistance = 5f;
-        water.scatteringColor = new Color(0f, 0.5f, 0.6f).linear;
+        water.scatteringColor = Color.white.linear;
         water.ambientScattering = 0.6f;
         water.heightScattering = 0f;
         water.displacementScattering = 0f;

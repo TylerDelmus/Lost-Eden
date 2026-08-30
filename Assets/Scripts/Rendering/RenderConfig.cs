@@ -33,6 +33,10 @@ public sealed class RenderConfig : ScriptableObject
     [Tooltip("When enabled, spawn AO camera-locked sky/cloud meshes (star dome, thick clouds, horizon, etc.).")]
     [SerializeField] bool _applyAoSkyMeshes = false;
 
+    [Header("Reflections")]
+    [Tooltip("When enabled, bake HDRP reflection probes after a playfield finishes loading.")]
+    [SerializeField] bool _useReflectionProbe = true;
+
     public float[] TerrainLodScreenHeights => _terrainLodScreenHeights;
     public int TerrainAtlasMaxSize => _terrainAtlasMaxSize;
     public int TerrainAtlasPadding => _terrainAtlasPadding;
@@ -45,6 +49,7 @@ public sealed class RenderConfig : ScriptableObject
     public Material ShoreWaveMaterial => _shoreWaveMaterial;
     public bool ApplyAoPlayfieldTweaks => _applyAoPlayfieldTweaks;
     public bool ApplyAoSkyMeshes => _applyAoSkyMeshes;
+    public bool UseReflectionProbe => _useReflectionProbe;
 
     public float GetTerrainLodScreenHeight(int lod)
     {
