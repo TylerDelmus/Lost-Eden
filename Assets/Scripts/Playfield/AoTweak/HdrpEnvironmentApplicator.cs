@@ -24,7 +24,7 @@ public sealed class HdrpEnvironmentApplicator
     VolumeProfile _clonedProfile;
     VolumeProfile _savedGlobalDefaultProfile;
     Fog _fog;
-    bool _hadFog;
+    bool _hadVolumeClone;
 
     HDAdditionalLightData _primaryHd;
     Light _primaryLight;
@@ -65,20 +65,14 @@ public sealed class HdrpEnvironmentApplicator
 
         Dictionary<string, AoObject> objects = AoTweakObjectParser.Parse(flattened);
         PlayfieldEnvironmentTweak tweak = AoTweakEnvironmentBuilder.Build(objects);
-        LostEdenTweakFile le = LostEdenTweakCatalog.LoadMergedForIncludes(includedInOrder);
+        LostEdenTweakFile le = LostEdenTweakCatalog.LoadMergedForPlayfield(playfieldId, includedInOrder);
 
         bool companion = le.CompanionSun != null && le.CompanionSun.Enabled == true;
         bool primarySun = le.PrimarySun != null;
         bool leFog = le.Fog != null;
-        int skyCount = loadSkyMeshes ? tweak.SkyMeshes.Count : 0;
-        if (!leFog && skyCount == 0 && !companion && !primarySun)
-        {
-            Debug.Log($"[AoTweak] Playfield {playfieldId}: tweak parsed but nothing applicable.");
-            return;
-        }
 
-        if (leFog)
-            CloneGlobalVolumeForFog();
+        // Always runtime-clone the Global Volume so playfield work never mutates the shared asset.
+        CloneGlobalVolume();
         ApplyLostEdenFogOverlay(le);
         if (loadSkyMeshes)
         {
@@ -92,6 +86,7 @@ public sealed class HdrpEnvironmentApplicator
             $"[AoTweak] Applied playfield {playfieldId}: " +
             $"skyMeshes={(loadSkyMeshes ? tweak.SkyMeshes.Count : 0)}" +
             $"{(loadSkyMeshes ? "" : " (skipped)")}, leFog={leFog}, " +
+            $"volumeClone={_hadVolumeClone}, " +
             $"primarySun={primarySun}, companionSun={companion}");
     }
 
@@ -111,15 +106,19 @@ public sealed class HdrpEnvironmentApplicator
 
         if (_applied)
         {
-            if (_hadFog)
-                DestroyFogClone();
+            if (_hadVolumeClone)
+                DestroyVolumeClone();
             RestorePrimarySun();
         }
+
+        // Always drop clone refs even if Apply failed mid-way before _applied.
+        if (_clonedVolumeGo != null || _clonedProfile != null)
+            DestroyVolumeClone();
 
         _applied = false;
         _volume = null;
         _fog = null;
-        _hadFog = false;
+        _hadVolumeClone = false;
         _primaryHd = null;
         _primaryLight = null;
         _savedPrimary = false;
@@ -252,41 +251,41 @@ public sealed class HdrpEnvironmentApplicator
         hd.flareMultiplier = flareMultiplier;
     }
 
-    void CloneGlobalVolumeForFog()
+    /// <summary>
+    /// Instantiates a per-playfield <c>AoTweakGlobalVolume</c> with a cloned profile and disables
+    /// the scene Global Volume. Always runs on Apply so the shared asset is never mutated.
+    /// Destroyed on Clear; next Apply creates a new one.
+    /// </summary>
+    void CloneGlobalVolume()
     {
-        DestroyFogClone();
+        DestroyVolumeClone();
 
-        _sourceVolume = FindGlobalVolume();
-        _hadFog = false;
+        _sourceVolume = FindSceneGlobalVolume();
+        _hadVolumeClone = false;
         _fog = null;
         _volume = null;
         if (_sourceVolume == null)
         {
-            Debug.LogWarning("[AoTweak] No Global Volume found; skipping fog.");
+            Debug.LogWarning("[AoTweak] No Global Volume found; skipping volume clone.");
             return;
         }
 
         VolumeProfile sourceProfile = _sourceVolume.sharedProfile;
-        if (sourceProfile == null || !sourceProfile.TryGet(out Fog _) || sourceProfile.components == null)
+        if (sourceProfile == null || sourceProfile.components == null)
         {
-            Debug.LogWarning("[AoTweak] Global Volume has no Fog profile; skipping fog.");
+            Debug.LogWarning("[AoTweak] Global Volume has no profile; skipping volume clone.");
             return;
         }
 
         _clonedProfile = CloneVolumeProfile(sourceProfile);
-        if (_clonedProfile == null || !_clonedProfile.TryGet(out _fog) || _fog == null)
-        {
-            if (_clonedProfile != null)
-            {
-                UnityEngine.Object.Destroy(_clonedProfile);
-                _clonedProfile = null;
-            }
-            _fog = null;
+        if (_clonedProfile == null)
             return;
-        }
+
+        _clonedProfile.TryGet(out _fog);
 
         _clonedVolumeGo = UnityEngine.Object.Instantiate(_sourceVolume.gameObject);
         _clonedVolumeGo.name = "AoTweakGlobalVolume";
+        _clonedVolumeGo.transform.SetParent(null, true);
         _volume = _clonedVolumeGo.GetComponent<Volume>();
         if (_volume == null)
         {
@@ -298,8 +297,10 @@ public sealed class HdrpEnvironmentApplicator
             return;
         }
 
+        _volume.enabled = true;
         _volume.sharedProfile = _clonedProfile;
         _volume.priority = _sourceVolume.priority + 1f;
+        _volume.weight = 1f;
 
         _sourceVolumeEnabled = _sourceVolume.enabled;
         _sourceVolumeWeight = _sourceVolume.weight;
@@ -308,10 +309,10 @@ public sealed class HdrpEnvironmentApplicator
         _savedGlobalDefaultProfile = VolumeManager.instance.globalDefaultProfile;
         VolumeManager.instance.SetGlobalDefaultProfile(_clonedProfile);
 
-        _hadFog = true;
+        _hadVolumeClone = true;
     }
 
-    void DestroyFogClone()
+    void DestroyVolumeClone()
     {
         if (_savedGlobalDefaultProfile != null || VolumeManager.instance.globalDefaultProfile == _clonedProfile)
         {
@@ -340,7 +341,7 @@ public sealed class HdrpEnvironmentApplicator
 
         _volume = null;
         _fog = null;
-        _hadFog = false;
+        _hadVolumeClone = false;
     }
 
     static VolumeProfile CloneVolumeProfile(VolumeProfile source)
@@ -361,7 +362,7 @@ public sealed class HdrpEnvironmentApplicator
 
     void ApplyLostEdenFogOverlay(LostEdenTweakFile le)
     {
-        if (!_hadFog || _fog == null || le?.Fog == null)
+        if (!_hadVolumeClone || _fog == null || le?.Fog == null)
             return;
 
         LostEdenFogTweak fog = le.Fog;
@@ -564,11 +565,15 @@ public sealed class HdrpEnvironmentApplicator
             var follower = visual.AddComponent<AoSkyMeshFollower>();
             follower.Init(placement.PositionOffset);
 
+            int transparentFx = LayerMask.NameToLayer("TransparentFX");
             var renderers = visual.GetComponentsInChildren<Renderer>(true);
             for (int r = 0; r < renderers.Length; r++)
             {
                 renderers[r].shadowCastingMode = ShadowCastingMode.Off;
                 renderers[r].receiveShadows = false;
+                // Keep additive sky out of lighting/probe interactions; exposure still meters color.
+                if (transparentFx >= 0)
+                    renderers[r].gameObject.layer = transparentFx;
             }
 
             spawned++;
@@ -627,7 +632,7 @@ public sealed class HdrpEnvironmentApplicator
         return best;
     }
 
-    static Volume FindGlobalVolume()
+    static Volume FindSceneGlobalVolume()
     {
         GameObject go = GameObject.Find("Global Volume");
         if (go != null)
@@ -640,10 +645,15 @@ public sealed class HdrpEnvironmentApplicator
         Volume[] volumes = UnityEngine.Object.FindObjectsByType<Volume>(FindObjectsSortMode.None);
         for (int i = 0; i < volumes.Length; i++)
         {
-            if (volumes[i] != null && volumes[i].isGlobal)
-                return volumes[i];
+            Volume volume = volumes[i];
+            if (volume == null || !volume.isGlobal)
+                continue;
+            // Never treat the per-playfield clone as the scene source.
+            if (volume.gameObject.name == "AoTweakGlobalVolume")
+                continue;
+            return volume;
         }
 
-        return volumes != null && volumes.Length > 0 ? volumes[0] : null;
+        return null;
     }
 }

@@ -95,20 +95,12 @@ public sealed class AbiffMaterialFactory
                 material.SetTexture("_MainTex", diffuse);
         }
 
-        Color emis = new Color(
-            desc.Emissive.r * intensity,
-            desc.Emissive.g * intensity,
-            desc.Emissive.b * intensity,
-            1f);
-        HDMaterial.SetEmissiveColor(material, emis);
-
-        if (emission != null)
-        {
-            if (material.HasProperty("_EmissiveColorMap"))
-                material.SetTexture("_EmissiveColorMap", emission);
-            else if (material.HasProperty("_EmissionMap"))
-                material.SetTexture("_EmissionMap", emission);
-        }
+        // Sky is already Unlit additive via _UnlitColor. Extra emissive double-counts HDR
+        // energy and pulls Automatic Exposure down (washes shadows / weakens sun on meshes).
+        HDMaterial.SetEmissiveColor(material, Color.black);
+        if (material.HasProperty("_EmissiveIntensity"))
+            material.SetFloat("_EmissiveIntensity", 0f);
+        _ = emission; // AO emission maps unused for camera-locked sky unlit
 
         // Camera-locked sky: no depth write, LessEqual depth test.
         // AO sky meshes have mixed winding — always double-sided (cull off).
@@ -167,15 +159,6 @@ public sealed class AbiffMaterialFactory
             c.g *= intensity;
             c.b *= intensity;
             material.SetColor("_Color", c);
-        }
-
-        if (material.HasProperty("_EmissiveColor"))
-        {
-            Color e = material.GetColor("_EmissiveColor");
-            e.r *= intensity;
-            e.g *= intensity;
-            e.b *= intensity;
-            material.SetColor("_EmissiveColor", e);
         }
 
         HDMaterial.ValidateMaterial(material);

@@ -434,6 +434,7 @@ public class PlayfieldFactory : MonoBehaviour
 
         try
         {
+            _aoEnvironment?.Clear();
             var abiffLoader = new AbiffLoader(_resourceDatabase, abiffMaterials);
             _aoEnvironment = new HdrpEnvironmentApplicator(_resourceDatabase, abiffLoader);
             _aoEnvironment.Apply(playfieldId, _renderConfig.ApplyAoSkyMeshes);

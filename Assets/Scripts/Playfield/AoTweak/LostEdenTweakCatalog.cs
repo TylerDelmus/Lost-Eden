@@ -8,6 +8,7 @@ using UnityEngine;
 /// <summary>
 /// Loads Lost Eden JSON overlays from project/build <c>twk/</c>, named like AO tweak files
 /// (e.g. <c>Tweak_Rubi-Ka_Sun.json</c>). Overlays merge in include order; later files win.
+/// <c>Tweak_Playfield_&lt;id&gt;.json</c> is always applied last for that playfield.
 /// </summary>
 public static class LostEdenTweakCatalog
 {
@@ -18,6 +19,22 @@ public static class LostEdenTweakCatalog
     };
 
     public static string TwkDirectory => PlayfieldTweakCatalog.TwkDirectory;
+
+    public static LostEdenTweakFile LoadMergedForPlayfield(int playfieldId, IEnumerable<string> aoIncludeFileNames)
+    {
+        LostEdenTweakFile merged = LoadMergedForIncludes(aoIncludeFileNames);
+
+        // Playfield LE overlay always wins over shared includes (entry is first in AO include order).
+        string playfieldJson = $"Tweak_Playfield_{playfieldId}.json";
+        LostEdenTweakFile playfieldOverlay = TryLoad(playfieldJson);
+        if (playfieldOverlay != null)
+        {
+            MergeInto(merged, playfieldOverlay);
+            Debug.Log($"[AoTweak] LE playfield overlay loaded: {playfieldJson}");
+        }
+
+        return merged;
+    }
 
     public static LostEdenTweakFile LoadMergedForIncludes(IEnumerable<string> aoIncludeFileNames)
     {
@@ -32,6 +49,10 @@ public static class LostEdenTweakCatalog
                 continue;
 
             string jsonName = ToJsonFileName(aoName);
+            // Applied again last via LoadMergedForPlayfield so shared includes do not override it.
+            if (IsPlayfieldTweakFileName(jsonName))
+                continue;
+
             LostEdenTweakFile overlay = TryLoad(jsonName);
             if (overlay == null)
                 continue;
@@ -45,6 +66,12 @@ public static class LostEdenTweakCatalog
             Debug.Log($"[AoTweak] Merged {loaded} Lost Eden tweak overlay(s).");
 
         return merged;
+    }
+
+    static bool IsPlayfieldTweakFileName(string jsonFileName)
+    {
+        return jsonFileName.StartsWith("Tweak_Playfield_", StringComparison.OrdinalIgnoreCase)
+            && jsonFileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
     }
 
     public static void ClearCache()

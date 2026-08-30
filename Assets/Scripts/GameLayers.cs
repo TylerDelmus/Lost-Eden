@@ -5,6 +5,7 @@ public static class GameLayers
     public const string GroundName = "Ground";
 
     static int _ground = int.MinValue;
+    static int _groundMask = int.MinValue;
 
     public static int Ground
     {
@@ -18,6 +19,21 @@ public static class GameLayers
             }
 
             return _ground;
+        }
+    }
+
+    /// <summary>Mask for world occlusion (terrain / surface shells).</summary>
+    public static int GroundMask
+    {
+        get
+        {
+            if (_groundMask == int.MinValue)
+            {
+                int layer = Ground;
+                _groundMask = layer >= 0 ? 1 << layer : 0;
+            }
+
+            return _groundMask;
         }
     }
 

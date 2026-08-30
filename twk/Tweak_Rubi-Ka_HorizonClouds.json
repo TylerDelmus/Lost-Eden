@@ -9,10 +9,5 @@
     "HorizonCloudsRim": {
       "enabled": false
     }
-  },
-  "fog": {
-    "attenuationDistance": 500,
-    "baseHeight": 50,
-    "tintRgb": [1.90185714, 1.95487618, 2.67015696, 1]
   }
 }

@@ -25,6 +25,6 @@
     }
   ],    
   "fog": {
-    "attenuationDistance": 1000
+    "attenuationDistance": 1500
   }
 }

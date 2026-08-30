@@ -7,7 +7,8 @@ using UnityEngine;
 using UnityEngine.Rendering.HighDefinition;
 
 /// <summary>
-/// Per-playfield JSON tweaks from project/build folder <c>twk/&lt;playfieldId&gt;.json</c>.
+/// Per-playfield JSON tweaks from project/build <c>twk/Tweak_Playfield_&lt;id&gt;.json</c>
+/// (same naming as AO / Lost Eden overlays). Falls back to <c>twk/&lt;id&gt;.json</c>.
 /// </summary>
 public static class PlayfieldTweakCatalog
 {
@@ -87,7 +88,9 @@ public static class PlayfieldTweakCatalog
 
     static PlayfieldTweakFile LoadFromDisk(int playfieldId)
     {
-        string path = Path.Combine(TwkDirectory, $"{playfieldId}.json");
+        string preferred = Path.Combine(TwkDirectory, $"Tweak_Playfield_{playfieldId}.json");
+        string legacy = Path.Combine(TwkDirectory, $"{playfieldId}.json");
+        string path = File.Exists(preferred) ? preferred : legacy;
         if (!File.Exists(path))
             return null;
 

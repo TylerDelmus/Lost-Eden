@@ -9,8 +9,8 @@ internal class ScreenNameplateOverlay : ObjectPoolOverlay<ScreenNameplateView>
     readonly Dictionary<Identity, ScreenNameplateView> _activeNameplates = new();
     readonly Dictionary<Identity, ScreenNameplateView> _hiddenNameplates = new();
     readonly List<Identity> _toRemove = new();
-    readonly List<Identity> _toHideDistance = new();
-    readonly List<Identity> _toShowDistance = new();
+    readonly List<Identity> _toHide = new();
+    readonly List<Identity> _toShow = new();
     readonly float _maxNameplateDistanceSq;
 
     readonly PlayerController _playerController;
@@ -147,8 +147,8 @@ internal class ScreenNameplateOverlay : ObjectPoolOverlay<ScreenNameplateView>
     public void Tick(Camera camera)
     {
         _toRemove.Clear();
-        _toHideDistance.Clear();
-        _toShowDistance.Clear();
+        _toHide.Clear();
+        _toShow.Clear();
 
         Character localPlayer = null;
         bool hasLocal = _playerController != null && _playerController.TryGetLocalPlayer(out localPlayer);
@@ -166,14 +166,11 @@ internal class ScreenNameplateOverlay : ObjectPoolOverlay<ScreenNameplateView>
             }
 
             bool isSelected = kvp.Value.Dynel == currentTarget;
-            if (hasLocal && !isSelected)
+            if (hasLocal && kvp.Value.Dynel != localPlayer
+                && !ShouldShowNameplate(camera, localPlayerPos, kvp.Value.Dynel, isSelected))
             {
-                float sqr = (localPlayerPos - kvp.Value.Dynel.Position).sqrMagnitude;
-                if (sqr > _maxNameplateDistanceSq)
-                {
-                    _toHideDistance.Add(kvp.Key);
-                    continue;
-                }
+                _toHide.Add(kvp.Key);
+                continue;
             }
 
             if ((kvp.Value.State & NameplateState.Disabled) != 0)
@@ -191,23 +188,17 @@ internal class ScreenNameplateOverlay : ObjectPoolOverlay<ScreenNameplateView>
             }
 
             bool isSelected = kvp.Value.Dynel == currentTarget;
-            if (!hasLocal || isSelected)
-            {
-                _toShowDistance.Add(kvp.Key);
-                continue;
-            }
-
-            float sqr = (localPlayerPos - kvp.Value.Dynel.Position).sqrMagnitude;
-            if (sqr <= _maxNameplateDistanceSq)
-                _toShowDistance.Add(kvp.Key);
+            if (!hasLocal || kvp.Value.Dynel == localPlayer
+                || ShouldShowNameplate(camera, localPlayerPos, kvp.Value.Dynel, isSelected))
+                _toShow.Add(kvp.Key);
         }
 
         for (int i = 0; i < _toRemove.Count; i++)
             HideNameplate(_toRemove[i]);
 
-        for (int i = 0; i < _toHideDistance.Count; i++)
+        for (int i = 0; i < _toHide.Count; i++)
         {
-            Identity id = _toHideDistance[i];
+            Identity id = _toHide[i];
             if (!_activeNameplates.TryGetValue(id, out ScreenNameplateView view))
                 continue;
 
@@ -216,9 +207,9 @@ internal class ScreenNameplateOverlay : ObjectPoolOverlay<ScreenNameplateView>
             view.Root.style.display = DisplayStyle.None;
         }
 
-        for (int i = 0; i < _toShowDistance.Count; i++)
+        for (int i = 0; i < _toShow.Count; i++)
         {
-            Identity id = _toShowDistance[i];
+            Identity id = _toShow[i];
             if (!_hiddenNameplates.TryGetValue(id, out ScreenNameplateView view))
                 continue;
 
@@ -236,5 +227,17 @@ internal class ScreenNameplateOverlay : ObjectPoolOverlay<ScreenNameplateView>
             bool isTargeted = currentTarget == localPlayer;
             localView.Root.style.display = isTargeted ? DisplayStyle.Flex : DisplayStyle.None;
         }
+    }
+
+    bool ShouldShowNameplate(Camera camera, UnityEngine.Vector3 localPlayerPos, Dynel dynel, bool isSelected)
+    {
+        if (camera == null || !dynel.LineOfSightFrom(camera.transform.position))
+            return false;
+
+        if (isSelected)
+            return true;
+
+        float sqr = (localPlayerPos - dynel.Position).sqrMagnitude;
+        return sqr <= _maxNameplateDistanceSq;
     }
 }
