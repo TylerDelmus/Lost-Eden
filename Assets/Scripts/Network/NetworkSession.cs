@@ -133,6 +133,7 @@ class NetworkSession
                 else
                 {
                     _client.SetPhase(SessionPhase.EnteringZone);
+                    SendZoneLogin();
                 }
             });
         }
@@ -246,9 +247,6 @@ class NetworkSession
 
             switch (message.Header.PacketType)
             {
-                case PacketType.InitiateCompressionMessage:
-                    OnInitiateCompression();
-                    break;
                 case PacketType.PingMessage:
                     Pong(message);
                     break;
@@ -282,7 +280,7 @@ class NetworkSession
                 break;
             case SystemMessageType.LoginError:
                 var loginError = (LoginErrorMessage)sysMsg;
-                Debug.LogError($"[Network] Login error: {loginError.Error}");
+                NetworkDebug.LogLoginError(loginError.Error);
                 _client.RaiseLoginFailed(loginError.Error);
                 _client.HandleTransportDrop(unexpected: false);
                 break;
@@ -336,11 +334,6 @@ class NetworkSession
     {
         Debug.Log($"[Network] Zone redirection to {zoneRed.ServerIpAddress}:{zoneRed.ServerPort}");
         ScheduleZoneConnect(new IPEndPoint(zoneRed.ServerIpAddress, zoneRed.ServerPort));
-    }
-
-    void OnInitiateCompression()
-    {
-        SendZoneLogin();
     }
 
     void SendZoneLogin()

@@ -1,13 +1,13 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
-    <ui:Style src="ScreenNameplate.uss" />
+    <Style src="project://database/Assets/Resources/UI/ScreenNameplate.uss?fileID=7433441132597879392&amp;guid=098b2dcedb8f2834db394276e010236a&amp;type=3#ScreenNameplate"/>
     <ui:VisualElement name="TrackRoot" picking-mode="Ignore" class="nameplate-track">
         <ui:VisualElement picking-mode="Position" class="nameplate-anchor">
             <ui:VisualElement picking-mode="Position" class="nameplate-row">
-                <ui:Label name="Name" text="" picking-mode="Ignore" class="nameplate-name" />
-                <ui:Label name="Level" text="" picking-mode="Ignore" class="nameplate-level" />
+                <ui:Label name="Name" text="The Quick Brown Fox" picking-mode="Ignore" class="nameplate-name" style="font-size: 22px;"/>
+                <ui:Label name="Level" text="99" picking-mode="Ignore" class="nameplate-level" style="font-size: 20px;"/>
             </ui:VisualElement>
-            <ui:VisualElement name="HealthBar" picking-mode="Ignore" class="nameplate-health">
-                <ui:VisualElement name="HealthFill" picking-mode="Ignore" class="nameplate-health-fill" />
+            <ui:VisualElement name="HealthBar" picking-mode="Ignore" class="nameplate-health" style="display: none;">
+                <ui:VisualElement name="HealthFill" picking-mode="Ignore" class="nameplate-health-fill"/>
             </ui:VisualElement>
         </ui:VisualElement>
     </ui:VisualElement>

@@ -94,6 +94,8 @@ public class NetworkClient
         _isFirstPlayshift = true;
         _reconnectAt = -1f;
 
+        NetworkDebug.LogLoginConnect(_dimension, _credentials.Username);
+
         _session.ResetSession();
         _session.ConnectToLoginServer();
     }
@@ -121,6 +123,10 @@ public class NetworkClient
 
     public void Update()
     {
+        // Drain inbound packets before posted transport drops so LoginError
+        // (and its soft-fail UI path) wins the race against a simultaneous close.
+        _session.Update();
+
         while (_mainThreadActions.TryDequeue(out Action action))
         {
             try
@@ -132,8 +138,6 @@ public class NetworkClient
                 Debug.LogError($"[Network] Main-thread action failed: {e}");
             }
         }
-
-        _session.Update();
 
         if (_reconnectAt > 0f && Time.realtimeSinceStartup >= _reconnectAt)
         {
@@ -171,6 +175,7 @@ public class NetworkClient
 
     internal void OnLoginSocketReady()
     {
+        NetworkDebug.LogLoginUserLogin(_credentials.Username, _dimension.ClientVersion);
         Send(new UserLoginMessage
         {
             UserName = _credentials.Username,
@@ -183,16 +188,29 @@ public class NetworkClient
         switch (sysMsg.SystemMessageType)
         {
             case SystemMessageType.ServerSalt:
+            {
+                byte[] salt = ((ServerSaltMessage)sysMsg).ServerSalt;
+                NetworkDebug.LogLoginServerSalt(salt);
+
+                string challenge = LoginEncryption.MakeChallengeResponse(
+                    _credentials,
+                    salt,
+                    _dimension.PublicKey);
+
+                NetworkDebug.LogLoginCredentials(
+                    _credentials.Username,
+                    salt,
+                    _dimension.PublicKey,
+                    challenge,
+                    _credentials.Password?.Length ?? 0);
+
                 Send(new UserCredentialsMessage
                 {
                     UserName = _credentials.Username,
-                    Credentials = LoginEncryption.MakeChallengeResponse(
-                        _credentials,
-                        ((ServerSaltMessage)sysMsg).ServerSalt,
-                        _dimension.PrivateKey,
-                        _dimension.PublicKey)
+                    Credentials = challenge
                 });
                 break;
+            }
 
             case SystemMessageType.CharacterList:
                 OnCharacterList((CharacterListMessage)sysMsg);
@@ -202,6 +220,7 @@ public class NetworkClient
 
     void OnCharacterList(CharacterListMessage charList)
     {
+        NetworkDebug.LogLoginCharacterList(charList.Characters?.Length ?? 0);
         CharacterListReceived?.Invoke(charList);
     }
 

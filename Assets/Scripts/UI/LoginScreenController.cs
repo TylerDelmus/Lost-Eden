@@ -433,13 +433,13 @@ public class LoginScreenController : MonoBehaviour
 
     void OnLoginFailed(LoginError error)
     {
-        if (_state != LoginScreenState.Authenticating)
+        // Authenticating, or soft-failed to the form after a raced socket close.
+        if (_state != LoginScreenState.Authenticating && _state != LoginScreenState.LoginBackdrop)
             return;
 
-        // LoginError already drops the transport; skip Disconnect and only ignore
-        // the follow-up Disconnected so the credentials form stays up.
         ClearAuthTimeout();
         _ignoreNextDisconnect = true;
+        _networkClient.AbandonReconnect();
         _state = LoginScreenState.LoginBackdrop;
         _loginView.SetFormInteractable(true);
         _loginView.SetStatus(error.ToString());
@@ -453,6 +453,13 @@ public class LoginScreenController : MonoBehaviour
         if (_ignoreNextDisconnect)
         {
             _ignoreNextDisconnect = false;
+            return;
+        }
+
+        // Bad password / early login drop: keep the form and backdrop, only show status.
+        if (_state == LoginScreenState.Authenticating)
+        {
+            FailAuthentication("Disconnected");
             return;
         }
 

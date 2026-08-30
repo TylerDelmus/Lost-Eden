@@ -71,7 +71,6 @@ public class DimensionInfo
     public string Host;
     public int Port;
     public string ClientVersion;
-    public string PrivateKey;
     public string PublicKey;
 }
 

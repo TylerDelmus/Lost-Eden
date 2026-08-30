@@ -8,6 +8,10 @@ public static class LoginEncryption
 {
     const int Seed3 = 5;
 
+    // AO client Diffie-Hellman prime; same for every dimension.
+    const string Prime =
+        "eca2e8c85d863dcdc26a429a71a9815ad052f6139669dd659f98ae159d313d13c6bf2838e10a69b6478b64a24bd054ba8248e8fa778703b418408249440b2c1edd28853e240d8a7e49540b76d120d3b1ad2878b1b99490eb4a2a5e84caa8a91cecbdb1aa7c816e8be343246f80c637abc653b893fd91686cf8d32d6cfe5f2a6f";
+
     static readonly Random Random = new Random();
 
     public static string sub_1001220D(BigInteger p1, BigInteger p2, BigInteger p3)
@@ -33,25 +37,47 @@ public static class LoginEncryption
         return v.ToString("X").TrimStart('0');
     }
 
-    public static string MakeChallengeResponse(Credentials credentials, byte[] salt, string privateKey, string publicKey)
+    public static string MakeChallengeResponse(Credentials credentials, byte[] salt, string publicKey)
     {
-        if (string.IsNullOrEmpty(privateKey) || string.IsNullOrEmpty(publicKey))
-            throw new ArgumentException("Dimension privateKey/publicKey are required for login encryption.");
+        if (string.IsNullOrEmpty(publicKey))
+            throw new ArgumentException("Dimension publicKey is required for login encryption.");
+        if (salt == null || salt.Length == 0)
+            throw new ArgumentException("Server salt is required for login encryption.", nameof(salt));
 
         var v3 = MakeRandomSeed(128);
 
-        var boff_100318DC = BigInteger.Parse("00" + privateKey, NumberStyles.HexNumber);
+        var boff_100318DC = BigInteger.Parse("00" + Prime, NumberStyles.HexNumber);
         var boff_100318D8 = BigInteger.Parse("00" + publicKey, NumberStyles.HexNumber);
         var bsub_100123C9 = BigInteger.Parse("00" + v3, NumberStyles.HexNumber);
 
         var v10 = sub_1001220D(boff_100318DC, boff_100318D8, bsub_100123C9);
         var v12 = sub_1001232B(boff_100318DC, Seed3, bsub_100123C9);
-        var v6 = string.Format("{0}|{1}|{2}", credentials.Username, Encoding.ASCII.GetString(salt), credentials.Password);
-        var v11 = sub_1001254C(v10, v6);
+        // Embed salt bytes as-is so retail ASCII-hex and Rebirth binary salts both work.
+        // Never round-trip through Encoding.ASCII — high bytes become '?'.
+        var plaintext = BuildCredentialPlaintext(credentials.Username, salt, credentials.Password);
+        var v11 = sub_1001254C(v10, plaintext);
 
         var v9 = string.Format("{0}-{1}", v12, v11);
 
         return v9.ToLower();
+    }
+
+    public static byte[] BuildCredentialPlaintext(string username, byte[] salt, string password)
+    {
+        byte[] userBytes = Encoding.ASCII.GetBytes(username ?? string.Empty);
+        byte[] passBytes = Encoding.ASCII.GetBytes(password ?? string.Empty);
+        var plaintext = new byte[userBytes.Length + 1 + salt.Length + 1 + passBytes.Length];
+
+        int offset = 0;
+        Array.Copy(userBytes, 0, plaintext, offset, userBytes.Length);
+        offset += userBytes.Length;
+        plaintext[offset++] = (byte)'|';
+        Array.Copy(salt, 0, plaintext, offset, salt.Length);
+        offset += salt.Length;
+        plaintext[offset++] = (byte)'|';
+        Array.Copy(passBytes, 0, plaintext, offset, passBytes.Length);
+
+        return plaintext;
     }
 
     static byte[] GetBytes(string str, int? len = null)
@@ -80,12 +106,15 @@ public static class LoginEncryption
         return sb.ToString();
     }
 
-    static string sub_1001254C(string a1, string a2)
+    static string sub_1001254C(string a1, byte[] plaintext)
     {
         if (a1.Length < 0x20)
         {
             return null;
         }
+
+        if (plaintext == null)
+            throw new ArgumentNullException(nameof(plaintext));
 
         var v21 = new byte[8];
         for (var i = 0; i < 8; i++)
@@ -94,7 +123,7 @@ public static class LoginEncryption
         }
 
         var v17 = GetBytes(a1, 32);
-        var v6 = a2.Length;
+        var v6 = plaintext.Length;
         var v8 = 8 - ((v6 - 1 + 12) % 8) + v6 - 1 + 12;
         var v9 = new byte[v8];
         for (var index = 0; index < v9.Length; index++)
@@ -102,10 +131,9 @@ public static class LoginEncryption
             v9[index] = 32;
         }
 
-        var v10 = IPAddress.HostToNetworkOrder(a2.Length);
+        var v10 = IPAddress.HostToNetworkOrder(plaintext.Length);
         var v10Bytes = BitConverter.GetBytes(v10);
-        var a2Bytes = Encoding.ASCII.GetBytes(a2);
-        Array.Copy(a2Bytes, 0, v9, 12, a2Bytes.Length);
+        Array.Copy(plaintext, 0, v9, 12, plaintext.Length);
         Array.Copy(v21, 0, v9, 0, v21.Length);
         Array.Copy(v10Bytes, 0, v9, 8, v10Bytes.Length);
 

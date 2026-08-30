@@ -21,9 +21,11 @@
 .nameplate-name {
     color: rgb(255, 255, 255);
     font-size: 14px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Terminus-32-SDF.asset?fileID=11400000&guid=22c255cf0368520409a1ae416ab209ec&type=2#Terminus-32-SDF");
     -unity-text-align: middle-center;
-    -unity-text-outline-width: 1px;
+    -unity-text-outline-width: 0px;
     -unity-text-outline-color: rgb(0, 0, 0);
+    text-shadow: 1px 1px 0 rgb(0, 0, 0);
     margin: 0;
     padding: 0;
     white-space: nowrap;
@@ -32,13 +34,15 @@
 .nameplate-level {
     color: rgb(255, 245, 0);
     font-size: 12px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Terminus-32-SDF.asset?fileID=11400000&guid=22c255cf0368520409a1ae416ab209ec&type=2#Terminus-32-SDF");
     margin-left: 6px;
     margin-top: 0;
     margin-bottom: 0;
     margin-right: 0;
     padding: 0;
-    -unity-text-outline-width: 1px;
+    -unity-text-outline-width: 0px;
     -unity-text-outline-color: rgb(0, 0, 0);
+    text-shadow: 1px 1px 0 rgb(0, 0, 0);
 }
 
 .nameplate-health {
