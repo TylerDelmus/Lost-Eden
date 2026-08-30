@@ -1,0 +1,56 @@
+.nameplate-track {
+    position: absolute;
+    left: 0;
+    top: 0;
+    flex-grow: 0;
+    flex-shrink: 0;
+}
+
+.nameplate-anchor {
+    translate: -50% -100%;
+    align-items: center;
+    flex-direction: column;
+}
+
+.nameplate-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.nameplate-name {
+    color: rgb(255, 255, 255);
+    font-size: 14px;
+    -unity-text-align: middle-center;
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgb(0, 0, 0);
+    margin: 0;
+    padding: 0;
+    white-space: nowrap;
+}
+
+.nameplate-level {
+    color: rgb(255, 245, 0);
+    font-size: 12px;
+    margin-left: 6px;
+    margin-top: 0;
+    margin-bottom: 0;
+    margin-right: 0;
+    padding: 0;
+    -unity-text-outline-width: 1px;
+    -unity-text-outline-color: rgb(0, 0, 0);
+}
+
+.nameplate-health {
+    margin-top: 4px;
+    width: 85px;
+    height: 5px;
+    background-color: rgba(0, 0, 0, 0.78);
+    display: none;
+}
+
+.nameplate-health-fill {
+    height: 100%;
+    width: 100%;
+    background-color: rgb(220, 40, 40);
+}

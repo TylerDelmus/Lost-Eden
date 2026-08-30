@@ -1,0 +1,14 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <ui:Style src="ScreenNameplate.uss" />
+    <ui:VisualElement name="TrackRoot" picking-mode="Ignore" class="nameplate-track">
+        <ui:VisualElement picking-mode="Position" class="nameplate-anchor">
+            <ui:VisualElement picking-mode="Position" class="nameplate-row">
+                <ui:Label name="Name" text="" picking-mode="Ignore" class="nameplate-name" />
+                <ui:Label name="Level" text="" picking-mode="Ignore" class="nameplate-level" />
+            </ui:VisualElement>
+            <ui:VisualElement name="HealthBar" picking-mode="Ignore" class="nameplate-health">
+                <ui:VisualElement name="HealthFill" picking-mode="Ignore" class="nameplate-health-fill" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

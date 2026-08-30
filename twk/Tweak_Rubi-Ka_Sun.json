@@ -1,0 +1,34 @@
+{
+  "primarySun": {
+    "angularDiameter": 2.5,
+    "flareSize": 10,
+    "flareTint": [1, 0.8117647, 0.25882354],
+    "flareFalloff": 12,
+    "flareMultiplier": 1,
+    "surfaceTint": [1, 1, 1]
+  },
+  "companionSun": {
+    "enabled": true,
+    "intensity": 100000,
+    "yawOffsetDeg": 10,
+    "pitchOffsetDeg": 12,
+    "angularDiameter": 1,
+    "color": [0.39215687, 0.60784316, 1],
+    "flareSize": 10,
+    "flareTint": [0.39215687, 0.60784316, 1],
+    "flareFalloff": 30,
+    "flareMultiplier": 1,
+    "surfaceTint": [0.39215687, 0.60784316, 1]
+  },
+  "objects": {
+    "Moon1": {
+      "enabled": false
+    },
+    "Moon2": {
+      "enabled": false
+    },
+    "Moon3": {
+      "enabled": false
+    }
+  }
+}

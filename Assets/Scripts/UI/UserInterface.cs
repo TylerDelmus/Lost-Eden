@@ -32,7 +32,8 @@ public static class UserInterface
         int sortOrder,
         bool startVisible = false,
         string logName = null,
-        bool stretchContentRoot = true)
+        bool stretchContentRoot = true,
+        bool centerPanelRoot = true)
     {
         if (host == null)
             throw new ArgumentNullException(nameof(host));
@@ -57,7 +58,8 @@ public static class UserInterface
         VisualElement contentRoot = panelRoot.Q<VisualElement>("root") ?? panelRoot;
 
         StretchToScreen(panelRoot);
-        CenterContent(panelRoot);
+        if (centerPanelRoot)
+            CenterContent(panelRoot);
 
         if (stretchContentRoot)
             StretchToScreen(contentRoot);

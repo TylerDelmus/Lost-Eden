@@ -72,6 +72,8 @@ public class NetworkClient
     public event Action<FollowTargetMessage> FollowTargetReceived;
     public event Action<Identity> DynelDespawned;
     public event Action<AppearanceUpdateMessage> AppearanceUpdateReceived;
+    public event Action<HealthDamageMessage> HealthDamageReceived;
+    public event Action<AttackInfoMessage> AttackInfoReceived;
 
     public NetworkClient(NetworkConfig config = null)
     {
@@ -264,6 +266,16 @@ public class NetworkClient
     {
         Debug.Log($"[Network] AppearanceUpdate → {msg.Identity.Type}:{msg.Identity.Instance} (textures={msg.Textures?.Length ?? 0}, meshes={msg.Meshes?.Length ?? 0})");
         AppearanceUpdateReceived?.Invoke(msg);
+    }
+
+    internal void OnHealthDamage(HealthDamageMessage msg)
+    {
+        HealthDamageReceived?.Invoke(msg);
+    }
+
+    internal void OnAttackInfo(AttackInfoMessage msg)
+    {
+        AttackInfoReceived?.Invoke(msg);
     }
 
     internal void RaiseMessageReceived(Message message) => MessageReceived?.Invoke(message);

@@ -1,0 +1,6 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <ui:Style src="HitIndicator.uss" />
+    <ui:VisualElement name="TrackRoot" picking-mode="Ignore" class="hit-track">
+        <ui:Label name="HitIndicator" text="0" picking-mode="Ignore" class="hit-label" />
+    </ui:VisualElement>
+</ui:UXML>

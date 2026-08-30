@@ -9,6 +9,7 @@ public class Dynel : MonoBehaviour
     public bool IsNpc { get; private set; }
     public StatCollection Stats { get; } = new();
     public UnityEngine.Vector3 Position => transform.position;
+    public bool ShowNameplate = true;
 
     public void Initialize(SimpleCharFullUpdateMessage msg)
     {
@@ -31,4 +32,14 @@ public class Dynel : MonoBehaviour
     public void Apply(StatMessage msg) => Stats.Apply(msg);
 
     public void Apply(FullCharacterMessage msg) => Stats.Apply(msg);
+
+    /// <summary>
+    /// AO-style indicator world position for nameplates / hit floats.
+    /// Fallback when no visual: local (0, 2, 0).
+    /// </summary>
+    public virtual bool TryGetIndicatorPosition(out UnityEngine.Vector3 worldPos)
+    {
+        worldPos = transform.position + UnityEngine.Vector3.up * 2f;
+        return true;
+    }
 }

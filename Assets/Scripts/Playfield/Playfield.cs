@@ -14,6 +14,9 @@ public class Playfield : MonoBehaviour
     Character _characterPrefab;
     Container _container;
 
+    public event Action<Dynel> DynelSpawned;
+    public event Action<Dynel> DynelDespawned;
+
     public void Init(int playfieldId, Character characterPrefab, Container container)
     {
         _characterPrefab = characterPrefab;
@@ -35,6 +38,7 @@ public class Playfield : MonoBehaviour
         {
             Debug.Log($"[Playfield] Dynel updated: {msg.Identity.Type}:{msg.Identity.Instance} \"{msg.Name}\"");
             existing.Apply(msg);
+            DynelSpawned?.Invoke(existing);
             return;
         }
 
@@ -45,6 +49,7 @@ public class Playfield : MonoBehaviour
             character.Initialize(msg);
             _dynels[msg.Identity] = character;
             Debug.Log($"[Playfield] Dynel spawned: {msg.Identity.Type}:{msg.Identity.Instance} \"{msg.Name}\" @ ({msg.Position.X:F1}, {msg.Position.Y:F1}, {msg.Position.Z:F1}) (total={_dynels.Count})");
+            DynelSpawned?.Invoke(character);
         }
         catch (Exception ex)
         {
@@ -117,12 +122,25 @@ public class Playfield : MonoBehaviour
             character.Apply(msg);
     }
 
+    public void ApplyHealthDamage(HealthDamageMessage msg)
+    {
+        if (!_dynels.TryGetValue(msg.Identity, out Dynel dynel))
+            return;
+
+        Stat stat = msg.Stat;
+        if (stat == 0)
+            stat = Stat.Health;
+
+        dynel.Stats.Set(stat, msg.TargetHp);
+    }
+
     public void DespawnDynel(Identity identity)
     {
         if (!_dynels.TryGetValue(identity, out Dynel dynel))
             return;
 
         _dynels.Remove(identity);
+        DynelDespawned?.Invoke(dynel);
         Destroy(dynel.gameObject);
         Debug.Log($"[Playfield] Dynel despawned: {identity.Type}:{identity.Instance} (total={_dynels.Count})");
     }

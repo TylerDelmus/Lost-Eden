@@ -309,6 +309,10 @@ class NetworkSession
             _client.OnDynelDespawn((DespawnMessage)n3Msg);
         else if (n3Msg.N3MessageType == N3MessageType.AppearanceUpdate)
             _client.OnAppearanceUpdate((AppearanceUpdateMessage)n3Msg);
+        else if (n3Msg.N3MessageType == N3MessageType.HealthDamage)
+            _client.OnHealthDamage((HealthDamageMessage)n3Msg);
+        else if (n3Msg.N3MessageType == N3MessageType.AttackInfo)
+            _client.OnAttackInfo((AttackInfoMessage)n3Msg);
     }
 
     void ScheduleZoneConnect(IPEndPoint endpoint)

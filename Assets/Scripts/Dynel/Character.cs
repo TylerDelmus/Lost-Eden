@@ -241,6 +241,14 @@ public class Character : Dynel
     public bool TryGetAttractor(AttractorPlace place, out Attractor attractor)
         => _visual.TryGetAttractor(place, out attractor);
 
+    public override bool TryGetIndicatorPosition(out UnityEngine.Vector3 worldPos)
+    {
+        if (_visual != null && _visual.TryGetIndicatorPosition(transform, out worldPos))
+            return true;
+
+        return base.TryGetIndicatorPosition(out worldPos);
+    }
+
     public void MarkAppearanceStale() => _appearanceStale = true;
 
     public void UpdateAppearance()

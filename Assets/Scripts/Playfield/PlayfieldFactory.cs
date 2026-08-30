@@ -7,7 +7,9 @@ using Reflex.Core;
 using SmokeLounge.AOtomation.Messaging.GameData;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using UnityEngine;
+using UnityEngine.Rendering.HighDefinition;
 using UnityEngine.Serialization;
+using Vector3 = UnityEngine.Vector3;
 
 public class PlayfieldFactory : MonoBehaviour
 {
@@ -28,10 +30,26 @@ public class PlayfieldFactory : MonoBehaviour
     Transform _playfieldRoot;
     Playfield _current;
     bool _playfieldReady;
+    HdrpEnvironmentApplicator _aoEnvironment;
 
     public bool NetworkDriven { get; set; }
 
     public event Action<int> PlayfieldReady;
+    public event Action<Playfield> CurrentPlayfieldChanged;
+
+    public Playfield Current => _current;
+
+    public bool TryGetCharacter(Identity identity, out Character character)
+    {
+        character = null;
+        return _current != null && _current.TryGetCharacter(identity, out character);
+    }
+
+    public bool TryGetDynel(Identity identity, out Dynel dynel)
+    {
+        dynel = null;
+        return _current != null && _current.TryGetDynel(identity, out dynel);
+    }
 
     void OnEnable()
     {
@@ -44,6 +62,7 @@ public class PlayfieldFactory : MonoBehaviour
         _networkClient.FollowTargetReceived += OnFollowTarget;
         _networkClient.DynelDespawned += OnDynelDespawn;
         _networkClient.AppearanceUpdateReceived += OnAppearanceUpdate;
+        _networkClient.HealthDamageReceived += OnHealthDamage;
     }
 
     void OnDisable()
@@ -57,6 +76,7 @@ public class PlayfieldFactory : MonoBehaviour
         _networkClient.FollowTargetReceived -= OnFollowTarget;
         _networkClient.DynelDespawned -= OnDynelDespawn;
         _networkClient.AppearanceUpdateReceived -= OnAppearanceUpdate;
+        _networkClient.HealthDamageReceived -= OnHealthDamage;
     }
 
     void OnNetworkPlayfieldReceived(int zoneId)
@@ -189,6 +209,14 @@ public class PlayfieldFactory : MonoBehaviour
         _current.ApplyAppearanceUpdate(msg);
     }
 
+    void OnHealthDamage(HealthDamageMessage msg)
+    {
+        if (!NetworkDriven || _current == null)
+            return;
+
+        _current.ApplyHealthDamage(msg);
+    }
+
     public void Load(int zoneId)
     {
         if (_loadRoutine != null)
@@ -224,6 +252,7 @@ public class PlayfieldFactory : MonoBehaviour
     IEnumerator UnloadRoutine()
     {
         _playfieldReady = false;
+        _aoEnvironment?.Clear();
 
         if (_playfieldRoot == null)
             yield break;
@@ -233,6 +262,7 @@ public class PlayfieldFactory : MonoBehaviour
         Destroy(_playfieldRoot.gameObject);
         _playfieldRoot = null;
         _current = null;
+        CurrentPlayfieldChanged?.Invoke(null);
         PlayfieldTweakCatalog.ClearCache();
         yield return null;
     }
@@ -245,6 +275,7 @@ public class PlayfieldFactory : MonoBehaviour
 
         _current = holder.AddComponent<Playfield>();
         _current.Init(zoneId, _characterPrefab, _container);
+        CurrentPlayfieldChanged?.Invoke(_current);
 
         var terrainParser = new TerrainParser(_resourceDatabase, _renderConfig);
         yield return terrainParser.BuildCoroutine(zoneId, _playfieldRoot);
@@ -256,7 +287,11 @@ public class PlayfieldFactory : MonoBehaviour
         var statelParser = new StatelParser(_resourceDatabase, _renderConfig, abiffMaterials);
         yield return statelParser.BuildCoroutine(zoneId, _playfieldRoot);
 
+        TryApplyAoEnvironment(zoneId, abiffMaterials);
+
         AttachLocality(zoneId);
+
+        yield return BakeReflectionProbesRoutine();
 
         _playfieldReady = true;
         FlushPendingCharacters();
@@ -267,6 +302,77 @@ public class PlayfieldFactory : MonoBehaviour
         // spawning hit recoverable errors (otherwise builds can soft-lock).
         if (NetworkDriven)
             _loadingScreen.HideFade();
+    }
+
+    IEnumerator BakeReflectionProbesRoutine()
+    {
+        // Let new renderers register with HDRP before capturing.
+        yield return null;
+
+        HDAdditionalReflectionData[] probes =
+            FindObjectsByType<HDAdditionalReflectionData>(FindObjectsSortMode.None);
+        if (probes == null || probes.Length == 0)
+        {
+            Debug.LogWarning("[PlayfieldFactory] No HD reflection probes found to bake.");
+            yield break;
+        }
+
+        Vector3 capturePos = ResolveReflectionProbeCapturePosition();
+        int requested = 0;
+        for (int i = 0; i < probes.Length; i++)
+        {
+            HDAdditionalReflectionData probe = probes[i];
+            if (probe == null || !probe.isActiveAndEnabled)
+                continue;
+
+            probe.mode = ProbeSettings.Mode.Realtime;
+            probe.realtimeMode = ProbeSettings.RealtimeMode.OnDemand;
+            probe.transform.position = capturePos;
+            probe.RequestRenderNextUpdate();
+            requested++;
+        }
+
+        Debug.Log($"[PlayfieldFactory] Requested reflection probe bake ({requested} probe(s) at {capturePos}).");
+    }
+
+    Vector3 ResolveReflectionProbeCapturePosition()
+    {
+        if (_playerController != null && _playerController.TryGetLocalPlayer(out Character localPlayer)
+            && localPlayer != null)
+            return localPlayer.transform.position;
+
+        if (TryGetPlayfieldRendererCenter(out Vector3 center))
+            return center;
+
+        Camera cam = Camera.main;
+        if (cam != null)
+            return cam.transform.position;
+
+        if (_playfieldRoot != null)
+            return _playfieldRoot.position;
+
+        return Vector3.zero;
+    }
+
+    bool TryGetPlayfieldRendererCenter(out Vector3 center)
+    {
+        center = Vector3.zero;
+        if (_playfieldRoot == null)
+            return false;
+
+        var renderers = _playfieldRoot.GetComponentsInChildren<Renderer>();
+        if (renderers == null || renderers.Length == 0)
+            return false;
+
+        Bounds bounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+        {
+            if (renderers[i] != null)
+                bounds.Encapsulate(renderers[i].bounds);
+        }
+
+        center = bounds.center;
+        return true;
     }
 
     void FlushPendingCharacters()
@@ -316,6 +422,27 @@ public class PlayfieldFactory : MonoBehaviour
         _playerController.SetLocalPlayer(localPlayer);
         _networkClient.EnterPlay();
         Debug.Log($"[PlayfieldFactory] Local player set from FullCharacter: {localPlayer.Identity.Type}:{localPlayer.Identity.Instance} \"{localPlayer.Name}\"");
+    }
+
+    void TryApplyAoEnvironment(int playfieldId, AbiffMaterialFactory abiffMaterials)
+    {
+        if (_renderConfig == null || !_renderConfig.ApplyAoPlayfieldTweaks)
+        {
+            _aoEnvironment?.Clear();
+            return;
+        }
+
+        try
+        {
+            var abiffLoader = new AbiffLoader(_resourceDatabase, abiffMaterials);
+            _aoEnvironment = new HdrpEnvironmentApplicator(_resourceDatabase, abiffLoader);
+            _aoEnvironment.Apply(playfieldId, _renderConfig.ApplyAoSkyMeshes);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[PlayfieldFactory] AO environment tweaks failed for {playfieldId}: {ex.Message}");
+            _aoEnvironment?.Clear();
+        }
     }
 
     void AttachLocality(int playfieldId)

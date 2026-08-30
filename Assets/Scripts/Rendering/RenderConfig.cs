@@ -27,6 +27,12 @@ public sealed class RenderConfig : ScriptableObject
     [Tooltip("Optional Shore Wave WaterDecal material. Leave empty to build one from HDRP's migration shader at runtime.")]
     [SerializeField] Material _shoreWaveMaterial;
 
+    [Header("AO Playfield Tweaks")]
+    [Tooltip("When enabled, load AO cd_image/twk environment (sun/fog/sky meshes) per playfield. Disable to keep stock HDRP.")]
+    [SerializeField] bool _applyAoPlayfieldTweaks = true;
+    [Tooltip("When enabled, spawn AO camera-locked sky/cloud meshes (star dome, thick clouds, horizon, etc.).")]
+    [SerializeField] bool _applyAoSkyMeshes = false;
+
     public float[] TerrainLodScreenHeights => _terrainLodScreenHeights;
     public int TerrainAtlasMaxSize => _terrainAtlasMaxSize;
     public int TerrainAtlasPadding => _terrainAtlasPadding;
@@ -37,6 +43,8 @@ public sealed class RenderConfig : ScriptableObject
     public WaterSurfaceType WaterSurfaceType => _waterSurfaceType;
     public Material WaterMaterial => _waterMaterial;
     public Material ShoreWaveMaterial => _shoreWaveMaterial;
+    public bool ApplyAoPlayfieldTweaks => _applyAoPlayfieldTweaks;
+    public bool ApplyAoSkyMeshes => _applyAoSkyMeshes;
 
     public float GetTerrainLodScreenHeight(int lod)
     {

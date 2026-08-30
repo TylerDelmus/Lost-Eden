@@ -1,0 +1,7 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <ui:Style src="WorldOverlay.uss" />
+    <ui:VisualElement name="root" picking-mode="Ignore" class="world-overlay-root">
+        <ui:VisualElement name="NameplateOverlayRoot" picking-mode="Ignore" class="overlay-layer" />
+        <ui:VisualElement name="HitIndicatorOverlayRoot" picking-mode="Ignore" class="overlay-layer" />
+    </ui:VisualElement>
+</ui:UXML>

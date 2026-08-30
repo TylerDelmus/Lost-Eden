@@ -1,0 +1,2344 @@
+# Include files
+# --------------
+#
+# GFX tweak file
+# ---------------
+#
+
+#
+# GFX tweak file
+# ---------------
+#
+
+Object DebugMonitor
+{
+  Unsigned  FXID:         e_LineMonitor
+  Unsigned  Use:          e_Automatic
+
+#  Unsigned  Counter       This.Counter + 1u & 7u
+#  Unsigned  Counter2      This.Counter2 + 1u & 15u = 8u
+
+#  Unsigned  Check         This.Counter == 3u [TRIGGER] This.Counter2
+
+#  Float     Monitor0:     1.0 * This.Counter2<Current> [RUN] This.Check
+#  Float     Monitor1:     1.0 * This.Counter
+}
+
+
+
+Object GAME
+{
+  Unsigned FXID:               e_GameInterfaceObject
+  Unsigned Use:                e_Automatic
+
+  #
+  # The following values are written to by the game.
+  # 
+  Unsigned    SetRenderEngine:        e_RenderEngine_Default  # Which rendering engine to use
+  Float       GameDayTime:            0			      # Time of day, ranges from 0.0 to 27 * 60 * 4
+  Quaternion  GameSun1Rotation:       q( 0,1,0,0 )	      # Rotational position of sun 1
+  Quaternion  GameSun2Rotation:       q( 0,1,0,0 )	      # Rotational position of sun 2
+  Float       CloudTranspariency:     0			      # How much we can see through thick clouds
+  Float       ThickCloudsIntensity:   0			      # How visible thick clouds are
+  Float       HighAltitudeWindX:      0			      # High altitude wind force in X direction
+  Float       HighAltitudeWindZ:      0			      # High altitude wind force in Z direction
+  Float       OffsetFromHQ_X:         0			      # Relative position from Omni-HQ in X plane
+  Float       OffsetFromHQ_Z:         0			      # Relative position from Omni-HQ in Z plane
+  Float       GameDeltaTime:          0			      # Time used on previous frame in game
+  Vector      GameCameraPosition:     v( 0,0,0 )	      # Position of camera
+  Quaternion  GameCameraRotation:     q( 0,1,0,0 )	      # Rotation of camera
+  Float       GameWaveCurve0:         0			      # Sin/cos wave
+  Float       GameWaveCurve1:         0			      # Sin/cos wave
+  Float       GameWaveCurve2:         0			      # Sin/cos wave
+  Float       GameWaveCurve3:         0			      # Sin/cos wave
+  Float       GameWaveCurve4:         0			      # Sin/cos wave
+  Float       GameWaveCurve5:         0			      # Sin/cos wave
+  Float       GameWaveCurve6:         0			      # Sin/cos wave
+  Float       GameWaveCurve7:         0			      # Sin/cos wave
+  Float       GameWaveCurve8:         0			      # Sin/cos wave
+  Float       GameWaveCurve9:         0			      # Sin/cos wave
+  Float       GameWaveCurve10:        0			      # Sin/cos wave
+  Float       GameWaveCurve11:        0			      # Sin/cos wave
+  Float       GameWaveCurve12:        0			      # Sin/cos wave
+  Float       GameWaveCurve13:        0			      # Sin/cos wave
+  Float       GameWaveCurve14:        0			      # Sin/cos wave
+  Float       GameWaveCurve15:        0			      # Sin/cos wave
+  Vector      LowAltitudeWind:        v( 0,0,0 )	      # Wind direction at low altitude
+  Float       GameStormIntensity:     0			      # Current storm intensity
+  Float       GamePrecipitationIntensity:  0		      # Current precipitation intensity
+  Vector      GameSunDirection:       v( 0,0,0 )	      # Direction of sun
+  Float       GameShowSpaceship       0			      # 1.0 if to show spaceships, 0.0 if not.
+  Unsigned    SystemTime              0u                      # Time in seconds since 1970
+  Float       SystemSecond            0                       # Current second, a value between 0.0 and 1.0
+
+  #
+  # The following are interface values, used in order to be able to
+  # freeze time for all scripts.
+  #
+  Float       CurrentDayTime:         This.GameDayTime
+  Float       DayTimeForGroundShadows This.GameDayTime * 15 
+  Float       DayTimeFactor:          This.CurrentDayTime / 6480 #* 10 % 1
+
+  Float       DayIntensity [5]        0.0, 0.0, 1.0, 1.0, 0.0
+  Float       NightIntensity [5]      1.0, 1.0, 0.0, 0.0, 1.0
+
+  Float       CurrentDayIntensity:    This.DayIntensity[This.DayTimeFactor]
+  Float       CurrentNightIntensity:  This.NightIntensity[This.DayTimeFactor]
+
+  Quaternion  Sun1Rotation:           This.GameSun1Rotation
+  Quaternion  Sun2Rotation:           This.GameSun2Rotation
+
+  Vector      Unit1ZDirection:        v( 0,0,1 )
+  Vector      TweakedSunDirection:    This.Unit1ZDirection [ROT] This.Sun1Rotation
+
+  Vector      UpDirection             v( 0,1,0 )
+  Vector      ForwardDirection        v( 0,0,1 )
+  Vector      CutY                    v( 1,0,1 )
+  Vector      CutXY                   v( 0,0,1 )
+  Vector      CutZY                   v( 1,0,0 )
+
+  Unsigned    RenderEngine	      This.SetRenderEngine
+
+  String      ScriptSpawnDest         "DESTINATION_ENVIRONMENT"
+  String      ScriptSpawnPacket	      "PACKET_TYPE_FXS_SCRIPT"
+}
+
+
+Object BackgroundSort
+{
+  Unsigned    ScreenColor:       1u
+  Unsigned    Universe:          2u
+  Unsigned    DotStars:          3u
+  Unsigned    Moon1:             4u
+  Unsigned    Moon2:             5u
+  Unsigned    Moon3:             6u
+
+  Unsigned    Atmosphere:        7u
+  Unsigned    Aurora:            8u
+  Unsigned    Moon1_Close:       9u
+  Unsigned    Moon2_Close:      10u
+  Unsigned    Moon3_Close:      11u
+
+  Unsigned    BattleStation:    12u
+
+  Unsigned    Sun1:             13u
+  Unsigned    Sun2:             14u
+  
+  Unsigned    DistantClouds1:   50u
+  Unsigned    DistantClouds2:   51u
+
+  Unsigned    ThickClouds:      150u
+
+  Unsigned    HighFlight1:      200u
+  Unsigned    HighFlight2:      201u
+  Unsigned    HighFlight3:      202u
+  Unsigned    HighFlight4:      203u
+  Unsigned    MediumFlight:     225u
+
+  Unsigned    SingleClouds:     250u
+
+  Unsigned    LowFlight:        400u
+
+  Unsigned    Horizon:          428u
+  Unsigned    Horizon2:         429u
+  Unsigned    Background1:      430u
+  Unsigned    Background2:      431u
+  Unsigned    AuroraFront:      438u
+  Unsigned    VortexDebris:     439u
+  Unsigned    VortexLight:      440u
+
+}
+
+
+
+Object SunLight
+{
+  Unsigned    FXID:                   e_EnvironmentLightObject
+  Unsigned    Use:                    e_Automatic
+                                      
+  Float       CloudTranspariency:     GAME.CloudTranspariency
+
+  Float       AmbientLight [2]:       40 / 255, 128 / 255
+  Vector      AmbientLightCurrent:    v( This.AmbientLight[GAME.DayTimeFactor], This.AmbientLight[GAME.DayTimeFactor], This.AmbientLight[GAME.DayTimeFactor] )
+  Unsigned    GroundAmbientOverride   0x232323
+
+  Float       SpecularLightIntensity: 1.0
+
+  Quaternion  GroundLightDirection:   GAME.Sun1Rotation
+  Float       GroundLightR [27]:       30 / 255, 30 / 255, 30 / 255, 30 / 255, 30 / 255, 30 / 255, 50 / 255,150 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255, 80 / 255, 30 / 255, 30 / 255, 30 / 255, 30 / 255, 30 / 255
+  Float       GroundLightG [27]:       50 / 255, 50 / 255, 50 / 255, 50 / 255, 50 / 255, 50 / 255, 90 / 255,140 / 255,190 / 255,200 / 255,210 / 255,220 / 255,230 / 255,240 / 255,230 / 255,220 / 255,210 / 255,190 / 255,170 / 255,140 / 255,100 / 255, 80 / 255, 50 / 255, 50 / 255, 50 / 255, 50 / 255, 50 / 255
+  Float       GroundLightB [27]:       70 / 255, 70 / 255, 70 / 255, 70 / 255, 70 / 255, 70 / 255,200 / 255,165 / 255,130 / 255,150 / 255,170 / 255,190 / 255,210 / 255,220 / 255,200 / 255,180 / 255,160 / 255,130 / 255,100 / 255, 60 / 255,  0 / 255,190 / 255, 70 / 255, 70 / 255, 70 / 255, 70 / 255, 70 / 255
+  Vector      GroundLightCurrent:     v( This.GroundLightR[GAME.DayTimeFactor] * 2 <| 1.0, This.GroundLightG[GAME.DayTimeFactor] * 2 <| 1.0, This.GroundLightB[GAME.DayTimeFactor] * 2 <| 1.0 )
+  Vector      GroundLightColor:       This.GroundLightCurrent
+
+  Quaternion  CloudLightDirection:    GAME.Sun1Rotation
+  Float       CloudLightR [27]:         0 / 255,  0 / 255,  0 / 255,  0 / 255,  0 / 255,  0 / 255, 50 / 255,150 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255, 80 / 255,  0 / 255,  0 / 255,  0 / 255,  0 / 255,  0 / 255
+  Float       CloudLightG [27]:        30 / 255, 30 / 255, 30 / 255, 30 / 255, 30 / 255, 30 / 255, 90 / 255,140 / 255,190 / 255,200 / 255,210 / 255,220 / 255,230 / 255,240 / 255,230 / 255,220 / 255,210 / 255,190 / 255,170 / 255,140 / 255,100 / 255, 80 / 255, 30 / 255, 30 / 255, 30 / 255, 30 / 255, 30 / 255
+  Float       CloudLightB [27]:        70 / 255, 70 / 255, 70 / 255, 70 / 255, 70 / 255, 70 / 255,200 / 255,165 / 255,130 / 255,150 / 255,170 / 255,190 / 255,210 / 255,220 / 255,200 / 255,180 / 255,160 / 255,130 / 255,100 / 255, 60 / 255,  0 / 255,190 / 255, 70 / 255, 70 / 255, 70 / 255, 70 / 255, 70 / 255
+  Vector      CloudLightCurrent:      v( This.CloudLightR[GAME.DayTimeFactor], This.CloudLightG[GAME.DayTimeFactor], This.CloudLightB[GAME.DayTimeFactor] )
+
+  Quaternion  WaterLightDirection:    GAME.Sun1Rotation
+  Float       WaterLightR [27]:         0 / 255,  0 / 255,  0 / 255,  0 / 255,  0 / 255,  0 / 255, 50 / 255,150 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255, 80 / 255,  0 / 255,  0 / 255,  0 / 255,  0 / 255,  0 / 255
+  Float       WaterLightG [27]:         0 / 255,  0 / 255,  0 / 255,  0 / 255,  0 / 255, 30 / 255, 90 / 255,140 / 255,190 / 255,200 / 255,210 / 255,220 / 255,230 / 255,240 / 255,230 / 255,220 / 255,210 / 255,190 / 255,170 / 255,160 / 255,150 / 255, 80 / 255, 30 / 255,  0 / 255,  0 / 255,  0 / 255,  0 / 255
+  Float       WaterLightB [27]:         0 / 255,  0 / 255,  0 / 255,  0 / 255,  0 / 255, 70 / 255,200 / 255,165 / 255,130 / 255,150 / 255,170 / 255,190 / 255,210 / 255,220 / 255,200 / 255,180 / 255,160 / 255,130 / 255,100 / 255, 60 / 255,  0 / 255,190 / 255, 70 / 255,  0 / 255,  0 / 255,  0 / 255,  0 / 255
+  Vector      WaterLightCurrent:      v( This.WaterLightR[GAME.DayTimeFactor], This.WaterLightG[GAME.DayTimeFactor], This.WaterLightB[GAME.DayTimeFactor] )
+
+  Quaternion  SpaceLight0Direction:   GAME.Sun1Rotation
+  Vector      SpaceLight0Current      v( 1.0, 1.0, 1.0 ) 
+                        
+  Quaternion  SpaceLight1Direction:   GAME.Sun1Rotation
+  Vector      SpaceLight1Current      v( 1.0, 0.35, 0.28 ) 
+
+  Quaternion  SpaceLight2Direction:   GAME.Sun1Rotation
+  Vector      SpaceLight2Current      v( 0.28, 0.36, 1.0 ) 
+
+  Float       CloudScrollX            This.CloudScrollX + GAME.HighAltitudeWindX % 1
+  Float       CloudScrollZ            This.CloudScrollZ + GAME.HighAltitudeWindZ % 1
+
+  #Unsigned    GroundTextureProjection           6323
+  #Vector      GroundTextureProjectionOffset     v(  This.CloudScrollZ,  0.0,  This.CloudScrollX )
+  #Vector      GroundTextureProjectionScale      v(  0.0125,  0.0,  0.0125 )
+  #Vector      GroundTextureProjectionDirection  GAME.TweakedSunDirection
+  #Float       GroundTextureProjectionIntensity  1.0 - GAME.CloudTranspariency * GAME.CurrentDayIntensity * 0.4
+}
+
+
+#
+# GFX tweak file
+# ---------------
+#
+
+Object ProgressiveLava
+{
+  Unsigned    FXID:               e_FillSquare
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.ScreenColor
+
+  Unsigned    CTB:	          255u * GAME.GameWaveCurve2
+  Unsigned    CTG:	          100u * 0x10000
+  Unsigned    CTR:	          10u * GAME.GameWaveCurve1 + 75u * 0x100
+  Unsigned    CTI:	          10u * GAME.GameWaveCurve0 + 10u * 0x1000000
+
+  Unsigned    Color:              This.CTR + This.CTG + This.CTB + This.CTI
+
+  Vector      TopLeft:            v( 0,0,0.1 )
+  Vector      BottomRight:        v( 1,1,0.1 )
+  Float       PosU:               0.0 ~ 0.005 - 0.0025
+  Float       PosV:               0.0 ~ 0.005 - 0.0025
+
+  StateBlob 0u:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    RenderTarget:   Unsigned 0u, Unsigned e_BB_ProgressiveLava
+
+    Texture:        Unsigned 0u, Unsigned 0u, String "env_lava2.png"
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_CULLMODE          , Unsigned e_D3DCULL_NONE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC           , Unsigned e_D3DCMP_ALWAYS
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE    , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE, Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE       , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING        , Unsigned e_FALSE
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_SRCBLEND        , Unsigned e_D3DBLEND_SRCCOLOR
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND       , Unsigned e_D3DBLEND_INVSRCALPHA
+  }
+}
+
+
+Object ProgressiveLavaAnim1
+{
+  Unsigned    FXID:               e_FillSquare
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.ScreenColor
+  Float       Intensity           0.9 ~ 1.0 * GAME.GamePrecipitationIntensity
+  Unsigned    CTB:	          100u * This.Intensity
+  Unsigned    CTG:	          255u * This.Intensity * 0x100
+  Unsigned    CTR:	          255u * This.Intensity * 0x10000
+  Unsigned    CTI:	          255u * 0x1000000
+  Unsigned    Color:              This.CTI + This.CTR + This.CTG + This.CTB
+
+  Vector      PosArray [4]        v( 0.0, 0.0, 0.1 )
+				  v( 0.8, 0.0, 0.1 )
+				  v( 0.8, 0.8, 0.1 )
+				  v( 0.0, 0.8, 0.1 )
+  Float       Ctr                 This.Ctr + 0.01 % 1
+  Vector      Pos                 v( 0,0,0.1 )
+  Vector      Size                v( 1,1,0 )
+
+  Vector      TopLeft:            This.Pos
+  Vector      BottomRight:        This.Pos + This.Size
+  Float       PosU:               0 ~ 0.1 - 0.05
+  Float       PosV:               0 ~ 0.1 - 0.05
+
+  StateBlob 0u:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    RenderTarget:   Unsigned 0u, Unsigned e_BB_ProgressiveLava
+
+    Texture:        Unsigned 0u, Unsigned 0u, String "stars01.png"
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_CULLMODE        , Unsigned e_D3DCULL_NONE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC           , Unsigned e_D3DCMP_ALWAYS
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE    , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE, Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE       , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING        , Unsigned e_FALSE
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_SRCBLEND        , Unsigned e_D3DBLEND_SRCALPHA
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND       , Unsigned e_D3DBLEND_ONE
+  }
+}
+
+Object ProgressiveLavaAnim2
+{
+  Unsigned    FXID:               e_FillSquare
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.ScreenColor
+  Float       Intensity           0.9 ~ 0.99 * 0.45
+  Unsigned    CTB:	          50u * This.Intensity
+  Unsigned    CTG:	          88u * This.Intensity * 0x100
+  Unsigned    CTR:	          255u * This.Intensity * 0x10000
+  Unsigned    CTI:	          255u * 0x1000000
+  Unsigned    Color:              This.CTI + This.CTR + This.CTG + This.CTB
+
+  Vector      PosArray [4]        v( 0.0, 0.0, 0.1 )
+				  v( 0.8, 0.0, 0.1 )
+				  v( 0.8, 0.8, 0.1 )
+				  v( 0.0, 0.8, 0.1 )
+  Float       Ctr                 This.Ctr + 0.01 % 1
+  Vector      Pos                 v( 0,0,0.1 )
+  Vector      Size                v( 1,1,0 )
+
+  Vector      TopLeft:            This.Pos
+  Vector      BottomRight:        This.Pos + This.Size
+  Float       PosU:               0 ~ 0.2 - 0.1
+  Float       PosV:               0 ~ 0.2 - 0.1
+
+  StateBlob 0u:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    RenderTarget:   Unsigned 0u, Unsigned e_BB_ProgressiveLava
+
+    Texture:        Unsigned 0u, Unsigned 0u, String "newsun_frame01.png"
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_CULLMODE        , Unsigned e_D3DCULL_NONE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC           , Unsigned e_D3DCMP_ALWAYS
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE    , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE, Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE       , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING        , Unsigned e_FALSE
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_SRCBLEND        , Unsigned e_D3DBLEND_DESTCOLOR
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND       , Unsigned e_D3DBLEND_ONE
+  }
+}
+
+Object ProgressiveLavaAnim3
+{
+  Unsigned    FXID:               e_FillSquare
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.ScreenColor
+  Float       Intensity           0.9 ~ 1.0 * 0.3
+  Unsigned    CTB:	          100u * This.Intensity
+  Unsigned    CTG:	          255u * This.Intensity * 0x100
+  Unsigned    CTR:	          255u * This.Intensity * 0x10000
+  Unsigned    CTI:	          255u * 0x1000000
+  Unsigned    Color:              This.CTI + This.CTR + This.CTG + This.CTB
+
+  Vector      PosArray [4]        v( 0.0, 0.0, 0.1 )
+				  v( 0.8, 0.0, 0.1 )
+				  v( 0.8, 0.8, 0.1 )
+				  v( 0.0, 0.8, 0.1 )
+  Float       Ctr                 This.Ctr + 0.01 % 1
+  Vector      Pos                 v( 0,0,0.1 )
+  Vector      Size                v( 1,1,0 )
+
+  Vector      TopLeft:            This.Pos
+  Vector      BottomRight:        This.Pos + This.Size
+  Float       PosU:               0 ~ 0.008 - 0.004
+  Float       PosV:               0 ~ 0.008 - 0.004
+
+  StateBlob 0u:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    RenderTarget:   Unsigned 0u, Unsigned e_BB_ProgressiveLava
+
+    Texture:        Unsigned 0u, Unsigned 0u, String "stars01.png"
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_CULLMODE        , Unsigned e_D3DCULL_NONE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC           , Unsigned e_D3DCMP_ALWAYS
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE    , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE, Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE       , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING        , Unsigned e_FALSE
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_SRCBLEND        , Unsigned e_D3DBLEND_SRCALPHA
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND       , Unsigned e_D3DBLEND_ONE
+  }
+}
+
+
+#
+# GFX tweak file
+# ---------------
+#
+
+Object ParticleCluster
+{
+  Unsigned  FXID:               e_ParticleCluster
+  Unsigned  Use:                e_Yes
+  Unsigned  Priority:           e_RenderPriority_Transparent2
+
+  Float       ScrollU:            0.0
+  Float       ScrollV:            0.0
+  Matrix      ScrollMatrix:       m(             1,             0, 0, 0
+                                                 0,             1, 0, 0
+                                      This.ScrollU,  This.ScrollV, 1, 0   
+                                                 0,             0, 0, 1 )
+  StateBlob 0u:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    Texture:        Unsigned 0u, Unsigned 0u, String "dustcloud.png"
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_CULLMODE          , Unsigned e_D3DCULL_NONE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE      , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE         , Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING          , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE  , Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_SRCBLEND          , Unsigned e_D3DBLEND_SRCALPHA  
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND         , Unsigned e_D3DBLEND_INVSRCALPHA
+
+    TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_TEXTURETRANSFORMFLAGS, Unsigned e_D3DTTFF_COUNT2
+
+    Transform:      Unsigned 0u, Unsigned e_D3DTRANSFORMSTATE_TEXTURE0, Matrix This.ScrollMatrix
+  }
+}
+
+
+
+Object LiquidTweaks
+{
+  Unsigned  Use: e_Yes
+}
+
+
+Object Universe
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.Universe
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0,0,0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Rotation:           v( 0,0,1 ), 90
+  Unsigned    ScaleType:          e_ScaleByViewDistance
+  Float       Scale:              10.0
+  String      Mesh:               "star_dome.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+
+  StateBlob 0u:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC            , Unsigned e_D3DCMP_ALWAYS
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE     , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING         , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS , Unsigned e_TRUE
+
+    TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG1   , Unsigned e_D3DTA_TEXTURE
+    TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG2   , Unsigned e_D3DTA_DIFFUSE
+    TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLOROP     , Unsigned e_D3DTOP_MODULATE
+  }
+
+  Expansion BP01:
+  {
+    String      Mesh:             "nebulas_sphere.abiff"
+  }
+}
+
+
+Object DotStarsMesh
+{
+  Vector    Vertex [5]:         v(  0.0f, 0.3f,  0.0f ), 
+                                v(  1.0f, 0.0f,  0.0f ), 
+                                v(  0.0f, 0.0f,  1.0f ), 
+                                v( -1.0f, 0.0f,  0.0f ), 
+                                v(  0.0f, 0.0f, -1.0f )
+  Unsigned  Indice [12]:        0,1,2, 0,2,3, 0,3,4, 0,4,1
+  
+  Float     Size:               990.0                         # Distance between blueprint point that is on longest distance from origo (+).
+  Unsigned  Vertices:           500u                          # Number of vertices to generate
+  Unsigned  VertexFormat:       e_D3DFVF_XYZ | e_D3DFVF_TEX1  # The vertex format to use
+  Unsigned  PointMapping:       e_RandomOnSurface             # How to populate mesh with vertices
+  Unsigned  TextureMapping:     e_Random                      # How to do texture mapping
+  Unsigned  VertexBuffer:       e_Optimal                     # Where to place the VB.
+  Unsigned  IndiceBuffer:       e_None                        # How to generate indices
+  Unsigned  BoundingSphere:     e_No                          # Wether or not to generate a bounding sphere and thus use visibility testing.
+  Unsigned  Orientation:        e_World                       # How the mesh shall calculate its orientation toward camera
+  Unsigned  Visualization:      e_Render_Dots                 # How to perform the actual rendering.
+}
+
+Object DotStars
+{
+  Unsigned  FXID:               e_GenericVisualObject
+  Unsigned  Use:                e_Automatic
+  Unsigned  Priority:           e_RenderPriority_PreRendering
+  Unsigned  Sorting:            BackgroundSort.DotStars
+  Unsigned  PositionType:       e_LockToCamera
+  Vector    Position:           v( 0, 0, 0 )
+  Unsigned  ScaleType:          e_ScaleByViewDistance
+  Float     Scale:              1.0
+  Unsigned  VisibilityTesting:  e_No
+  Unsigned  LightCulling:       e_No
+  Float     Counter:            This.Counter + 0.01 % 1
+  Matrix    ScrollMatrix:       m(            1, 0, 0, 0
+                                              0, 1, 0, 0
+                                   This.Counter, 0, 1, 0   
+                                              0, 0, 0, 1 )
+  Expansion BP01:
+  {
+    StateBlob 0u:
+    {
+      Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+      Mesh:           Unsigned 0u, Object   DotStarsMesh
+
+      Texture:        Unsigned 0u, Unsigned 0, String "clouds3.png"
+
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_CULLMODE          , Unsigned e_D3DCULL_NONE
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC             , Unsigned e_D3DCMP_ALWAYS
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE      , Unsigned e_FALSE
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE         , Unsigned e_TRUE
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGCOLOR          , Unsigned 0x00000000
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING          , Unsigned e_FALSE
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE  , Unsigned e_TRUE
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_SRCBLEND          , Unsigned e_D3DBLEND_ONE  
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND         , Unsigned e_D3DBLEND_ONE  
+                      
+      TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_TEXTURETRANSFORMFLAGS, Unsigned e_D3DTTFF_COUNT2
+                      
+      Transform:      Unsigned 0u, Unsigned e_D3DTRANSFORMSTATE_TEXTURE0, Matrix This.ScrollMatrix
+    }
+  }
+}
+
+
+
+Object Moon1
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.Moon1
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0, 0, 0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Rotation:           v( 0,1,0 ), GAME.CurrentDayTime / 6480 * -360.0 - 90
+  Unsigned    ScaleType:          e_ScaleByViewDistanceAndDirectionHeigh
+  Vector      InitDirection:      v( -1.0 , 0 , 0 )
+  Float       Scale:              11
+  String      Mesh:               "moonmesh_large.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+  Unsigned    SunlightType:       e_SunLight_Space0
+
+  StateBlob 0u:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC             , Unsigned e_D3DCMP_ALWAYS
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE      , Unsigned e_FALSE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS  , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE  , Unsigned e_FALSE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_AMBIENT           , Unsigned 0x000000
+  }
+}
+
+
+Object Moon1_Close
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.Moon1_Close
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0, 0, 0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Rotation:           v( 0,1,0 ), GAME.CurrentDayTime / 6480 * -360.0 - 90
+  Unsigned    ScaleType:          e_ScaleByViewDistanceAndDirectionHeigh
+  Vector      InitDirection:      v( -1.0 , 0 , 0 )
+  Float       Scale:              1
+  String      Mesh:               "moonmesh_large.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+  Unsigned    SunlightType:       e_SunLight_Space0
+
+  Expansion EP01:
+  {
+    StateBlob 0u:
+    {
+      Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC             , Unsigned e_D3DCMP_ALWAYS
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE      , Unsigned e_FALSE
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS  , Unsigned e_TRUE
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE  , Unsigned e_TRUE
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND         , Unsigned e_D3DBLEND_ONE
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGCOLOR          , Unsigned 0x00000000
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_AMBIENT           , Unsigned 0x000000
+
+      TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG1   , Unsigned e_D3DTA_TEXTURE
+      TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG2   , Unsigned e_D3DTA_DIFFUSE
+      TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLOROP     , Unsigned e_D3DTOP_MODULATE2X
+    }
+  }
+}
+
+
+
+Object Moon2
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.Moon2
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0, 0, 0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Rotation:           v( 0,1,1 ), GAME.CurrentDayTime / 3240 * 360 + 90
+  Unsigned    ScaleType:          e_ScaleByViewDistanceAndDirectionHeigh
+  Vector      InitDirection:      v( -1.0 , 0 , 0 )
+  Float       Scale:              11
+  String      Mesh:               "moonmesh_small.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+  Unsigned    SunlightType:       e_SunLight_Space1
+
+  StateBlob 0u:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC             , Unsigned e_D3DCMP_ALWAYS
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE      , Unsigned e_FALSE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS  , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE  , Unsigned e_FALSE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_AMBIENT           , Unsigned 0x000000
+  }
+}
+
+
+Object Moon2_Close
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.Moon2_Close
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0, 0, 0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Rotation:           v( 0,1,1 ), GAME.CurrentDayTime / 3240 * 360 + 90
+  Unsigned    ScaleType:          e_ScaleByViewDistanceAndDirectionHeigh
+  Vector      InitDirection:      v( -1.0 , 0 , 0 )
+  Float       Scale:              1
+  String      Mesh:               "moonmesh_small.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+  Unsigned    SunlightType:       e_SunLight_Space1
+
+  Expansion EP01:
+  {
+    StateBlob 0u:
+    {
+      Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC             , Unsigned e_D3DCMP_ALWAYS
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE      , Unsigned e_FALSE
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS  , Unsigned e_TRUE
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE  , Unsigned e_TRUE
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND         , Unsigned e_D3DBLEND_ONE
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGCOLOR          , Unsigned 0x00000000
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_AMBIENT           , Unsigned 0x000000
+
+      TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG1   , Unsigned e_D3DTA_TEXTURE
+      TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG2   , Unsigned e_D3DTA_DIFFUSE
+      TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLOROP     , Unsigned e_D3DTOP_MODULATE2X
+    }
+  }
+}
+
+
+
+Object Moon3
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.Moon3
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0, 0, 0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Rotation:           v( 0,1,-1.0 ), GAME.CurrentDayTime / 2160 * 360 + 60
+  Unsigned    ScaleType:          e_ScaleByViewDistanceAndDirectionHeigh
+  Vector      InitDirection:      v( -1.0 , 0 , 0 )
+  Float       Scale:              11
+  String      Mesh:               "moonmesh_medium.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+  Unsigned    SunlightType:       e_SunLight_Space2
+
+  StateBlob 0u:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC             , Unsigned e_D3DCMP_ALWAYS
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE      , Unsigned e_FALSE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS  , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE  , Unsigned e_FALSE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_AMBIENT           , Unsigned 0x000000
+  }
+}
+
+
+Object Moon3_Close
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.Moon3_Close
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0, 0, 0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Rotation:           v( 0,1,-1.0 ), GAME.CurrentDayTime / 2160 * 360 + 60
+  Unsigned    ScaleType:          e_ScaleByViewDistanceAndDirectionHeigh
+  Vector      InitDirection:      v( -1.0 , 0 , 0 )
+  Float       Scale:              1
+  String      Mesh:               "moonmesh_medium.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+  Unsigned    SunlightType:       e_SunLight_Space2
+
+  Expansion EP01:
+  {
+    StateBlob 0u:
+    {
+      Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC             , Unsigned e_D3DCMP_ALWAYS
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE      , Unsigned e_FALSE
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS  , Unsigned e_TRUE
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE  , Unsigned e_TRUE
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND         , Unsigned e_D3DBLEND_ONE
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGCOLOR          , Unsigned 0x00000000
+      RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_AMBIENT           , Unsigned 0x000000
+
+      TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG1   , Unsigned e_D3DTA_TEXTURE
+      TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG2   , Unsigned e_D3DTA_DIFFUSE
+      TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLOROP     , Unsigned e_D3DTOP_MODULATE2X
+    }
+  }
+}
+
+
+
+Object AtmosphereMesh
+{
+  Vector    Vertex [6]:         v( -1.0f,  0.0f,  1.0f ), 
+                                v(  1.0f,  0.0f,  1.0f ), 
+                                v( -1.0f,  0.4f,  0.2f ), 
+                                v(  1.0f,  0.4f,  0.2f ), 
+                                v( -1.0f,  0.4f, -0.5f ), 
+                                v(  1.0f,  0.4f, -0.5f )
+  Float     Color [24]:         Atmosphere.ColorBottomI[GAME.DayTimeFactor], Atmosphere.ColorBottomR[GAME.DayTimeFactor], Atmosphere.ColorBottomG[GAME.DayTimeFactor], Atmosphere.ColorBottomB[GAME.DayTimeFactor] # Bottom
+                                Atmosphere.ColorBottomI[GAME.DayTimeFactor], Atmosphere.ColorBottomR[GAME.DayTimeFactor], Atmosphere.ColorBottomG[GAME.DayTimeFactor], Atmosphere.ColorBottomB[GAME.DayTimeFactor] # Bottom
+                                Atmosphere.ColorTopI[GAME.DayTimeFactor]   , Atmosphere.ColorTopR[GAME.DayTimeFactor]   , Atmosphere.ColorTopG[GAME.DayTimeFactor]   , Atmosphere.ColorTopB[GAME.DayTimeFactor]    # TopFront
+                                Atmosphere.ColorTopI[GAME.DayTimeFactor]   , Atmosphere.ColorTopR[GAME.DayTimeFactor]   , Atmosphere.ColorTopG[GAME.DayTimeFactor]   , Atmosphere.ColorTopB[GAME.DayTimeFactor]    # TopFront
+                                Atmosphere.ColorTopI[GAME.DayTimeFactor]   , Atmosphere.ColorTopR[GAME.DayTimeFactor]   , Atmosphere.ColorTopG[GAME.DayTimeFactor]   , Atmosphere.ColorTopB[GAME.DayTimeFactor]    # TopBack
+                                Atmosphere.ColorTopI[GAME.DayTimeFactor]   , Atmosphere.ColorTopR[GAME.DayTimeFactor]   , Atmosphere.ColorTopG[GAME.DayTimeFactor]   , Atmosphere.ColorTopB[GAME.DayTimeFactor]    # TopBack
+  
+  Float     Size:           1000.0                                          # Distance between blueprint point that is on longest distance from origo (+).
+  Unsigned  Vertices:       6                                               # Number of vertices to generate
+  Unsigned  VertexFormat:   e_D3DFVF_XYZ | e_D3DFVF_TEX1 | e_D3DFVF_DIFFUSE # The vertex format to use
+  Unsigned  PointMapping:   e_Strict                                        # How to populate mesh with vertices
+  Unsigned  ColorMapping:   e_Strict                                        # How to map colors to the vertices
+  Unsigned  TextureMapping: e_Random                                        # How to do texture mapping
+  Unsigned  VertexBuffer:   e_System                                        # Where to place the VB.
+  Unsigned  IndiceBuffer:   e_None                                          # How to generate indices
+  Unsigned  BoundingSphere: e_No                                            # Wether or not to generate a bounding sphere and thus use visibility testing.
+  Unsigned  Orientation:    e_World                                         # How the mesh shall calculate its orientation toward camera
+  Unsigned  Visualization:  e_Render_Strip                                  # How to perform the actual rendering.
+  Unsigned  Manipulation:   e_Color                                         # Per frame manipulation flags
+}
+
+Object Atmosphere
+{
+  Unsigned  FXID:               e_GenericVisualObject
+  Unsigned  Use:                e_Automatic
+  Unsigned  Priority:           e_RenderPriority_PreRendering
+  Unsigned  Sorting:            BackgroundSort.Atmosphere
+  Unsigned  PositionType:       e_LockToCamera
+  Vector    Position:           v( 0, 0, 0 )
+  Unsigned  RotationType:       e_LockToCameraY
+  Unsigned  ScaleType:          e_ScaleByViewDistance
+  Float     Scale:              1.0
+  Unsigned  VisibilityTesting:  e_No
+  Unsigned  LightCulling:       e_No
+
+  Float     ColorTopI [27]:       0 / 255,  0 / 255, 64 / 255,128 / 255,192 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,192 / 255,128 / 255, 64 / 255,  0 / 255,  0 / 255
+  Float     ColorTopR [27]:       5 / 255,  5 / 255, 60 / 255, 60 / 255, 60 / 255,110 / 255,110 / 255,110 / 255,110 / 255, 90 / 255, 70 / 255, 40 / 255, 20 / 255,  0 / 255, 10 / 255, 20 / 255, 30 / 255, 40 / 255, 50 / 255, 50 / 255, 50 / 255, 90 / 255, 90 / 255, 90 / 255, 20 / 255, 20 / 255,  0 / 255
+  Float     ColorTopG [27]:       0 / 255,  0 / 255, 90 / 255, 90 / 255, 90 / 255,180 / 255,180 / 255,180 / 255,180 / 255,160 / 255,140 / 255,130 / 255,110 / 255, 90 / 255,100 / 255,110 / 255,120 / 255,130 / 255,140 / 255,140 / 255,140 / 255, 70 / 255, 70 / 255, 70 / 255,  0 / 255,  0 / 255,  0 / 255
+  Float     ColorTopB [27]:      30 / 255, 30 / 255,120 / 255,120 / 255,120 / 255,220 / 255,220 / 255,220 / 255,220 / 255,210 / 255,190 / 255,180 / 255,160 / 255,150 / 255,160 / 255,180 / 255,190 / 255,205 / 255,220 / 255,220 / 255,220 / 255,140 / 255,140 / 255,140 / 255, 20 / 255, 20 / 255, 10 / 255
+
+  Float     ColorMiddleI [27]:    0 / 255,  0 / 255,128 / 255,192 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,192 / 255,128 / 255, 64 / 255,  0 / 255
+  Float     ColorMiddleR [27]:   10 / 255, 10 / 255,120 / 255,120 / 255,120 / 255,230 / 255,230 / 255,230 / 255,230 / 255,200 / 255,170 / 255,140 / 255,110 / 255, 80 / 255,115 / 255,150 / 255,190 / 255,220 / 255,255 / 255,255 / 255,255 / 255,250 / 255,250 / 255,250 / 255,150 / 255,150 / 255,  5 / 255
+  Float     ColorMiddleG [27]:   30 / 255, 30 / 255, 85 / 255, 85 / 255, 85 / 255,140 / 255,140 / 255,140 / 255,140 / 255,150 / 255,160 / 255,160 / 255,170 / 255,180 / 255,180 / 255,180 / 255,180 / 255,180 / 255,180 / 255,180 / 255,180 / 255,140 / 255,140 / 255,140 / 255, 40 / 255, 40 / 255,  0 / 255
+  Float     ColorMiddleB [27]:   70 / 255, 70 / 255, 90 / 255, 90 / 255, 90 / 255,110 / 255,110 / 255,110 / 255,110 / 255,130 / 255,150 / 255,180 / 255,200 / 255,220 / 255,200 / 255,180 / 255,165 / 255,150 / 255,130 / 255,130 / 255,130 / 255, 40 / 255, 40 / 255, 40 / 255,  0 / 255,  0 / 255, 30 / 255
+                       
+  Float     ColorBottomI [27]:   64 / 255, 64 / 255,192 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,255 / 255,192 / 255,128 / 255, 64 / 255
+  Float     ColorBottomR [27]:   80 / 255, 80 / 255,165 / 255,165 / 255,165 / 255,250 / 255,250 / 255,250 / 255,250 / 255,250 / 255,250 / 255,250 / 255,250 / 255,250 / 255,250 / 255,250 / 255,250 / 255,255 / 255,255 / 255,255 / 255,255 / 255,250 / 255,250 / 255,250 / 255,250 / 255,250 / 255,  0 / 255
+  Float     ColorBottomG [27]:  180 / 255,180 / 255,190 / 255,190 / 255,190 / 255,200 / 255,200 / 255,200 / 255,200 / 255,200 / 255,190 / 255,190 / 255,180 / 255,180 / 255,180 / 255,175 / 255,175 / 255,170 / 255,170 / 255,170 / 255,170 / 255,190 / 255,190 / 255,190 / 255,170 / 255,170 / 255, 30 / 255
+  Float     ColorBottomB [27]:  240 / 255,240 / 255,160 / 255,160 / 255,160 / 255, 80 / 255, 80 / 255, 80 / 255, 80 / 255, 90 / 255,100 / 255,110 / 255,120 / 255,130 / 255,115 / 255,100 / 255, 80 / 255, 65 / 255, 50 / 255, 50 / 255, 50 / 255,130 / 255,130 / 255,130 / 255,  0 / 255,  0 / 255, 70 / 255
+
+  Float     AddFogIntensity:    This.ColorBottomI[GAME.DayTimeFactor] + This.ColorMiddleI[GAME.DayTimeFactor] / 2
+  Float     AddFogR:            This.ColorBottomR[GAME.DayTimeFactor] + This.ColorMiddleR[GAME.DayTimeFactor] / 2 * This.AddFogIntensity
+  Float     AddFogG:            This.ColorBottomG[GAME.DayTimeFactor] + This.ColorMiddleG[GAME.DayTimeFactor] / 2 * This.AddFogIntensity
+  Float     AddFogB:            This.ColorBottomB[GAME.DayTimeFactor] + This.ColorMiddleB[GAME.DayTimeFactor] / 2 * This.AddFogIntensity
+  Float     AddFogI:            0.025
+
+  StateBlob 0u:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    Mesh:           Unsigned 0u, Object AtmosphereMesh
+
+    Texture:        Unsigned 0u, Unsigned 0u, String "whitemap8x8.png"
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_CULLMODE          , Unsigned e_D3DCULL_NONE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC             , Unsigned e_D3DCMP_ALWAYS
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE      , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE         , Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING          , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE  , Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_SRCBLEND          , Unsigned e_D3DBLEND_SRCALPHA  
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND         , Unsigned e_D3DBLEND_INVSRCALPHA
+  }
+}
+
+
+Object BattleStation_01
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.BattleStation
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0, 400, 0 )
+  Unsigned    RotationType:       e_World
+
+  Quaternion  RotFix:             v( 0, 0, 1 ), -90
+  Quaternion  RotAround:          v( 0, 1, 0 ), 30
+  Quaternion  Rotation:           This.RotFix [ROT] This.RotAround
+
+  Unsigned    ScaleType:          e_ScaleByViewDistanceAndDirectionHeigh
+  Vector      InitDirection:      v( 0, 0, 0 )
+  Float       Scale:              0.6 #+ This.AtmColor - This.AtmColor
+  String      Mesh:               "ep03_spacestation_small01.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+  Unsigned    SunlightType:       e_SunLight_Space0
+
+  #Float       ColorI:             Atmosphere.ColorTopI[GAME.DayTimeFactor] + 0.3 <| 1.0
+  Float       ColorR:             Atmosphere.ColorTopR[GAME.DayTimeFactor] + 0.3 <| 1.0
+  Float       ColorG:             Atmosphere.ColorTopG[GAME.DayTimeFactor] + 0.3 <| 1.0
+  Float       ColorB:             Atmosphere.ColorTopB[GAME.DayTimeFactor] + 0.3 <| 1.0
+
+  Unsigned    AtmI:               0x30000000 #0xFF * This.ColorI * 0x01000000
+  Unsigned    AtmR:               0xFF * This.ColorR * 0x00010000
+  Unsigned    AtmG:               0xFF * This.ColorG * 0x00000100
+  Unsigned    AtmB:               0xFF * This.ColorB #* 0x00000001
+  Unsigned    AtmColor:           This.AtmI | This.AtmR | This.AtmG | This.AtmB
+
+  Unsigned    TFACTOR:	          This.AtmColor
+
+  StateBlob 0u:
+  {
+    Criteria:         Game.RenderEngine == e_RenderEngine_DX7
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC              , Unsigned e_D3DCMP_ALWAYS
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING           , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE       , Unsigned e_FALSE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE          , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS   , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_AMBIENT            , Unsigned 0x00000000
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE   , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_SRCBLEND           , Unsigned e_D3DBLEND_SRCALPHA
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND          , Unsigned e_D3DBLEND_INVSRCALPHA
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_TEXTUREFACTOR	    , This.TFACTOR
+
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLOROP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG1     , Unsigned e_D3DTA_TEXTURE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG2     , Unsigned e_D3DTA_DIFFUSE
+
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_COLOROP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_COLORARG1     , Unsigned e_D3DTA_CURRENT
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_COLORARG2     , Unsigned e_D3DTA_TFACTOR
+
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAOP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAARG1     , Unsigned e_D3DTA_DIFFUSE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAARG2     , Unsigned e_D3DTA_TEXTURE
+
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_ALPHAOP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_ALPHAARG1     , Unsigned e_D3DTA_CURRENT
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_ALPHAARG2     , Unsigned e_D3DTA_TFACTOR
+  }
+}
+
+Object BattleStation_02
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.BattleStation
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( -170 * 4, 400, -100 * 4 )
+  Unsigned    RotationType:       e_World
+
+  Quaternion  RotFix:             v( 0, 0, 1 ), -90
+  Quaternion  RotAround:          v( 0, 1, 0 ), -30
+  Quaternion  Rotation:           This.RotFix [ROT] This.RotAround
+
+  Unsigned    ScaleType:          e_ScaleByViewDistanceAndDirectionHeigh
+  Vector      InitDirection:      v( 0, 0, 0 )
+  Float       Scale:              0.5
+  String      Mesh:               "ep03_spacestation_small01.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+  Unsigned    SunlightType:       e_SunLight_Space0
+
+  #Float       ColorI:             Atmosphere.ColorTopI[GAME.DayTimeFactor] + 0.3 <| 1.0
+  Float       ColorR:             Atmosphere.ColorTopR[GAME.DayTimeFactor] + 0.3 <| 1.0
+  Float       ColorG:             Atmosphere.ColorTopG[GAME.DayTimeFactor] + 0.3 <| 1.0
+  Float       ColorB:             Atmosphere.ColorTopB[GAME.DayTimeFactor] + 0.3 <| 1.0
+
+  Unsigned    AtmI:               0x80000000 #0xFF * This.ColorI * 0x01000000
+  Unsigned    AtmR:               0xFF * This.ColorR * 0x00010000
+  Unsigned    AtmG:               0xFF * This.ColorG * 0x00000100
+  Unsigned    AtmB:               0xFF * This.ColorB #* 0x00000001
+  Unsigned    AtmColor:           This.AtmI | This.AtmR | This.AtmG | This.AtmB
+
+  Unsigned    TFACTOR:	          This.AtmColor
+
+  StateBlob 0u:
+  {
+    Criteria:         Game.RenderEngine == e_RenderEngine_DX7
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC              , Unsigned e_D3DCMP_ALWAYS
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING           , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE       , Unsigned e_FALSE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE          , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS   , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_AMBIENT            , Unsigned 0x00000000
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE   , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_SRCBLEND           , Unsigned e_D3DBLEND_SRCALPHA
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND          , Unsigned e_D3DBLEND_INVSRCALPHA
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_TEXTUREFACTOR	    , This.TFACTOR
+
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLOROP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG1     , Unsigned e_D3DTA_TEXTURE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG2     , Unsigned e_D3DTA_DIFFUSE
+
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_COLOROP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_COLORARG1     , Unsigned e_D3DTA_CURRENT
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_COLORARG2     , Unsigned e_D3DTA_TFACTOR
+
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAOP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAARG1     , Unsigned e_D3DTA_DIFFUSE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAARG2     , Unsigned e_D3DTA_TEXTURE
+
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_ALPHAOP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_ALPHAARG1     , Unsigned e_D3DTA_CURRENT
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_ALPHAARG2     , Unsigned e_D3DTA_TFACTOR
+  }
+}
+
+Object BattleStation_03
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.BattleStation
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 170 * 4, 400, -100 * 4 )
+  Unsigned    RotationType:       e_World
+
+  Quaternion  RotFix:             v( 0, 0, 1 ), -90
+  Quaternion  RotAround:          v( 0, 1, 0 ), -30
+  Quaternion  Rotation:           This.RotFix [ROT] This.RotAround
+
+  Unsigned    ScaleType:          e_ScaleByViewDistanceAndDirectionHeigh
+  Vector      InitDirection:      v( 0, 0, 0 )
+  Float       Scale:              0.5
+  String      Mesh:               "ep03_spacestation_small01.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+  Unsigned    SunlightType:       e_SunLight_Space0
+
+  #Float       ColorI:             Atmosphere.ColorTopI[GAME.DayTimeFactor] + 0.3 <| 1.0
+  Float       ColorR:             Atmosphere.ColorTopR[GAME.DayTimeFactor] + 0.3 <| 1.0
+  Float       ColorG:             Atmosphere.ColorTopG[GAME.DayTimeFactor] + 0.3 <| 1.0
+  Float       ColorB:             Atmosphere.ColorTopB[GAME.DayTimeFactor] + 0.3 <| 1.0
+
+  Unsigned    AtmI:               0x80000000 #0xFF * This.ColorI * 0x01000000
+  Unsigned    AtmR:               0xFF * This.ColorR * 0x00010000
+  Unsigned    AtmG:               0xFF * This.ColorG * 0x00000100
+  Unsigned    AtmB:               0xFF * This.ColorB #* 0x00000001
+  Unsigned    AtmColor:           This.AtmI | This.AtmR | This.AtmG | This.AtmB
+
+  Unsigned    TFACTOR:	          This.AtmColor
+
+  StateBlob 0u:
+  {
+    Criteria:         Game.RenderEngine == e_RenderEngine_DX7
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC              , Unsigned e_D3DCMP_ALWAYS
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING           , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE       , Unsigned e_FALSE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE          , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS   , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_AMBIENT            , Unsigned 0x00000000
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE   , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_SRCBLEND           , Unsigned e_D3DBLEND_SRCALPHA
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND          , Unsigned e_D3DBLEND_INVSRCALPHA
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_TEXTUREFACTOR	    , This.TFACTOR
+
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLOROP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG1     , Unsigned e_D3DTA_TEXTURE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG2     , Unsigned e_D3DTA_DIFFUSE
+
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_COLOROP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_COLORARG1     , Unsigned e_D3DTA_CURRENT
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_COLORARG2     , Unsigned e_D3DTA_TFACTOR
+
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAOP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAARG1     , Unsigned e_D3DTA_DIFFUSE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAARG2     , Unsigned e_D3DTA_TEXTURE
+
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_ALPHAOP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_ALPHAARG1     , Unsigned e_D3DTA_CURRENT
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_ALPHAARG2     , Unsigned e_D3DTA_TFACTOR
+  }
+}
+
+Object BattleStation_04
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.BattleStation
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0, 400, 200 * 4 )
+  Unsigned    RotationType:       e_World
+
+  Quaternion  RotFix:             v( 0, 0, 1 ), -90
+  Quaternion  RotAround:          v( 0, 1, 0 ), -30
+  Quaternion  Rotation:           This.RotFix [ROT] This.RotAround
+
+  Unsigned    ScaleType:          e_ScaleByViewDistanceAndDirectionHeigh
+  Vector      InitDirection:      v( 0, 0, 0 )
+  Float       Scale:              0.5
+  String      Mesh:               "ep03_spacestation_small01.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+  Unsigned    SunlightType:       e_SunLight_Space0
+
+  #Float       ColorI:             Atmosphere.ColorTopI[GAME.DayTimeFactor] + 0.3 <| 1.0
+  Float       ColorR:             Atmosphere.ColorTopR[GAME.DayTimeFactor] + 0.3 <| 1.0
+  Float       ColorG:             Atmosphere.ColorTopG[GAME.DayTimeFactor] + 0.3 <| 1.0
+  Float       ColorB:             Atmosphere.ColorTopB[GAME.DayTimeFactor] + 0.3 <| 1.0
+
+  Unsigned    AtmI:               0x80000000 #0xFF * This.ColorI * 0x01000000
+  Unsigned    AtmR:               0xFF * This.ColorR * 0x00010000
+  Unsigned    AtmG:               0xFF * This.ColorG * 0x00000100
+  Unsigned    AtmB:               0xFF * This.ColorB #* 0x00000001
+  Unsigned    AtmColor:           This.AtmI | This.AtmR | This.AtmG | This.AtmB
+
+  Unsigned    TFACTOR:	          This.AtmColor
+
+  StateBlob 0u:
+  {
+    Criteria:         Game.RenderEngine == e_RenderEngine_DX7
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC              , Unsigned e_D3DCMP_ALWAYS
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING           , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE       , Unsigned e_FALSE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE          , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS   , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_AMBIENT            , Unsigned 0x00000000
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE   , Unsigned e_TRUE
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_SRCBLEND           , Unsigned e_D3DBLEND_SRCALPHA
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND          , Unsigned e_D3DBLEND_INVSRCALPHA
+
+    RenderState:      Unsigned 0u, Unsigned e_D3DRENDERSTATE_TEXTUREFACTOR	    , This.TFACTOR
+
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLOROP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG1     , Unsigned e_D3DTA_TEXTURE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG2     , Unsigned e_D3DTA_DIFFUSE
+
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_COLOROP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_COLORARG1     , Unsigned e_D3DTA_CURRENT
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_COLORARG2     , Unsigned e_D3DTA_TFACTOR
+
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAOP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAARG1     , Unsigned e_D3DTA_DIFFUSE
+    TextureStage:     Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAARG2     , Unsigned e_D3DTA_TEXTURE
+
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_ALPHAOP       , Unsigned e_D3DTOP_MODULATE
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_ALPHAARG1     , Unsigned e_D3DTA_CURRENT
+    TextureStage:     Unsigned 0u, Unsigned 1u, Unsigned e_D3DTSS_ALPHAARG2     , Unsigned e_D3DTA_TFACTOR
+  }
+}
+
+
+Object Sun1
+{
+  Unsigned    FXID:               e_SunRays
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.Sun1
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0,0,0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Rotation:           GAME.Sun1Rotation
+  Unsigned    ScaleType:          e_ScaleByViewDistance
+  Float       Scale:              1.0
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+
+  Unsigned    Vertices:           33
+  Unsigned    ColorR:             255
+  Unsigned    ColorG:             155
+  Unsigned    ColorB:             55
+  Float       Size:               6.0
+
+  StateBlob 0u:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    Texture:        Unsigned    0u, Unsigned    0u, String "newsun_frame01.png"
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE    , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC           , Unsigned e_D3DCMP_ALWAYS
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE, Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE       , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING        , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND       , Unsigned e_D3DBLEND_ONE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_CULLMODE        , Unsigned e_D3DCULL_NONE
+  }
+}
+
+Object Sun1_Body
+{
+  Unsigned    FXID:               e_SunRays
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.Sun1
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0,0,0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Rotation:           GAME.Sun1Rotation
+  Unsigned    ScaleType:          e_ScaleByViewDistance
+  Float       Scale:              1.0
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+
+  Unsigned    Vertices:           33
+  Unsigned    ColorR:             100
+  Unsigned    ColorG:             155
+  Unsigned    ColorB:             255
+  Float       Size:               2.0
+
+  StateBlob 0u:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    Texture:        Unsigned    0u, Unsigned    0u, String "newsun_frame01.png"
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE    , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC           , Unsigned e_D3DCMP_ALWAYS
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE, Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE       , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING        , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND       , Unsigned e_D3DBLEND_ONE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_CULLMODE        , Unsigned e_D3DCULL_NONE
+  }
+}
+
+Object Sun2
+{
+  Unsigned    FXID:               e_SunRays
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.Sun2
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0,0,0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Rotation:           GAME.Sun2Rotation
+  Unsigned    ScaleType:          e_ScaleByViewDistance
+  Float       Scale:              1.0
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+
+  Unsigned    Vertices:           33
+  Unsigned    ColorR:             100
+  Unsigned    ColorG:             155
+  Unsigned    ColorB:             255
+  Float       Size:               3.0
+
+  StateBlob 0:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    Texture:        Unsigned    0u, Unsigned    0u, String "newsun_frame01.png"
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE    , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC           , Unsigned e_D3DCMP_ALWAYS
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE, Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE       , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING        , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND       , Unsigned e_D3DBLEND_ONE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_CULLMODE        , Unsigned e_D3DCULL_NONE
+  }
+}
+
+Object Sun2_Body
+{
+  Unsigned    FXID:               e_SunRays
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.Sun2
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0,0,0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Rotation:           GAME.Sun2Rotation
+  Unsigned    ScaleType:          e_ScaleByViewDistance
+  Float       Scale:              1.0
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+
+  Unsigned    Vertices:           33
+  Unsigned    ColorR:             255
+  Unsigned    ColorG:             155
+  Unsigned    ColorB:             55
+  Float       Size:               1.0
+
+  StateBlob 0:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    Texture:        Unsigned    0u, Unsigned    0u, String "newsun_frame01.png"
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE    , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC           , Unsigned e_D3DCMP_ALWAYS
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE, Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE       , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING        , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND       , Unsigned e_D3DBLEND_ONE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_CULLMODE        , Unsigned e_D3DCULL_NONE
+  }
+}
+
+
+Object ThickClouds
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.ThickClouds
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0,0,0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Rotation:           v( 0,0,1 ), 90
+  Unsigned    ScaleType:          e_ScaleByViewDistance
+  Float       Scale:              11.0
+  String      Mesh:               "skydome_clouds.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+  Unsigned    SunlightType:       e_SunLight_CloudLayer0
+
+  Float       ScrollU:            This.ScrollU + GAME.HighAltitudeWindX % 1 * 10
+  Float       ScrollV:            This.ScrollV + GAME.HighAltitudeWindZ % 1 * 10
+  Matrix      ScrollMatrix:       m(             3,             0, 0, 0
+                                                 0,             3, 0, 0
+                                      This.ScrollU,  This.ScrollV, 1, 0   
+                                                 0,             0, 0, 1 )
+#  Float       Material [17]:      1.0, 1.0, 1.0, GAME.ThickCloudsIntensity
+#                                  1.0, 1.0, 1.0, 1.0
+#                                  0.0, 0.0, 0.0, 1.0
+#                                  0.0, 0.0, 0.0, 1.0
+#                                  0.0
+
+  Unsigned TFACTOR	255u * GAME.ThickCloudsIntensity * 0x01000000
+
+  StateBlob 0:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+#    Material:       Unsigned 0u, This.Material
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC            , Unsigned e_D3DCMP_ALWAYS
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE     , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE , Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING         , Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS , Unsigned e_TRUE
+
+    TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_TEXTURETRANSFORMFLAGS, Unsigned e_D3DTTFF_COUNT2
+
+    Transform:      Unsigned 0u, Unsigned e_D3DTRANSFORMSTATE_TEXTURE0, Matrix This.ScrollMatrix
+
+    RenderState:  Unsigned 0u, Unsigned e_D3DRENDERSTATE_TEXTUREFACTOR	  , This.TFACTOR
+
+    TextureStage: Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG2   , Unsigned e_D3DTA_DIFFUSE
+    TextureStage: Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG1   , Unsigned e_D3DTA_TEXTURE
+    TextureStage: Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLOROP     , Unsigned e_D3DTOP_MODULATE
+
+    TextureStage: Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAOP     , Unsigned e_D3DTOP_SELECTARG2
+    TextureStage: Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAARG1   , Unsigned e_D3DTA_TEXTURE 
+    TextureStage: Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_ALPHAARG2   , Unsigned e_D3DTA_TFACTOR
+  }
+}
+
+
+
+Object RubiKa_SingleClouds
+{
+  Unsigned    FXID:               e_SingleCloud
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.SingleClouds
+  Float       Altitude            100.0
+}
+
+
+
+Object Horizon
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.Horizon
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0,0,0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Unit1Rotation:      v( 0,0,1 ), 90
+  Quaternion  Unit2Rotation:      v( 0,1,0 ), 90
+  Quaternion  Rotation:           This.Unit1Rotation [ROT] This.Unit2Rotation
+  Unsigned    ScaleType:          e_ScaleByViewDistance
+  Float       Scale:              10.0
+  String      Mesh:               "horizon_object.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+
+  Matrix      ScrollMatrix:       m(                              1,                              0, 0, 0
+                                                                  0,                              1, 0, 0
+                                      GAME.OffsetFromHQ_X / 51200.0, GAME.OffsetFromHQ_Z / -51200.0, 1, 0
+                                                                  0,                              0, 0, 1 )
+
+  StateBlob 0u:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC            , Unsigned e_D3DCMP_ALWAYS
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE     , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING         , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_CULLMODE         , Unsigned e_D3DCULL_NONE
+
+    TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_TEXTURETRANSFORMFLAGS, Unsigned e_D3DTTFF_COUNT2
+
+    Transform:      Unsigned 0u, Unsigned e_D3DTRANSFORMSTATE_TEXTURE0, Matrix This.ScrollMatrix
+  }
+}
+
+
+
+
+
+#
+# GFX tweak file
+# ---------------
+#
+
+
+
+Object GAME
+{
+  Unsigned FXID:               e_GameInterfaceObject
+  Unsigned Use:                e_Automatic
+
+  #
+  # The following values are written to by the game.
+  # 
+  Unsigned    SetRenderEngine:        e_RenderEngine_Default  # Which rendering engine to use
+  Float       GameDayTime:            0			      # Time of day, ranges from 0.0 to 27 * 60 * 4
+  Quaternion  GameSun1Rotation:       q( 0,1,0,0 )	      # Rotational position of sun 1
+  Quaternion  GameSun2Rotation:       q( 0,1,0,0 )	      # Rotational position of sun 2
+  Float       CloudTranspariency:     0			      # How much we can see through thick clouds
+  Float       ThickCloudsIntensity:   0			      # How visible thick clouds are
+  Float       HighAltitudeWindX:      0			      # High altitude wind force in X direction
+  Float       HighAltitudeWindZ:      0			      # High altitude wind force in Z direction
+  Float       OffsetFromHQ_X:         0			      # Relative position from Omni-HQ in X plane
+  Float       OffsetFromHQ_Z:         0			      # Relative position from Omni-HQ in Z plane
+  Float       GameDeltaTime:          0			      # Time used on previous frame in game
+  Vector      GameCameraPosition:     v( 0,0,0 )	      # Position of camera
+  Quaternion  GameCameraRotation:     q( 0,1,0,0 )	      # Rotation of camera
+  Float       GameWaveCurve0:         0			      # Sin/cos wave
+  Float       GameWaveCurve1:         0			      # Sin/cos wave
+  Float       GameWaveCurve2:         0			      # Sin/cos wave
+  Float       GameWaveCurve3:         0			      # Sin/cos wave
+  Float       GameWaveCurve4:         0			      # Sin/cos wave
+  Float       GameWaveCurve5:         0			      # Sin/cos wave
+  Float       GameWaveCurve6:         0			      # Sin/cos wave
+  Float       GameWaveCurve7:         0			      # Sin/cos wave
+  Float       GameWaveCurve8:         0			      # Sin/cos wave
+  Float       GameWaveCurve9:         0			      # Sin/cos wave
+  Float       GameWaveCurve10:        0			      # Sin/cos wave
+  Float       GameWaveCurve11:        0			      # Sin/cos wave
+  Float       GameWaveCurve12:        0			      # Sin/cos wave
+  Float       GameWaveCurve13:        0			      # Sin/cos wave
+  Float       GameWaveCurve14:        0			      # Sin/cos wave
+  Float       GameWaveCurve15:        0			      # Sin/cos wave
+  Vector      LowAltitudeWind:        v( 0,0,0 )	      # Wind direction at low altitude
+  Float       GameStormIntensity:     0			      # Current storm intensity
+  Float       GamePrecipitationIntensity:  0		      # Current precipitation intensity
+  Vector      GameSunDirection:       v( 0,0,0 )	      # Direction of sun
+  Float       GameShowSpaceship       0			      # 1.0 if to show spaceships, 0.0 if not.
+  Unsigned    SystemTime              0u                      # Time in seconds since 1970
+  Float       SystemSecond            0                       # Current second, a value between 0.0 and 1.0
+
+  #
+  # The following are interface values, used in order to be able to
+  # freeze time for all scripts.
+  #
+  Float       CurrentDayTime:         2648.69
+  Float       DayTimeForGroundShadows 2648.69 * 15 
+  Float       DayTimeFactor:          This.CurrentDayTime / 6480
+
+  Float       DayIntensity [5]        0.0, 0.0, 1.0, 1.0, 0.0
+  Float       NightIntensity [5]      1.0, 1.0, 0.0, 0.0, 1.0
+
+  Float       CurrentDayIntensity:    This.DayIntensity[This.DayTimeFactor]
+  Float       CurrentNightIntensity:  This.NightIntensity[This.DayTimeFactor]
+
+  Quaternion  Sun1Rotation:           q( 0.900351, -0.0951056, 0.344078, 0.248863 )
+  Quaternion  Sun2Rotation:           q( 0.836913, -0.1626300, 0.384351, 0.354122 )
+
+  Vector      Unit1ZDirection:        v( 0,0,1 )
+  Vector      TweakedSunDirection:    This.Unit1ZDirection [ROT] This.Sun1Rotation
+
+  Vector      UpDirection             v( 0,1,0 )
+  Vector      ForwardDirection        v( 0,0,1 )
+  Vector      CutY                    v( 1,0,1 )
+
+  Unsigned    RenderEngine	      This.SetRenderEngine
+
+  String      ScriptSpawnDest         "DESTINATION_ENVIRONMENT"
+  String      ScriptSpawnPacket	      "PACKET_TYPE_FXS_SCRIPT"
+}
+
+
+Object HorizonClouds
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.Background1
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0,0.0,0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Rotation:           v( 0,0,1 ), 0
+  Unsigned    ScaleType:          e_ScaleByViewDistance
+  Float       Scale:              0.75
+  String      Mesh:               "jobe_cloudlayers_regular.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+  Unsigned    SunlightType:       e_SunLight_CloudLayer0
+
+  StateBlob 0:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    Material:       Unsigned 0u, This.Material
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC            , Unsigned e_D3DCMP_ALWAYS
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE     , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE , Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING         , Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS , Unsigned e_TRUE
+  }
+}
+
+Object HorizonCloudsRim
+{
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_PreRendering
+  Unsigned    Sorting:            BackgroundSort.Background2
+  Unsigned    PositionType:       e_LockToCamera
+  Vector      Position:           v( 0,0.0,0 )
+  Unsigned    RotationType:       e_World
+  Quaternion  Rotation:           v( 0,0,1 ), 0
+  Unsigned    ScaleType:          e_ScaleByViewDistance
+  Float       Scale:              0.2
+  String      Mesh:               "jobe_cloudlayers_regular_rim.abiff"
+  Unsigned    VisibilityTesting:  e_No
+  Unsigned    LightCulling:       e_No
+  Unsigned    SubMeshSorting:     e_No
+  Unsigned    SunlightType:       e_SunLight_CloudLayer0
+
+  StateBlob 0:
+  {
+    Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+    Material:       Unsigned 0u, This.Material
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZFUNC            , Unsigned e_D3DCMP_ALWAYS
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ZWRITEENABLE     , Unsigned e_FALSE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE , Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING         , Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_AMBIENT          , Unsigned 0x0
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGENABLE        , Unsigned e_TRUE
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_FOGCOLOR         , Unsigned 0x0
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS , Unsigned e_TRUE
+
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_SRCBLEND         , Unsigned e_D3DBLEND_SRCCOLOR
+    RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_DESTBLEND        , Unsigned e_D3DBLEND_ONE
+
+    TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG2   , Unsigned e_D3DTA_DIFFUSE
+    TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLORARG1   , Unsigned e_D3DTA_TEXTURE
+    TextureStage:   Unsigned 0u, Unsigned 0u, Unsigned e_D3DTSS_COLOROP     , Unsigned e_D3DTOP_MODULATE2X
+
+  }
+}
+
+
+
+Object PlayfieldData
+{
+  Vector  UniversePosition    RKPP.ICC_Shuttleport
+}
+
+Object RKPP
+{
+  Vector      Avalon                  v( 35214.0,   0.0, 44566.0 )    # Playfield: 505 
+  Vector      Old_Athen               v( 39621.0,   0.0, 40670.0 )    # Playfield: 540 
+  Vector      West_Athen              v( 39122.0,   0.0, 40646.0 )    # Playfield: 545 
+  Vector      Athen_Shire             v( 37085.0,   0.0, 39823.0 )    # Playfield: 550 
+  Vector      Wailing_Wastes          v( 37078.0,   0.0, 41004.0 )    # Playfield: 551 
+  Vector      Mort                    v( 41975.0,   0.0, 45030.0 )    # Playfield: 560 
+  Vector      Newland_Desert          v( 41959.0,   0.0, 42152.0 )    # Playfield: 565 
+  Vector      Newland_City            v( 42862.0,   0.0, 42389.0 )    # Playfield: 566 
+  Vector      Newland                 v( 41950.0,   0.0, 42166.0 )    # Playfield: 567 
+  Vector      Perpetual_Wastelands    v( 45486.0,   0.0, 45364.0 )    # Playfield: 570 
+  Vector      Aegean                  v( 39721.0,   0.0, 39418.0 )    # Playfield: 585 
+  Vector      Wartorn_Valley          v( 39843.0,   0.0, 40353.0 )    # Playfield: 586 
+  Vector      Central_Artery_Valley   v( 42836.0,   0.0, 36053.0 )    # Playfield: 590 
+  Vector      Deep_Artery_Valley      v( 46219.0,   0.0, 35172.0 )    # Playfield: 595 
+  Vector      Varmint_Woods           v( 41975.0,   0.0, 39148.0 )    # Playfield: 600 
+  Vector      Belial_Forest           v( 46248.0,   0.0, 32165.0 )    # Playfield: 605 
+  Vector      Southern_Artery_Valley  v( 42839.0,   0.0, 33283.0 )    # Playfield: 610 
+  Vector      Southern_Fouls_Hills    v( 46680.0,   0.0, 24729.0 )    # Playfield: 615 
+  Vector      Eastern_Fouls_Plain     v( 46689.0,   0.0, 27892.0 )    # Playfield: 620 
+  Vector      Milky_Way               v( 41891.0,   0.0, 30614.0 )    # Playfield: 625 
+  Vector      Pleasant_Meadows        v( 43499.0,   0.0, 27918.0 )    # Playfield: 630 
+  Vector      Stret_East_Bank         v( 40889.0,   0.0, 33041.0 )    # Playfield: 635 
+  Vector      Tir                     v( 47921.0,   0.0, 39716.0 )    # Playfield: 640 
+  Vector      Tir_County              v( 46178.0,   0.0, 39071.0 )    # Playfield: 646 
+  Vector      Greater_Tir_County      v( 46175.0,   0.0, 39073.0 )    # Playfield: 647 
+  Vector      Upper_Stret_East_Bank   v( 40866.0,   0.0, 36044.0 )    # Playfield: 650 
+  Vector      Andromeda               v( 37182.0,   0.0, 31311.0 )    # Playfield: 655 
+  Vector      Broken_Shores           v( 31002.0,   0.0, 29384.0 )    # Playfield: 665 
+  Vector      Clondyke                v( 37169.0,   0.0, 27031.0 )    # Playfield: 670 
+  Vector      Galway_County           v( 34495.0,   0.0, 29814.0 )    # Playfield: 685 
+  Vector      Galway_Shire            v( 34518.0,   0.0, 29814.0 )    # Playfield: 687 
+  Vector      Lush_Fields             v( 39922.0,   0.0, 27028.0 )    # Playfield: 695 
+  Vector      Mutant_Domain           v( 41950.0,   0.0, 27705.0 )    # Playfield: 696 
+  Vector      Omni_1_HQ               v( 43204.0,   0.0, 27102.0 )    # Playfield: 700 
+  Vector      Omni_1_Entertainment    v( 43756.0,   0.0, 26526.0 )    # Playfield: 705 
+  Vector      Omni_1_Trade            v( 43308.0,   0.0, 27595.0 )    # Playfield: 710 
+  Vector      Omni_Forest             v( 44526.0,   0.0, 24729.0 )    # Playfield: 716 
+  Vector      Greater_Omni_Forest     v( 44526.0,   0.0, 24729.0 )    # Playfield: 717 
+  Vector      Rome_Red_district       v( 34049.0,   0.0, 30363.0 )    # Playfield: 730 
+  Vector      Rome_Blue_district      v( 33917.0,   0.0, 30370.0 )    # Playfield: 735 
+  Vector      Rome_Green_district     v( 33837.0,   0.0, 30358.0 )    # Playfield: 740 
+  Vector      4_Holes                 v( 38486.0,   0.0, 33943.0 )    # Playfield: 760 
+  Vector      Stret_West_Bank         v( 38062.0,   0.0, 36352.0 )    # Playfield: 790 
+  Vector      Holes_in_the_Wall       v( 38081.0,   0.0, 37660.0 )    # Playfield: 791 
+  Vector      The_Longest_Road        v( 33860.0,   0.0, 39227.0 )    # Playfield: 795 
+  Vector      Borealis                v( 37107.0,   0.0, 38360.0 )    # Playfield: 800 
+  Vector      Jobe                    v( 34518.0, 600.0, 26323.5 )    # Playfield: 4526
+  Vector      ICC_Shuttleport         v( 43499.0,   0.0, 24729.0 )    # Playfield: 4582
+  Vector      Coast_of_Peace          v( 38546.0,   0.0, 24328.0 )    # Playfield: 556
+  Vector      Coast_of_Tranquility    v( 38546.0,   0.0, 24328.0 )    # Playfield: 656
+  Vector      TestPF                  v(     0.0,   0.0,     0.0 )    # Playfield: 1
+}
+
+
+Object RKWP
+{
+  Vector        WNDInput    GAME.LowAltitudeWind * GAME.GameDeltaTime * 1.1f
+  Vector        WND         This.WND * 0.75f + This.WNDInput
+
+#               ID                                      PF                                  X        Y         Z       HEADING DIR   
+  Vector        Pos_Avalon_Patrol_01                    RKPP.Avalon                - PlayfieldData.UniversePosition + This.WND + v( 2120.0f,  141.0f,  3126.0f ), Vector Dir_Avalon_Patrol_01                 v(  0, 0, 0 ) 
+  Vector        Pos_Avalon_Patrol_02                    RKPP.Avalon                - PlayfieldData.UniversePosition + This.WND + v( 2091.0f,  149.0f,  3857.0f ), Vector Dir_Avalon_Patrol_02                 v(  0, 0, 0 ) 
+  Vector        Pos_Avalon_Patrol_03                    RKPP.Avalon                - PlayfieldData.UniversePosition + This.WND + v( 2028.0f,  324.0f,  1254.0f ), Vector Dir_Avalon_Patrol_03                 v(  0, 0, 0 ) 
+  Vector        Pos_Avalon_Patrol_04                    RKPP.Avalon                - PlayfieldData.UniversePosition + This.WND + v(  908.0f,  500.0f,  1642.0f ), Vector Dir_Avalon_Patrol_04                 v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Old Athen city                                                                                                                                                         
+  Vector        Pos_Old_Athen_CityTrade                 RKPP.Old_Athen             - PlayfieldData.UniversePosition            + v(  300.0f,  500.0f,   100.0f ), Vector Dir_Old_Athen_CityTrade              v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Old_Athen_Trade_01_G                RKPP.Old_Athen             - PlayfieldData.UniversePosition            + v(  290.0f,   33.1f,   383.0f ), Vector Dir_Old_Athen_Trade_01_G             v(  0, 0,-1 ) 
+  Vector        Pos_Old_Athen_Trade_01_A                RKPP.Old_Athen             - PlayfieldData.UniversePosition + This.WND + v(  290.0f,   83.1f,   363.0f ), Vector Dir_Old_Athen_Trade_01_A             v(  0, 0, 0 ) 
+  Vector        Pos_Old_Athen_Trade_02_G                RKPP.Old_Athen             - PlayfieldData.UniversePosition            + v(  290.0f,   33.1f,   395.0f ), Vector Dir_Old_Athen_Trade_02_G             v( -1, 0, 0 ) 
+  Vector        Pos_Old_Athen_Trade_02_A                RKPP.Old_Athen             - PlayfieldData.UniversePosition + This.WND + v(  290.0f,   83.1f,   395.0f ), Vector Dir_Old_Athen_Trade_02_A             v(  0, 0, 0 ) 
+  Vector        Pos_Old_Athen_Trade_03_G                RKPP.Old_Athen             - PlayfieldData.UniversePosition            + v(  290.0f,   33.1f,   405.0f ), Vector Dir_Old_Athen_Trade_03_G             v(  0, 0, 1 ) 
+  Vector        Pos_Old_Athen_Trade_03_A                RKPP.Old_Athen             - PlayfieldData.UniversePosition + This.WND + v(  290.0f,   83.1f,   425.0f ), Vector Dir_Old_Athen_Trade_03_A             v(  0, 0, 0 ) 
+  Vector        Pos_Old_Athen_Trade_04_G                RKPP.Old_Athen             - PlayfieldData.UniversePosition            + v(  546.0f,   33.1f,   382.0f ), Vector Dir_Old_Athen_Trade_04_G             v(  0, 0,-1 ) 
+  Vector        Pos_Old_Athen_Trade_04_A                RKPP.Old_Athen             - PlayfieldData.UniversePosition + This.WND + v(  546.0f,   83.1f,   362.0f ), Vector Dir_Old_Athen_Trade_04_A             v(  0, 0, 0 ) 
+  Vector        Pos_Old_Athen_Trade_05_G                RKPP.Old_Athen             - PlayfieldData.UniversePosition            + v(  546.0f,   33.1f,   393.0f ), Vector Dir_Old_Athen_Trade_05_G             v(  1, 0, 0 ) 
+  Vector        Pos_Old_Athen_Trade_05_A                RKPP.Old_Athen             - PlayfieldData.UniversePosition + This.WND + v(  546.0f,   83.1f,   393.0f ), Vector Dir_Old_Athen_Trade_05_A             v(  0, 0, 0 ) 
+  Vector        Pos_Old_Athen_Trade_06_G                RKPP.Old_Athen             - PlayfieldData.UniversePosition            + v(  546.0f,   33.1f,   405.0f ), Vector Dir_Old_Athen_Trade_06_G             v(  0, 0, 1 ) 
+  Vector        Pos_Old_Athen_Trade_06_A                RKPP.Old_Athen             - PlayfieldData.UniversePosition + This.WND + v(  546.0f,   83.1f,   425.0f ), Vector Dir_Old_Athen_Trade_06_A             v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Old_Athen_Patrol_01_A               RKPP.Old_Athen             - PlayfieldData.UniversePosition + This.WND + v(  592.0f,  108.0f,   595.0f ), Vector Dir_Old_Athen_Patrol_01_A            v(  0, 0, 0 ) 
+  Vector        Pos_Old_Athen_Patrol_02_A               RKPP.Old_Athen             - PlayfieldData.UniversePosition + This.WND + v(  599.0f,  108.0f,   211.0f ), Vector Dir_Old_Athen_Patrol_02_A            v(  0, 0, 0 ) 
+  Vector        Pos_Old_Athen_Patrol_03_A               RKPP.Old_Athen             - PlayfieldData.UniversePosition + This.WND + v(  151.0f,  108.0f,   151.0f ), Vector Dir_Old_Athen_Patrol_03_A            v(  0, 0, 0 ) 
+  Vector        Pos_Old_Athen_Patrol_04_A               RKPP.Old_Athen             - PlayfieldData.UniversePosition + This.WND + v(  151.0f,  108.0f,   687.0f ), Vector Dir_Old_Athen_Patrol_04_A            v(  0, 0, 0 ) 
+  Vector        Pos_Old_Athen_Patrol_05_G               RKPP.Old_Athen             - PlayfieldData.UniversePosition            + v(  337.0f,   48.6f,   339.0f ), Vector Dir_Old_Athen_Patrol_05_G            v(  0, 0, 0 ) 
+  Vector        Pos_Old_Athen_Patrol_06_G               RKPP.Old_Athen             - PlayfieldData.UniversePosition            + v(  389.0f,   48.6f,   262.0f ), Vector Dir_Old_Athen_Patrol_06_G            v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# West Athen                                                                                                                                                             
+  Vector        Pos_West_Athen_Patrol_01_A              RKPP.West_Athen            - PlayfieldData.UniversePosition + This.WND + v(  463.0f,  115.0f,   442.0f ), Vector Dir_West_Athen_Patrol_01_A           v(  0, 0, 0 ) 
+                                                                        	                                                                                                 
+# Athen Shire                                                                                                                                                            
+  Vector        Pos_Athen_Shire_Patrol_01_A             RKPP.Athen_Shire           - PlayfieldData.UniversePosition + This.WND + v( 1548.0f,  137.0f,   331.0f ), Vector Dir_Athen_Shire_Patrol_01_A          v(  0, 0, 0 ) 
+  Vector        Pos_Athen_Shire_Patrol_02_A             RKPP.Athen_Shire           - PlayfieldData.UniversePosition + This.WND + v( 1129.0f,  143.0f,  1588.0f ), Vector Dir_Athen_Shire_Patrol_02_A          v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Mort                                                                                                                                                                   
+  Vector        Pos_Mort_Patrol_01_A                    RKPP.Mort                  - PlayfieldData.UniversePosition + This.WND + v( 1859.0f,  143.0f,  1150.0f ), Vector Dir_Mort_Patrol_01_A                 v(  0, 0, 0 ) 
+  Vector        Pos_Mort_Patrol_02_A                    RKPP.Mort                  - PlayfieldData.UniversePosition + This.WND + v( 1447.0f,  450.0f,   843.0f ), Vector Dir_Mort_Patrol_02_A                 v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Newland                                                                                                                                                                
+  Vector        Pos_Newland_City_Trade_01_G             RKPP.Newland_City          - PlayfieldData.UniversePosition            + v(  284.1f,   46.4f,   326.1f ), Vector Dir_Newland_City_Trade_01_G          v(  0, 0, 1 ) 
+  Vector        Pos_Newland_City_Trade_01_A             RKPP.Newland_City          - PlayfieldData.UniversePosition + This.WND + v(  284.1f,   96.4f,   326.1f ), Vector Dir_Newland_City_Trade_01_A          v(  0, 0, 0 ) 
+  Vector        Pos_Newland_City_CityTrade              RKPP.Newland_City          - PlayfieldData.UniversePosition            + v(  100.0f,  500.0f,   200.0f ), Vector Dir_Newland_City_CityTrade           v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Tir                                                                                                                                                                    
+  Vector        Pos_Tir_CityTrade                       RKPP.Tir                   - PlayfieldData.UniversePosition            + v(  600.0f,  500.0f,   600.0f ), Vector Dir_Tir_CityTrade                    v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Tir_Trade_01_G                      RKPP.Tir                   - PlayfieldData.UniversePosition  + v(  406.3f,   21.2f,   517.7f ), Vector Dir_Tir_Trade_01_G                   v(  0, 0,-1 ) 
+  Vector        Pos_Tir_Trade_02_G                      RKPP.Tir                   - PlayfieldData.UniversePosition  + v(  421.8f,   21.2f,   464.4f ), Vector Dir_Tir_Trade_02_G                   v(  1, 0, 0 ) 
+  Vector        Pos_Tir_Trade_03_G                      RKPP.Tir                   - PlayfieldData.UniversePosition  + v(  427.6f,   21.2f,   417.0f ), Vector Dir_Tir_Trade_03_G                   v(  1, 0, 0 ) 
+  Vector        Pos_Tir_Trade_04_G                      RKPP.Tir                   - PlayfieldData.UniversePosition  + v(  399.3f,   21.2f,   364.7f ), Vector Dir_Tir_Trade_04_G                   v(  1, 0, 0 ) 
+  Vector        Pos_Tir_Trade_05_G                      RKPP.Tir                   - PlayfieldData.UniversePosition  + v(  456.2f,   21.2f,   322.6f ), Vector Dir_Tir_Trade_05_G                   v(  1, 0, 0 ) 
+  Vector        Pos_Tir_Trade_06_G                      RKPP.Tir                   - PlayfieldData.UniversePosition  + v(  527.6f,   21.2f,   355.9f ), Vector Dir_Tir_Trade_06_G                   v(  0, 0, 1 ) 
+  Vector        Pos_Tir_Trade_07_G                      RKPP.Tir                   - PlayfieldData.UniversePosition  + v(  575.0f,   21.2f,   327.5f ), Vector Dir_Tir_Trade_07_G                   v(  0, 0, 1 ) 
+  Vector        Pos_Tir_Trade_08_G                      RKPP.Tir                   - PlayfieldData.UniversePosition  + v(  624.5f,   21.2f,   320.3f ), Vector Dir_Tir_Trade_08_G                   v(  0, 0, 1 ) 
+  Vector        Pos_Tir_Trade_09_G                      RKPP.Tir                   - PlayfieldData.UniversePosition  + v(  605.8f,   21.2f,   502.3f ), Vector Dir_Tir_Trade_09_G                   v( -1, 0, 0 ) 
+  Vector        Pos_Tir_Trade_10_G                      RKPP.Tir                   - PlayfieldData.UniversePosition  + v(  512.1f,   21.2f,   516.5f ), Vector Dir_Tir_Trade_10_G                   v(  0, 0,-1 ) 
+  Vector        Pos_Tir_Trade_11_G                      RKPP.Tir_County            - PlayfieldData.UniversePosition  + v( 2113.3f,   23.2f,  1148.8f ), Vector Dir_Tir_Trade_11_G                   v( -1, 0, 0 ) 
+  Vector        Pos_Tir_Trade_12_G                      RKPP.Tir_County            - PlayfieldData.UniversePosition  + v( 2206.1f,   23.2f,  1208.6f ), Vector Dir_Tir_Trade_12_G                   v(  0, 0, 1 ) 
+  Vector        Pos_Tir_Trade_13_G                      RKPP.Tir_County            - PlayfieldData.UniversePosition  + v( 2391.3f,   23.2f,  1208.0f ), Vector Dir_Tir_Trade_13_G                   v(  0, 0, 1 ) 
+  Vector        Pos_Tir_Trade_14_G                      RKPP.Tir_County            - PlayfieldData.UniversePosition  + v( 2420.1f,   23.2f,  1033.5f ), Vector Dir_Tir_Trade_14_G                   v(  1, 0, 0 ) 
+  Vector        Pos_Tir_Trade_15_G                      RKPP.Tir_County            - PlayfieldData.UniversePosition  + v( 2320.5f,   23.2f,   932.0f ), Vector Dir_Tir_Trade_15_G                   v(  0, 0,-1 ) 
+  Vector        Pos_Tir_Trade_16_G                      RKPP.Tir_County            - PlayfieldData.UniversePosition  + v( 2139.3f,   23.2f,   938.1f ), Vector Dir_Tir_Trade_16_G                   v(  0, 0,-1 ) 
+                                                                                                                                                                         
+  Vector        Pos_Tir_Trade_01_A                      RKPP.Tir                   - PlayfieldData.UniversePosition + This.WND + v(  406.3f,   71.2f,   517.7f ), Vector Dir_Tir_Trade_01_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_02_A                      RKPP.Tir                   - PlayfieldData.UniversePosition + This.WND + v(  421.8f,   71.2f,   464.4f ), Vector Dir_Tir_Trade_02_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_03_A                      RKPP.Tir                   - PlayfieldData.UniversePosition + This.WND + v(  427.6f,   71.2f,   417.0f ), Vector Dir_Tir_Trade_03_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_04_A                      RKPP.Tir                   - PlayfieldData.UniversePosition + This.WND + v(  399.3f,   71.2f,   364.7f ), Vector Dir_Tir_Trade_04_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_05_A                      RKPP.Tir                   - PlayfieldData.UniversePosition + This.WND + v(  456.2f,   71.2f,   322.6f ), Vector Dir_Tir_Trade_05_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_06_A                      RKPP.Tir                   - PlayfieldData.UniversePosition + This.WND + v(  527.6f,   71.2f,   355.9f ), Vector Dir_Tir_Trade_06_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_07_A                      RKPP.Tir                   - PlayfieldData.UniversePosition + This.WND + v(  575.0f,   71.2f,   327.5f ), Vector Dir_Tir_Trade_07_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_08_A                      RKPP.Tir                   - PlayfieldData.UniversePosition + This.WND + v(  624.5f,   71.2f,   320.3f ), Vector Dir_Tir_Trade_08_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_09_A                      RKPP.Tir                   - PlayfieldData.UniversePosition + This.WND + v(  605.8f,   71.2f,   502.3f ), Vector Dir_Tir_Trade_09_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_10_A                      RKPP.Tir                   - PlayfieldData.UniversePosition + This.WND + v(  512.1f,   71.2f,   516.5f ), Vector Dir_Tir_Trade_10_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_11_A                      RKPP.Tir_County            - PlayfieldData.UniversePosition + This.WND + v( 2113.3f,   73.2f,  1148.8f ), Vector Dir_Tir_Trade_11_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_12_A                      RKPP.Tir_County            - PlayfieldData.UniversePosition + This.WND + v( 2206.1f,   73.2f,  1208.6f ), Vector Dir_Tir_Trade_12_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_13_A                      RKPP.Tir_County            - PlayfieldData.UniversePosition + This.WND + v( 2391.3f,   73.2f,  1208.0f ), Vector Dir_Tir_Trade_13_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_14_A                      RKPP.Tir_County            - PlayfieldData.UniversePosition + This.WND + v( 2420.1f,   73.2f,  1033.5f ), Vector Dir_Tir_Trade_14_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_15_A                      RKPP.Tir_County            - PlayfieldData.UniversePosition + This.WND + v( 2320.5f,   73.2f,   932.0f ), Vector Dir_Tir_Trade_15_A                   v(  0, 0, 0 ) 
+  Vector        Pos_Tir_Trade_16_A                      RKPP.Tir_County            - PlayfieldData.UniversePosition + This.WND + v( 2139.3f,   73.2f,   938.1f ), Vector Dir_Tir_Trade_16_A                   v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Borealis                                                                                                                                                               
+  Vector        Pos_Borealis_CityTrade_Clan             RKPP.Borealis              - PlayfieldData.UniversePosition + This.WND + v(  638.0f,  500.0f,   800.0f ), Vector Dir_Borealis_CityTrade_Clan          v(  0, 0, 0 ) 
+  Vector        Pos_Borealis_CityTrade_Omni             RKPP.Borealis              - PlayfieldData.UniversePosition + This.WND + v(  638.0f,  500.0f,   400.0f ), Vector Dir_Borealis_CityTrade_Omni          v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Borealis_Trade_Clan_01_G            RKPP.Borealis              - PlayfieldData.UniversePosition  + v(  641.2f,   91.8f,   649.7f ), Vector Dir_Borealis_Trade_Clan_01_G         v(  1, 0, 0 ) 
+  Vector        Pos_Borealis_Trade_Omni_01_G            RKPP.Borealis              - PlayfieldData.UniversePosition  + v(  641.6f,   91.8f,   575.6f ), Vector Dir_Borealis_Trade_Omni_01_G         v(  1, 0, 0 ) 
+  Vector        Pos_Borealis_Trade_Clan_01_A            RKPP.Borealis              - PlayfieldData.UniversePosition + This.WND + v(  641.2f,  141.8f,   649.7f ), Vector Dir_Borealis_Trade_Clan_01_A         v(  0, 0, 0 ) 
+  Vector        Pos_Borealis_Trade_Omni_01_A            RKPP.Borealis              - PlayfieldData.UniversePosition + This.WND + v(  641.6f,  141.8f,   575.6f ), Vector Dir_Borealis_Trade_Omni_01_A         v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Milky Way                                                                                                                                                              
+  Vector        Pos_Milky_Way_Patrol_01_A               RKPP.Milky_Way             - PlayfieldData.UniversePosition + This.WND + v(  936.0f,  124.0f,   447.0f ), Vector Dir_Milky_Way_Patrol_01_A            v(  0, 0, 0 ) 
+  Vector        Pos_Milky_Way_Patrol_02_A               RKPP.Milky_Way             - PlayfieldData.UniversePosition + This.WND + v( 1224.0f,  124.0f,   620.0f ), Vector Dir_Milky_Way_Patrol_02_A            v(  0, 0, 0 ) 
+  Vector        Pos_Milky_Way_Patrol_03_A               RKPP.Milky_Way             - PlayfieldData.UniversePosition + This.WND + v( 1744.0f,  124.0f,   442.0f ), Vector Dir_Milky_Way_Patrol_03_A            v(  0, 0, 0 ) 
+  Vector        Pos_Milky_Way_Patrol_04_A               RKPP.Milky_Way             - PlayfieldData.UniversePosition + This.WND + v( 2363.0f,  154.0f,  1025.0f ), Vector Dir_Milky_Way_Patrol_04_A            v(  0, 0, 0 ) 
+  Vector        Pos_Milky_Way_Patrol_05_A               RKPP.Milky_Way             - PlayfieldData.UniversePosition + This.WND + v( 1825.0f,  124.0f,  2153.0f ), Vector Dir_Milky_Way_Patrol_05_A            v(  0, 0, 0 ) 
+  Vector        Pos_Milky_Way_Patrol_06_A               RKPP.Milky_Way             - PlayfieldData.UniversePosition + This.WND + v( 2748.0f,  124.0f,   492.0f ), Vector Dir_Milky_Way_Patrol_06_A            v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Pleasant meadows                                                                                                                                                      
+  Vector        Pos_Pleasant_Meadows_BTrade_01_G        RKPP.Pleasant_Meadows      - PlayfieldData.UniversePosition            + v( 1117.0f,    9.8f,  2291.3f ), Vector Dir_Pleasant_Meadows_BTrade_01_G     v(  0, 0, 1 ) 
+  Vector        Pos_Pleasant_Meadows_BTrade_01_A        RKPP.Pleasant_Meadows      - PlayfieldData.UniversePosition + This.WND + v( 1117.0f,   59.8f,  2291.3f ), Vector Dir_Pleasant_Meadows_BTrade_01_A     v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Pleasant_Meadows_Patrol_01_A        RKPP.Pleasant_Meadows      - PlayfieldData.UniversePosition + This.WND + v( 1518.0f,  400.0f,   718.0f ), Vector Dir_Pleasant_Meadows_Patrol_01_A     v(  0, 0, 0 ) 
+  Vector        Pos_Pleasant_Meadows_Patrol_02_A        RKPP.Pleasant_Meadows      - PlayfieldData.UniversePosition + This.WND + v( 2340.0f,  117.0f,   770.0f ), Vector Dir_Pleasant_Meadows_Patrol_02_A     v(  0, 0, 0 ) 
+  Vector        Pos_Pleasant_Meadows_Patrol_03_A        RKPP.Pleasant_Meadows      - PlayfieldData.UniversePosition + This.WND + v( 2975.0f,  135.0f,   652.0f ), Vector Dir_Pleasant_Meadows_Patrol_03_A     v(  0, 0, 0 ) 
+  Vector        Pos_Pleasant_Meadows_Patrol_04_A        RKPP.Pleasant_Meadows      - PlayfieldData.UniversePosition + This.WND + v( 2300.0f,  103.0f,  1838.0f ), Vector Dir_Pleasant_Meadows_Patrol_04_A     v(  0, 0, 0 ) 
+  Vector        Pos_Pleasant_Meadows_Patrol_05_A        RKPP.Pleasant_Meadows      - PlayfieldData.UniversePosition + This.WND + v( 1117.0f,  109.0f,  2291.0f ), Vector Dir_Pleasant_Meadows_Patrol_05_A     v(  0, 0, 0 ) 
+  Vector        Pos_Pleasant_Meadows_Patrol_06_A        RKPP.Pleasant_Meadows      - PlayfieldData.UniversePosition + This.WND + v(  424.0f,  243.0f,  1489.0f ), Vector Dir_Pleasant_Meadows_Patrol_06_A     v(  0, 0, 0 ) 
+  Vector        Pos_Pleasant_Meadows_Patrol_06_G        RKPP.Pleasant_Meadows      - PlayfieldData.UniversePosition            + v(  424.0f,  143.0f,  1489.0f ), Vector Dir_Pleasant_Meadows_Patrol_06_G     v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Andromeda                                                                                                                                                              
+  Vector        Pos_Andromeda_Patrol_01_A               RKPP.Andromeda             - PlayfieldData.UniversePosition + This.WND + v( 1821.0f,  106.0f,  2459.0f ), Vector Dir_Andromeda_Patrol_01_A            v(  0, 0, 0 ) 
+  Vector        Pos_ICC_Elevator1         RKPP.Andromeda             - PlayfieldData.UniversePosition + v( 3631.0, 71.0f, 867.0f ), Vector Dir_ICC_Elevator1          v(  1, 0, 0 )  
+  Vector        Pos_ICC_Elevator2            RKPP.Andromeda             - PlayfieldData.UniversePosition + v( 3610.0, 129.0f, 767.0f ), Vector Dir_ICC_Elevator2          v(  1, 0, 0 )  
+  Vector        Pos_ICC_Fly_Away_01_A             RKPP.Andromeda             - PlayfieldData.UniversePosition + v( 3390.0, 700.0f, 525.0f ), Vector Dir_ICC_Fly_Away_01_A          v(  0, 0, 0 )  
+  Vector        Pos_ICC_Fly_Away_02_A             RKPP.Andromeda             - PlayfieldData.UniversePosition + v( 3326.0, 100.0f, 988.0f ), Vector Dir_ICC_Fly_Away_02_A          v(  0, 0, 0 )  
+  Vector        Pos_ICC_Fly_Away_03_A             RKPP.Andromeda             - PlayfieldData.UniversePosition + v( 3399.0, 100.0f, 805.0f ), Vector Dir_ICC_Fly_Away_03_A          v(  0, 0, 0 )  
+  Vector        Pos_ICC_Fly_Away_04_A             RKPP.Andromeda             - PlayfieldData.UniversePosition + v( 3595.0, 700.0f, 1183.0f ), Vector Dir_ICC_Fly_Away_04_A          v(  0, 0, 0 )  
+  Vector        Pos_ICC_Pad1             RKPP.Andromeda             - PlayfieldData.UniversePosition + v( 3572.0, 90.0f, 769.0f ), Vector Dir_ICC_Pad1          v(  0, 0, 0 )  
+  Vector        Pos_ICC_Pad2             RKPP.Andromeda             - PlayfieldData.UniversePosition + v( 3595.0, 60.0f, 851.0f ), Vector Dir_ICC_Pad2          v(  0, 0, 0 )  
+  Vector        Pos_ICC_HQ_Pad1             RKPP.Andromeda             - PlayfieldData.UniversePosition + v( 3136.0, 58.0f, 825.0f ), Vector Dir_ICC_HQ_Pad1          v(  0, 0, 0 )  
+  Vector        Pos_ICC_HQ_Tower1             RKPP.Andromeda             - PlayfieldData.UniversePosition + This.WND + v( 3245.0, 160.0f, 783.0f ), Vector Dir_ICC_HQ_Tower1          v(  0, 0, 0 )  
+  Vector        Pos_ICC_HQ_Tower2             RKPP.Andromeda             - PlayfieldData.UniversePosition + This.WND + v( 3180.0, 200.0f, 865.0f ), Vector Dir_ICC_HQ_Tower2          v(  0, 0, 0 )  
+  Vector        Pos_ICC_HQ_Tower3            RKPP.Andromeda             - PlayfieldData.UniversePosition + This.WND + v( 3322.0, 240.0f, 866.0f ), Vector Dir_ICC_HQ_Tower3          v(  0, 0, 0 )  
+  Vector        Pos_ICC_HQ_Tower4            RKPP.Andromeda             - PlayfieldData.UniversePosition + This.WND + v( 3246.0, 280.0f, 943.0f ), Vector Dir_ICC_HQ_Tower4          v(  0, 0, 0 )  
+  Vector        Pos_ICC_HQ_Pad2             RKPP.Andromeda             - PlayfieldData.UniversePosition + v( 3139.0, 55.0f, 928.0f ), Vector Dir_ICC_HQ_Pad2          v(  0, 0, 0 )  
+  Vector        Pos_ICC_HQ_Pad3             RKPP.Andromeda             - PlayfieldData.UniversePosition + v( 3159.0, 55.0f, 904.0f ), Vector Dir_ICC_HQ_Pad3          v(  0, 0, 0 )  
+  Vector        Pos_Andromeda_Crashed_Ship            RKPP.Andromeda             - PlayfieldData.UniversePosition + This.WND + v( 3149.0, 1000.0f, 1219.0f ), Vector Dir_Andromeda_Crashed_Ship          v(  0, 0, 0 )  
+  Vector        Pos_ICC_HQ_Parking            RKPP.Andromeda             - PlayfieldData.UniversePosition + v( 3352.0, 35.0f, 774.0f ), Vector Dir_ICC_HQ_Parking          v(  0, 0, 0 )  
+  Vector        Pos_Andromeda_Lake            RKPP.Andromeda             - PlayfieldData.UniversePosition + This.WND + v( 3195.0, 700.0f, 530.0f ), Vector Dir_Andromeda_Lake          v(  0, 0, 0 )  
+  Vector        Pos_Andromeda_Arete           RKPP.Andromeda             - PlayfieldData.UniversePosition + This.WND + v( 3950.0, 700.0f, 920.0f ), Vector Dir_Andromeda_Arete          v(  0, 0, 0 ) 
+  
+# Clondyke                                                                                                                                                               
+  Vector        Pos_Clondyke_Patrol_01_A                RKPP.Clondyke              - PlayfieldData.UniversePosition + This.WND + v( 2052.0f,  107.0f,  1673.0f ), Vector Dir_Clondyke_Patrol_01_A             v(  0, 0, 0 ) 
+  Vector        Pos_Clondyke_Patrol_02_A                RKPP.Clondyke              - PlayfieldData.UniversePosition + This.WND + v( 1092.0f,  115.0f,  2736.0f ), Vector Dir_Clondyke_Patrol_02_A             v(  0, 0, 0 ) 
+  Vector        Pos_Clondyke_Patrol_03_G                RKPP.Clondyke              - PlayfieldData.UniversePosition            + v( 1113.9f,   24.4f,  3973.9f ), Vector Dir_Clondyke_Patrol_03_G             v(  0, 0, 1 ) 
+  Vector        Pos_Clondyke_Patrol_03_A                RKPP.Clondyke              - PlayfieldData.UniversePosition + This.WND + v( 1113.9f,  124.4f,  3973.9f ), Vector Dir_Clondyke_Patrol_03_A             v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Galaway County                                                                                                                                                         
+  Vector        Pos_Galway_County_BTrade_01_G           RKPP.Galway_County         - PlayfieldData.UniversePosition            + v( 1622.0f,   15.4f,  2356.9f ), Vector Dir_Galway_County_BTrade_01_G        v(  1, 0, 0 ) 
+  Vector        Pos_Galway_County_BTrade_01_A           RKPP.Galway_County         - PlayfieldData.UniversePosition + This.WND + v( 1622.0f,   65.4f,  2356.9f ), Vector Dir_Galway_County_BTrade_01_A        v(  0, 0, 0 ) 
+  Vector        Pos_Galway_County_BTrade_02_G           RKPP.Galway_County         - PlayfieldData.UniversePosition            + v( 2375.0f,    1.4f,  1171.8f ), Vector Dir_Galway_County_BTrade_02_G        v( -1, 0, 0 ) 
+  Vector        Pos_Galway_County_BTrade_02_A           RKPP.Galway_County         - PlayfieldData.UniversePosition + This.WND + v( 2375.0f,   51.4f,  1171.8f ), Vector Dir_Galway_County_BTrade_02_A        v(  0, 0, 0 ) 
+  Vector        Pos_Galway_County_Patrol_01_A           RKPP.Galway_County         - PlayfieldData.UniversePosition + This.WND + v( 1622.0f,  115.4f,  2356.9f ), Vector Dir_Galway_County_Patrol_01_A        v(  0, 0, 0 ) 
+  Vector        Pos_Galway_County_Patrol_02_A           RKPP.Galway_County         - PlayfieldData.UniversePosition + This.WND + v( 2375.0f,  101.4f,  1171.8f ), Vector Dir_Galway_County_Patrol_02_A        v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Lush Fields                                                                                                                                                            
+  Vector        Pos_Lush_Fields_Patrol_01_G             RKPP.Lush_Fields           - PlayfieldData.UniversePosition            + v( 1524.6f,  137.5f,  2520.4f ), Vector Dir_Lush_Fields_Patrol_01_G          v(  1, 0, 0 ) 
+  Vector        Pos_Lush_Fields_Patrol_01_A             RKPP.Lush_Fields           - PlayfieldData.UniversePosition + This.WND + v( 1524.6f,  187.5f,  2520.4f ), Vector Dir_Lush_Fields_Patrol_01_A          v(  0, 0, 0 ) 
+  Vector        Pos_Lush_Fields_Patrol_02_G             RKPP.Lush_Fields           - PlayfieldData.UniversePosition            + v( 1464.9f,  137.5f,  2520.5f ), Vector Dir_Lush_Fields_Patrol_02_G          v( -1, 0, 0 ) 
+  Vector        Pos_Lush_Fields_Patrol_02_A             RKPP.Lush_Fields           - PlayfieldData.UniversePosition + This.WND + v( 1464.9f,  187.5f,  2520.5f ), Vector Dir_Lush_Fields_Patrol_02_A          v(  0, 0, 0 ) 
+  Vector        Pos_Lush_Fields_Patrol_03_A             RKPP.Lush_Fields           - PlayfieldData.UniversePosition + This.WND + v( 1456.9f,  137.5f,   683.5f ), Vector Dir_Lush_Fields_Patrol_03_A          v(  0, 0, 0 ) 
+  Vector        Pos_Lush_Fields_Patrol_04_A             RKPP.Lush_Fields           - PlayfieldData.UniversePosition + This.WND + v( 3273.9f,  237.5f,   798.5f ), Vector Dir_Lush_Fields_Patrol_04_A          v(  0, 0, 0 ) 
+  Vector        Pos_Lush_Fields_Patrol_05_A             RKPP.Lush_Fields           - PlayfieldData.UniversePosition + This.WND + v( 2941.9f,  180.5f,  2913.5f ), Vector Dir_Lush_Fields_Patrol_05_A          v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# 4 Holes                                                                                                                                                                
+  Vector        Pos_4_Holes_Patrol_01_A                 RKPP.4_Holes               - PlayfieldData.UniversePosition + This.WND + v( 1131.0f,  400.0f,  1173.0f ), Vector Dir_4_Holes_Patrol_01_A              v(  0, 0, 0 ) 
+  Vector        Pos_4_Holes_Patrol_02_A                 RKPP.4_Holes               - PlayfieldData.UniversePosition + This.WND + v(  875.0f,  400.0f,  1783.0f ), Vector Dir_4_Holes_Patrol_02_A              v(  0, 0, 0 ) 
+  Vector        Pos_4_Holes_Patrol_03_A                 RKPP.4_Holes               - PlayfieldData.UniversePosition + This.WND + v( 1638.0f,  400.0f,  2000.0f ), Vector Dir_4_Holes_Patrol_03_A              v(  0, 0, 0 ) 
+  Vector        Pos_4_Holes_Patrol_04_A                 RKPP.4_Holes               - PlayfieldData.UniversePosition + This.WND + v( 1265.0f,  400.0f,  1467.0f ), Vector Dir_4_Holes_Patrol_04_A              v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Omni Forest                                                                                                                                                            
+  Vector        Pos_Omni_Forest_Patrol_01_A             RKPP.Omni_Forest           - PlayfieldData.UniversePosition  + v(  486.0f,  139.0f,  1837.0f ), Vector Dir_Omni_Forest_Patrol_01_A          v(  0, 0, 0 ) 
+  Vector        Pos_Omni_Forest_Patrol_02_A             RKPP.Omni_Forest           - PlayfieldData.UniversePosition  + v( 1312.0f,  139.0f,   376.0f ), Vector Dir_Omni_Forest_Patrol_02_A          v(  0, 0, 0 ) 
+  Vector        Pos_Omni_Forest_Patrol_03_A             RKPP.Omni_Forest           - PlayfieldData.UniversePosition  + v(  762.0f,  139.0f,   377.0f ), Vector Dir_Omni_Forest_Patrol_03_A          v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Omni HQ                                                                                                                                                                
+  Vector        Pos_Omni_1_HQ_Patrol_01_A               RKPP.Omni_1_HQ             - PlayfieldData.UniversePosition  + v(  603.7f,  200.8f,   481.5f ), Vector Dir_Omni_1_HQ_Patrol_01_A            v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_HQ_BTrade_01_G               RKPP.Omni_1_HQ             - PlayfieldData.UniversePosition            + v(  558.7f,   42.8f,   527.5f ), Vector Dir_Omni_1_HQ_BTrade_01_G            v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_HQ_BTrade_01_A               RKPP.Omni_1_HQ             - PlayfieldData.UniversePosition + This.WND + v(  558.7f,  112.8f,   527.5f ), Vector Dir_Omni_1_HQ_BTrade_01_A            v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_HQ_BTrade_02_G               RKPP.Omni_1_HQ             - PlayfieldData.UniversePosition            + v(  617.8f,   42.8f,   527.5f ), Vector Dir_Omni_1_HQ_BTrade_02_G            v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_HQ_BTrade_02_A               RKPP.Omni_1_HQ             - PlayfieldData.UniversePosition + This.WND + v(  617.8f,  112.8f,   527.5f ), Vector Dir_Omni_1_HQ_BTrade_02_A            v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_HQ_Mother_01_A               RKPP.Omni_1_HQ             - PlayfieldData.UniversePosition  + v(  700.0f,  503.7f,   400.8f ), Vector Dir_Omni_1_HQ_Mother_01_A            v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_HQ_Mother_02_A               RKPP.Omni_1_HQ             - PlayfieldData.UniversePosition  + v(  703.7f,  400.8f,   381.5f ), Vector Dir_Omni_1_HQ_Mother_02_A            v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_HQ_Mother_03_A               RKPP.Omni_1_HQ             - PlayfieldData.UniversePosition  + v(  700.0f,  403.7f,   400.8f ), Vector Dir_Omni_1_HQ_Mother_03_A            v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Omni entertainment                                                                                                                                                  
+  Vector        Pos_Omni_1_Entertainment_Patrol_01_A    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition            + v( 1000.0f,  200.0f,  1000.0f ), Vector Dir_Omni_1_Entertainment_Patrol_01_A v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_Patrol_02_A    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition + This.WND + v(    0.0f,  200.0f,  1000.0f ), Vector Dir_Omni_1_Entertainment_Patrol_02_A v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_Patrol_03_A    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition + This.WND + v(    0.0f,  200.0f,     0.0f ), Vector Dir_Omni_1_Entertainment_Patrol_03_A v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_Patrol_04_A    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition + This.WND + v( 1000.0f,  200.0f,     0.0f ), Vector Dir_Omni_1_Entertainment_Patrol_04_A v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_01_G    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition            + v(  701.8f,   47.1f,   489.9f ), Vector Dir_Omni_1_Entertainment_BTrade_01_G v(  1, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_01_A    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition + This.WND + v(  701.8f,  117.1f,   489.9f ), Vector Dir_Omni_1_Entertainment_BTrade_01_A v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_02_G    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition            + v(  667.8f,   47.1f,   457.0f ), Vector Dir_Omni_1_Entertainment_BTrade_02_G v(  0, 0,-1 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_02_A    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition + This.WND + v(  667.8f,  117.1f,   457.0f ), Vector Dir_Omni_1_Entertainment_BTrade_02_A v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_03_G    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition            + v(  482.0f,   47.0f,   447.9f ), Vector Dir_Omni_1_Entertainment_BTrade_03_G v(  0, 0,-1 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_03_A    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition + This.WND + v(  482.0f,  117.0f,   447.9f ), Vector Dir_Omni_1_Entertainment_BTrade_03_A v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_04_G    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition            + v(  459.8f,   47.1f,   484.2f ), Vector Dir_Omni_1_Entertainment_BTrade_04_G v( -1, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_04_A    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition + This.WND + v(  459.8f,  117.1f,   484.2f ), Vector Dir_Omni_1_Entertainment_BTrade_04_A v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_05_G    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition            + v(  461.8f,   47.1f,   667.5f ), Vector Dir_Omni_1_Entertainment_BTrade_05_G v( -1, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_05_A    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition + This.WND + v(  461.8f,  117.1f,   667.5f ), Vector Dir_Omni_1_Entertainment_BTrade_05_A v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_06_G    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition            + v(  488.2f,   47.1f,   700.0f ), Vector Dir_Omni_1_Entertainment_BTrade_06_G v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_06_A    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition + This.WND + v(  488.2f,  117.1f,   700.0f ), Vector Dir_Omni_1_Entertainment_BTrade_06_A v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_07_G    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition            + v(  678.9f,   47.0f,   703.8f ), Vector Dir_Omni_1_Entertainment_BTrade_07_G v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_07_A    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition + This.WND + v(  678.9f,  117.0f,   703.8f ), Vector Dir_Omni_1_Entertainment_BTrade_07_A v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_08_G    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition            + v(  710.8f,   47.1f,   674.7f ), Vector Dir_Omni_1_Entertainment_BTrade_08_G v(  1, 0, 0 ) 
+  Vector        Pos_Omni_1_Entertainment_BTrade_08_A    RKPP.Omni_1_Entertainment  - PlayfieldData.UniversePosition + This.WND + v(  710.8f,  117.1f,   674.7f ), Vector Dir_Omni_1_Entertainment_BTrade_08_A v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Omni Trade                                                                                                                                                             
+  Vector        Pos_Omni_1_Trade_CityTrade              RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  403.0f,  500.0f,   381.0f ), Vector Dir_Omni_1_Trade_CityTrade           v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_Trade_01_A             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  394.6f,   99.2f,   389.0f ), Vector Dir_Omni_1_Trade_Trade_01_A          v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_Trade_02_G             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  338.8f,   42.1f,   393.5f ), Vector Dir_Omni_1_Trade_Trade_02_G          v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_02_A             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  338.8f,   92.1f,   393.5f ), Vector Dir_Omni_1_Trade_Trade_02_A          v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_03_G             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  314.7f,   39.0f,   393.0f ), Vector Dir_Omni_1_Trade_Trade_03_G          v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_03_A             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  314.7f,   89.0f,   393.0f ), Vector Dir_Omni_1_Trade_Trade_03_A          v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_04_G             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  283.2f,   36.0f,   392.8f ), Vector Dir_Omni_1_Trade_Trade_04_G          v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_04_A             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  283.2f,   86.0f,   392.8f ), Vector Dir_Omni_1_Trade_Trade_04_A          v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_05_G             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  251.1f,   33.0f,   393.1f ), Vector Dir_Omni_1_Trade_Trade_05_G          v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_05_A             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  251.1f,   83.0f,   393.1f ), Vector Dir_Omni_1_Trade_Trade_05_A          v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_07_G             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  415.3f,   36.0f,   509.6f ), Vector Dir_Omni_1_Trade_Trade_07_G          v(  1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_07_A             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  415.3f,   86.0f,   509.6f ), Vector Dir_Omni_1_Trade_Trade_07_A          v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_08_G             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  469.9f,   42.1f,   370.4f ), Vector Dir_Omni_1_Trade_Trade_08_G          v(  0, 0,-1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_08_A             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  469.9f,   92.1f,   370.4f ), Vector Dir_Omni_1_Trade_Trade_08_A          v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_09_G             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  493.6f,   39.1f,   370.5f ), Vector Dir_Omni_1_Trade_Trade_09_G          v(  0, 0,-1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_09_A             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  493.6f,   89.1f,   370.5f ), Vector Dir_Omni_1_Trade_Trade_09_A          v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_10_G             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  525.7f,   36.0f,   370.4f ), Vector Dir_Omni_1_Trade_Trade_10_G          v(  0, 0,-1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_10_A             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  525.7f,   86.0f,   370.4f ), Vector Dir_Omni_1_Trade_Trade_10_A          v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_11_G             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  557.3f,   33.0f,   370.4f ), Vector Dir_Omni_1_Trade_Trade_11_G          v(  0, 0,-1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_11_A             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  557.3f,   83.0f,   370.4f ), Vector Dir_Omni_1_Trade_Trade_11_A          v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_13_G             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  393.8f,   39.0f,   284.6f ), Vector Dir_Omni_1_Trade_Trade_13_G          v( -1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_13_A             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  393.8f,   89.0f,   284.6f ), Vector Dir_Omni_1_Trade_Trade_13_A          v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_14_G             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  393.1f,   36.1f,   255.2f ), Vector Dir_Omni_1_Trade_Trade_14_G          v( -1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_14_A             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  393.1f,   86.1f,   255.2f ), Vector Dir_Omni_1_Trade_Trade_14_A          v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_15_G             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  393.3f,   33.1f,   223.2f ), Vector Dir_Omni_1_Trade_Trade_15_G          v( -1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_15_A             RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  393.3f,   83.1f,   223.2f ), Vector Dir_Omni_1_Trade_Trade_15_A          v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_BTrade_02_G            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  338.8f,   42.1f,   376.5f ), Vector Dir_Omni_1_Trade_BTrade_02_G         v(  0, 0,-1 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_02_A            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  338.8f,  211.1f,   376.5f ), Vector Dir_Omni_1_Trade_BTrade_02_A         v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_03_G            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  314.7f,   39.0f,   376.0f ), Vector Dir_Omni_1_Trade_BTrade_03_G         v(  0, 0,-1 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_03_A            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  314.7f,  211.0f,   376.0f ), Vector Dir_Omni_1_Trade_BTrade_03_A         v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_04_G            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  283.2f,   36.0f,   375.8f ), Vector Dir_Omni_1_Trade_BTrade_04_G         v(  0, 0,-1 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_04_A            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  283.2f,  211.0f,   375.8f ), Vector Dir_Omni_1_Trade_BTrade_04_A         v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_05_G            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  251.1f,   33.0f,   376.1f ), Vector Dir_Omni_1_Trade_BTrade_05_G         v(  0, 0,-1 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_05_A            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  251.1f,  211.0f,   376.1f ), Vector Dir_Omni_1_Trade_BTrade_05_A         v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_07_G            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  398.0f,   36.1f,   509.9f ), Vector Dir_Omni_1_Trade_BTrade_07_G         v( -1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_07_A            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  398.0f,  211.1f,   509.9f ), Vector Dir_Omni_1_Trade_BTrade_07_A         v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_08_G            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  469.8f,   42.1f,   388.1f ), Vector Dir_Omni_1_Trade_BTrade_08_G         v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_08_A            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  469.8f,  211.1f,   388.1f ), Vector Dir_Omni_1_Trade_BTrade_08_A         v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_09_G            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  494.1f,   39.1f,   388.9f ), Vector Dir_Omni_1_Trade_BTrade_09_G         v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_09_A            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  494.1f,  211.1f,   388.9f ), Vector Dir_Omni_1_Trade_BTrade_09_A         v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_10_G            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  526.1f,   36.0f,   388.9f ), Vector Dir_Omni_1_Trade_BTrade_10_G         v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_10_A            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  526.1f,  211.0f,   388.9f ), Vector Dir_Omni_1_Trade_BTrade_10_A         v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_11_G            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  558.0f,   33.0f,   388.7f ), Vector Dir_Omni_1_Trade_BTrade_11_G         v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_11_A            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  558.0f,  211.0f,   388.7f ), Vector Dir_Omni_1_Trade_BTrade_11_A         v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_13_G            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  411.8f,   39.0f,   286.6f ), Vector Dir_Omni_1_Trade_BTrade_13_G         v(  1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_13_A            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  411.8f,  211.0f,   286.6f ), Vector Dir_Omni_1_Trade_BTrade_13_A         v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_14_G            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  409.6f,   36.0f,   255.3f ), Vector Dir_Omni_1_Trade_BTrade_14_G         v(  1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_14_A            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  409.6f,  211.0f,   255.3f ), Vector Dir_Omni_1_Trade_BTrade_14_A         v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_15_G            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  410.0f,   33.1f,   222.6f ), Vector Dir_Omni_1_Trade_BTrade_15_G         v(  1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_BTrade_15_A            RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  410.0f,  211.1f,   222.6f ), Vector Dir_Omni_1_Trade_BTrade_15_A         v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_Trade_02_1_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  394.1f,   92.1f,   408.4f ), Vector Dir_Omni_1_Trade_Trade_02_1_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_02_2_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  403.9f,   42.1f,   455.2f ), Vector Dir_Omni_1_Trade_Trade_02_2_G        v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_02_2_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  403.9f,   92.1f,   455.2f ), Vector Dir_Omni_1_Trade_Trade_02_2_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_02_3_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  451.2f,   92.1f,   445.5f ), Vector Dir_Omni_1_Trade_Trade_02_3_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_02_4_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  419.1f,   24.0f,   406.2f ), Vector Dir_Omni_1_Trade_Trade_02_4_G        v( -1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_02_4_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  419.1f,   92.1f,   406.2f ), Vector Dir_Omni_1_Trade_Trade_02_4_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_02_5_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  381.1f,   92.1f,   350.2f ), Vector Dir_Omni_1_Trade_Trade_02_5_A        v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_Trade_03_1_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  297.4f,   92.1f,   348.5f ), Vector Dir_Omni_1_Trade_Trade_03_1_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_03_2_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  299.4f,   54.7f,   275.7f ), Vector Dir_Omni_1_Trade_Trade_03_2_G        v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_03_2_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  299.4f,   92.1f,   275.7f ), Vector Dir_Omni_1_Trade_Trade_03_2_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_03_3_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  297.7f,   92.1f,   310.1f ), Vector Dir_Omni_1_Trade_Trade_03_3_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_03_4_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  302.4f,   45.9f,   358.6f ), Vector Dir_Omni_1_Trade_Trade_03_4_G        v( -1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_03_4_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  302.4f,   92.1f,   358.6f ), Vector Dir_Omni_1_Trade_Trade_03_4_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_03_5_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  296.8f,   92.1f,   420.6f ), Vector Dir_Omni_1_Trade_Trade_03_5_A        v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_Trade_i04_1_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  272.3f,   92.1f,   444.3f ), Vector Dir_Omni_1_Trade_Trade_04_1_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_i04_2_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  299.1f,   54.7f,   486.9f ), Vector Dir_Omni_1_Trade_Trade_04_2_G        v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_i04_2_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  299.1f,   92.1f,   486.9f ), Vector Dir_Omni_1_Trade_Trade_04_2_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_i04_3_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  268.6f,   92.1f,   390.0f ), Vector Dir_Omni_1_Trade_Trade_04_3_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_i04_4_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  301.8f,   54.7f,   290.3f ), Vector Dir_Omni_1_Trade_Trade_04_4_G        v(  1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_i04_4_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  301.8f,   92.1f,   290.3f ), Vector Dir_Omni_1_Trade_Trade_04_4_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_i04_5_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  255.0f,   92.1f,   309.7f ), Vector Dir_Omni_1_Trade_Trade_04_5_A        v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_Trade_05_1_Ai           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  283.5f,   92.1f,   440.7f ), Vector Dir_Omni_1_Trade_Trade_05_1_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_05_2_Gi           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  242.3f,   39.9f,   527.2f ), Vector Dir_Omni_1_Trade_Trade_05_2_G        v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_05_2_Ai           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  242.3f,   92.1f,   527.2f ), Vector Dir_Omni_1_Trade_Trade_05_2_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_05_3_Ai           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  241.0f,   92.1f,   557.0f ), Vector Dir_Omni_1_Trade_Trade_05_3_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_05_4_Gi           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  295.1f,   43.5f,   562.5f ), Vector Dir_Omni_1_Trade_Trade_05_4_G        v(  1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_05_4_Ai           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  295.1f,   92.1f,   562.5f ), Vector Dir_Omni_1_Trade_Trade_05_4_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_05_5_Ai           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  227.7f,   92.1f,   522.3f ), Vector Dir_Omni_1_Trade_Trade_05_5_A        v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_Trade_07_1_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  497.2f,   92.1f,   551.1f ), Vector Dir_Omni_1_Trade_Trade_07_1_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_07_2_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  558.2f,   34.3f,   559.7f ), Vector Dir_Omni_1_Trade_Trade_07_2_G        v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_07_2_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  558.2f,   92.1f,   559.7f ), Vector Dir_Omni_1_Trade_Trade_07_2_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_07_3_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  582.2f,   92.1f,   493.2f ), Vector Dir_Omni_1_Trade_Trade_07_3_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_07_4_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  506.8f,   45.9f,   468.0f ), Vector Dir_Omni_1_Trade_Trade_07_4_G        v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_07_4_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  506.8f,   92.1f,   468.0f ), Vector Dir_Omni_1_Trade_Trade_07_4_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_07_5_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  382.7f,   92.1f,   395.4f ), Vector Dir_Omni_1_Trade_Trade_07_5_A        v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_Trade_08_1_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  416.1f,   92.1f,   368.4f ), Vector Dir_Omni_1_Trade_Trade_08_1_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_08_2_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  403.9f,   42.1f,   311.5f ), Vector Dir_Omni_1_Trade_Trade_08_2_G        v(  0, 0,-1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_08_2_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  403.9f,   92.1f,   311.5f ), Vector Dir_Omni_1_Trade_Trade_08_2_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_08_3_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  372.2f,   92.1f,   342.5f ), Vector Dir_Omni_1_Trade_Trade_08_3_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_08_4_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  399.9f,   32.5f,   364.0f ), Vector Dir_Omni_1_Trade_Trade_08_4_G        v( -1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_08_4_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  399.9f,   92.1f,   364.0f ), Vector Dir_Omni_1_Trade_Trade_08_4_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_08_5_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  421.6f,   92.1f,   387.9f ), Vector Dir_Omni_1_Trade_Trade_08_5_A        v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_Trade_09_1_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  448.4f,   92.1f,   433.1f ), Vector Dir_Omni_1_Trade_Trade_09_1_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_09_2_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  540.1f,   51.7f,   518.6f ), Vector Dir_Omni_1_Trade_Trade_09_2_G        v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_09_2_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  540.1f,   92.1f,   518.6f ), Vector Dir_Omni_1_Trade_Trade_09_2_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_09_3_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  505.9f,   97.8f,   563.5f ), Vector Dir_Omni_1_Trade_Trade_09_3_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_09_4_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  430.7f,   50.0f,   525.7f ), Vector Dir_Omni_1_Trade_Trade_09_4_G        v( -1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_09_4_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  430.7f,   92.1f,   525.7f ), Vector Dir_Omni_1_Trade_Trade_09_4_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_09_5_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  450.5f,  109.7f,   458.4f ), Vector Dir_Omni_1_Trade_Trade_09_5_A        v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_Trade_10_1_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  517.3f,   92.1f,   472.1f ), Vector Dir_Omni_1_Trade_Trade_10_1_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_10_2_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  449.3f,   57.6f,   435.4f ), Vector Dir_Omni_1_Trade_Trade_10_2_G        v( -1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_10_2_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  449.3f,   92.1f,   435.4f ), Vector Dir_Omni_1_Trade_Trade_10_2_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_10_3_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  566.3f,   92.1f,   489.9f ), Vector Dir_Omni_1_Trade_Trade_10_3_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_10_4_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  502.8f,   79.1f,   561.3f ), Vector Dir_Omni_1_Trade_Trade_10_4_G        v( -1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_10_4_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  502.8f,   92.1f,   561.3f ), Vector Dir_Omni_1_Trade_Trade_10_4_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_10_5_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  566.8f,   92.1f,   521.0f ), Vector Dir_Omni_1_Trade_Trade_10_5_A        v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_Trade_11_1_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  452.3f,   92.1f,   274.4f ), Vector Dir_Omni_1_Trade_Trade_11_1_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_11_2_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  270.1f,   39.9f,   209.5f ), Vector Dir_Omni_1_Trade_Trade_11_2_G        v( -1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_11_2_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  270.1f,   92.1f,   209.5f ), Vector Dir_Omni_1_Trade_Trade_11_2_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_11_3_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  383.3f,   92.1f,   236.9f ), Vector Dir_Omni_1_Trade_Trade_11_3_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_11_4_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  549.8f,   42.9f,   237.4f ), Vector Dir_Omni_1_Trade_Trade_11_4_G        v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_11_4_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  549.8f,   92.1f,   237.4f ), Vector Dir_Omni_1_Trade_Trade_11_4_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_11_5_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  507.6f,   92.1f,   276.0f ), Vector Dir_Omni_1_Trade_Trade_11_5_A        v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_Trade_13_1_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  558.9f,   92.1f,   204.4f ), Vector Dir_Omni_1_Trade_Trade_13_1_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_13_2_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  568.4f,   48.7f,   316.2f ), Vector Dir_Omni_1_Trade_Trade_13_2_G        v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_13_2_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  568.4f,   92.1f,   316.2f ), Vector Dir_Omni_1_Trade_Trade_13_2_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_13_3_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  539.4f,   92.1f,   385.2f ), Vector Dir_Omni_1_Trade_Trade_13_3_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_13_4_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  542.9f,   50.0f,   411.3f ), Vector Dir_Omni_1_Trade_Trade_13_4_G        v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_13_4_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  542.9f,   92.1f,   411.3f ), Vector Dir_Omni_1_Trade_Trade_13_4_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_13_5_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  542.5f,  194.2f,   289.0f ), Vector Dir_Omni_1_Trade_Trade_13_5_A        v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_Trade_14_1_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  348.1f,   92.1f,   228.4f ), Vector Dir_Omni_1_Trade_Trade_14_1_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_14_2_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  299.9f,   42.9f,   234.3f ), Vector Dir_Omni_1_Trade_Trade_14_2_G        v( -1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_14_2_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  299.9f,   92.1f,   234.3f ), Vector Dir_Omni_1_Trade_Trade_14_2_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_14_3_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  290.7f,   92.1f,   280.6f ), Vector Dir_Omni_1_Trade_Trade_14_3_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_14_4_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  346.4f,   57.6f,   320.7f ), Vector Dir_Omni_1_Trade_Trade_14_4_G        v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_14_4_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  346.4f,   92.1f,   320.7f ), Vector Dir_Omni_1_Trade_Trade_14_4_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_14_5_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  324.0f,   92.1f,   294.1f ), Vector Dir_Omni_1_Trade_Trade_14_5_A        v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Omni_1_Trade_Trade_15_1_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  248.6f,   79.2f,   223.4f ), Vector Dir_Omni_1_Trade_Trade_15_1_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_15_2_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  268.0f,   51.7f,   248.1f ), Vector Dir_Omni_1_Trade_Trade_15_2_G        v(  1, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_15_2_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  245.9f,   94.9f,   252.0f ), Vector Dir_Omni_1_Trade_Trade_15_2_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_15_3_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  299.3f,   95.1f,   223.1f ), Vector Dir_Omni_1_Trade_Trade_15_3_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_15_4_G           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition            + v(  381.8f,   24.3f,   203.5f ), Vector Dir_Omni_1_Trade_Trade_15_4_G        v(  0, 0, 1 ) 
+  Vector        Pos_Omni_1_Trade_Trade_15_4_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  381.8f,   92.1f,   203.5f ), Vector Dir_Omni_1_Trade_Trade_15_4_A        v(  0, 0, 0 ) 
+  Vector        Pos_Omni_1_Trade_Trade_15_5_A           RKPP.Omni_1_Trade          - PlayfieldData.UniversePosition + This.WND + v(  383.4f,   81.6f,   251.9f ), Vector Dir_Omni_1_Trade_Trade_15_5_A        v(  0, 0, 0 ) 
+                                                                                                                                                                         
+# Rome                                                                                                                                                                   
+  Vector        Pos_Rome_Red_district_CityTrade         RKPP.Rome_Red_district     - PlayfieldData.UniversePosition            + v(  307.0f,  500.0f,   469.0f ), Vector Dir_Rome_Red_district_CityTrade      v(  0, 0, 0 ) 
+                                                                                                                                                                         
+  Vector        Pos_Rome_Blue_district_Trade_01_G       RKPP.Rome_Blue_district    - PlayfieldData.UniversePosition            + v(  595.6f,   44.3f,   338.9f ), Vector Dir_Rome_Blue_district_Trade_01_G    v(  0, 0, 1 ) 
+  Vector        Pos_Rome_Blue_district_Trade_01_A       RKPP.Rome_Blue_district    - PlayfieldData.UniversePosition + This.WND + v(  595.6f,  114.3f,   338.9f ), Vector Dir_Rome_Blue_district_Trade_01_A    v(  0, 0, 0 ) 
+  Vector        Pos_Rome_Blue_district_Trade_02_G       RKPP.Rome_Blue_district    - PlayfieldData.UniversePosition            + v(  595.9f,   44.3f,   289.5f ), Vector Dir_Rome_Blue_district_Trade_02_G    v(  0, 0,-1 ) 
+  Vector        Pos_Rome_Blue_district_Trade_02_A       RKPP.Rome_Blue_district    - PlayfieldData.UniversePosition + This.WND + v(  595.9f,  114.3f,   289.5f ), Vector Dir_Rome_Blue_district_Trade_02_A    v(  0, 0, 0 ) 
+
+  Vector        Pos_Test_1                              RKPP.Omni_Forest - PlayfieldData.UniversePosition + This.WND + v(  200.0,  35,  2427.0 )
+  Vector        Pos_Test_2                              RKPP.Omni_Forest - PlayfieldData.UniversePosition + This.WND + v(  200.0,  35,  2527.0 )
+  Vector        Pos_Test_3                              RKPP.Omni_Forest - PlayfieldData.UniversePosition + This.WND + v(  300.0,  35,  2527.0 )
+  Vector        Pos_Test_4                              RKPP.Omni_Forest - PlayfieldData.UniversePosition + This.WND + v(  300.0,   9,  2527.0 )
+  Vector        Pos_Test_5                              RKPP.Omni_Forest - PlayfieldData.UniversePosition + This.WND + v(  300.0,   9,  2527.0 )
+  Vector        Pos_Test_6                              RKPP.Omni_Forest - PlayfieldData.UniversePosition + This.WND + v(  300.0,  35,  2527.0 )
+  Vector        Pos_Test_7                              RKPP.Omni_Forest - PlayfieldData.UniversePosition + This.WND + v(  300.0,  35,  2427.0 )
+  Vector        Pos_Test_8                              RKPP.Omni_Forest - PlayfieldData.UniversePosition + This.WND + v(  300.0,   9,  2427.0 )
+  Vector        Pos_Test_9                              RKPP.Omni_Forest - PlayfieldData.UniversePosition + This.WND + v(  300.0,   9,  2427.0 )
+  Vector        Pos_Test_10                             RKPP.Omni_Forest - PlayfieldData.UniversePosition + This.WND + v(  300.0,  35,  2427.0 )
+  
+  Vector        Pos_TestPF_1                            RKPP.TestPF - PlayfieldData.UniversePosition + v( 100.0, 100.0, 100.0 )
+  Vector        Pos_TestPF_2                            RKPP.TestPF - PlayfieldData.UniversePosition + v( 125.0, 100.0, 100.0 )
+}
+
+
+#
+# Scenery object.
+#
+
+
+
+# Scenery ships
+# --------------
+
+Object Spaceship_RubiKa_Omni_Cruiser
+{
+  # Template for scenery ship
+# --------------------------
+
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_Normal
+
+  Float       Visibility          GAME.GameShowSpaceship
+
+  Unsigned    PositionType:       e_World
+  Vector      HS_AheadTimePos:    This.UniversePosition[This.Counter] + This.HS_PreviousPos - This.HS_PreviousPos
+  Vector      HS_PreviousPos:     This.HS_AheadTimePos
+  Vector      HS_AccVec:          This.HS_AheadTimePos - This.HS_PreviousPos * GAME.CutY
+  Vector      HS_ForwardVec:      This.HS_ForwardVec * 20 + This.HS_AccVec [NORMALIZE] 1.0
+  Vector      HS_AccCurrent:      This.HS_AccCurrent + This.HS_AheadTimePos - This.Position * 0.15
+  Vector      Position            This.HS_AccCurrent + This.Position + This.PrevActualPos - This.PrevActualPos
+  Vector      PrevActualPos       This.Position 
+
+  Unsigned    RotationType:       e_World
+  Quaternion  Rot0:               v( 0,0,1 ), 90
+  Quaternion  Rot1:               v( 0,1,0 ), 270
+  Quaternion  Rot2:               GAME.ForwardDirection [ROT] This.HS_ForwardVec
+  Quaternion  Rotation:           This.Rot0 [ROT] This.Rot1 [ROT] This.Rot2 <| This.EngineSound
+
+  Quaternion  AttractorUnitRot:   v( 1,0,0 ), 270
+
+  Unsigned    ScaleType:          e_ScaleVisibleFarAway
+  Float       Scale:              1.0
+
+  Float       EngineSpeed:        This.Position - This.PrevActualPos [LENGTH] 1.0f / GAME.GameDeltaTime * 0.00000001f * 0.01f <| 1.0f
+  Sound       EngineSound:        s( SM_Sandy_ShipEngine_Cruiser
+                                   , This.Position					      # Position
+                                   , 1.0f						      # Duration
+                                   , This.EngineSpeed * This.Visibility			      # Volume
+                                   , e_SoundMaterialDefault				      # Material
+                                   , 0.0f						      # Delay
+                                   , 100.0f						      # Relative pitch (Is overriden by speed if speed is used)
+                                   , 1.0f						      # Force
+                                   , 0.0f						      # Radius
+                                   , This.HS_PreviousPos - This.Position / GAME.GameDeltaTime # Speed
+                                   )
+
+  String      Mesh:               "scenery_spaceship03.abiff"
+  Unsigned    VisibilityTesting:  e_Yes
+  Unsigned    LightCulling:       e_Yes
+  Unsigned    SubMeshSorting:     e_No
+
+  Expansion BP01:
+  {
+    StateBlob 0:
+    {
+      Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE , Unsigned e_FALSE
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING         , Unsigned e_TRUE
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS , Unsigned e_TRUE
+    }
+  }
+
+
+
+
+  Vector      UniversePosition [3]: RKWP.Pos_Omni_Forest_Patrol_01_A
+                                  , RKWP.Pos_Omni_1_HQ_Patrol_01_A
+                                  , RKWP.Pos_Omni_1_Entertainment_Patrol_01_A
+  Float	      Counter:            GAME.DayTimeFactor * 10 % 1
+}
+
+Object Spaceship_RubiKa_Omni_Mothership
+{
+  # Template for scenery ship
+# --------------------------
+
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_Normal
+
+  Float       Visibility          GAME.GameShowSpaceship
+
+  Unsigned    PositionType:       e_World
+  Vector      HS_AheadTimePos:    This.UniversePosition[This.Counter] + This.HS_PreviousPos - This.HS_PreviousPos
+  Vector      HS_PreviousPos:     This.HS_AheadTimePos
+  Vector      HS_AccVec:          This.HS_AheadTimePos - This.HS_PreviousPos * GAME.CutY
+  Vector      HS_ForwardVec:      This.HS_ForwardVec * 20 + This.HS_AccVec [NORMALIZE] 1.0
+  Vector      HS_AccCurrent:      This.HS_AccCurrent + This.HS_AheadTimePos - This.Position * 0.15
+  Vector      Position            This.HS_AccCurrent + This.Position + This.PrevActualPos - This.PrevActualPos
+  Vector      PrevActualPos       This.Position 
+
+  Unsigned    RotationType:       e_World
+  Quaternion  Rot0:               v( 0,0,1 ), 90
+  Quaternion  Rot1:               v( 0,1,0 ), 90
+  Quaternion  Rot2:               GAME.ForwardDirection [ROT] This.HS_ForwardVec
+  Quaternion  Rotation:           This.Rot0 [ROT] This.Rot1 [ROT] This.Rot2 <| This.EngineSound
+
+  Quaternion  AttractorUnitRot:   v( 1,0,0 ), 15
+
+  Unsigned    ScaleType:          e_ScaleVisibleFarAway
+  Float       Scale:              1.0
+
+  Float       EngineSpeed:        This.Position - This.PrevActualPos [LENGTH] 1.0f / GAME.GameDeltaTime * 0.00000001f <| 1.0f
+  Sound       EngineSound:        s( SM_Sandy_ShipEngine_Mothership
+                                   , This.Position					      # Position
+                                   , 1.0f						      # Duration
+                                   , This.EngineSpeed * This.Visibility			      # Volume
+                                   , e_SoundMaterialDefault				      # Material
+                                   , 0.0f						      # Delay
+                                   , 100.0f						      # Relative pitch (Is overriden by speed if speed is used)
+                                   , 1.0f						      # Force
+                                   , 0.0f						      # Radius
+                                   , This.HS_PreviousPos - This.Position / GAME.GameDeltaTime # Speed
+                                   )
+
+  String      Mesh:               "scenery_spaceship01.abiff"
+  Unsigned    VisibilityTesting:  e_Yes
+  Unsigned    LightCulling:       e_Yes
+  Unsigned    SubMeshSorting:     e_No
+
+  Expansion BP01:
+  {
+    StateBlob 0:
+    {
+      Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE , Unsigned e_FALSE
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING         , Unsigned e_TRUE
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS , Unsigned e_TRUE
+    }
+  }
+
+
+
+  Vector      UniversePosition [3]: RKWP.Pos_Omni_1_HQ_Mother_01_A
+                                  , RKWP.Pos_Omni_1_HQ_Mother_02_A
+                                  , RKWP.Pos_Omni_1_HQ_Mother_03_A
+  Float	      Counter:            GAME.DayTimeFactor
+}
+
+
+# Scenery ships
+# --------------
+
+Object Spaceship_RubiKa_Freighter_Clan_01
+{
+  # Template for scenery ship
+# --------------------------
+
+  Unsigned    FXID:               e_GenericMeshObject
+  Unsigned    Use:                e_Automatic
+  Unsigned    Priority:           e_RenderPriority_Normal
+
+  Float       Visibility          GAME.GameShowSpaceship
+
+  Unsigned    PositionType:       e_World
+  Vector      HS_AheadTimePos:    This.UniversePosition[This.Counter] + This.HS_PreviousPos - This.HS_PreviousPos
+  Vector      HS_PreviousPos:     This.HS_AheadTimePos
+  Vector      HS_AccVec:          This.HS_AheadTimePos - This.HS_PreviousPos * GAME.CutY
+  Vector      HS_ForwardVec:      This.HS_ForwardVec * 200 + This.HS_AccVec [NORMALIZE] 1.0
+  Vector      HS_AccCurrent:      This.HS_AccCurrent + This.HS_AheadTimePos - This.Position * 0.15
+  Vector      Position            This.HS_AccCurrent + This.Position + This.PrevActualPos - This.PrevActualPos
+  Vector      PrevActualPos       This.Position 
+
+  Unsigned    RotationType:       e_World
+  Quaternion  Rot0:               v( 0,1,0 ), 90
+  Quaternion  Rot1:               GAME.ForwardDirection [ROT] This.HS_ForwardVec
+  Quaternion  Rotation:           This.Rot0 [ROT] This.Rot1 <| This.EngineSound
+
+  Quaternion  AttractorUnitRot:   v( 0,0,1 ), 180
+
+  Unsigned    ScaleType:          e_ScaleVisibleFarAway
+  Float       Scale:              1.0
+
+  Float       EngineSpeed:        This.Position - This.PrevActualPos [LENGTH] 1.0f <| 1.0f
+  Sound       EngineSound:        s( SM_Sandy_ShipEngine_Freighter
+                                   , This.Position					      # Position
+                                   , 1.0f						      # Duration
+                                   , This.EngineSpeed * This.Visibility			      # Volume
+                                   , e_SoundMaterialDefault				      # Material
+                                   , 0.0f						      # Delay
+                                   , 100.0f						      # Relative pitch (Is overriden by speed if speed is used)
+                                   , 1.0f						      # Force
+                                   , 0.0f						      # Radius
+                                   , This.HS_PreviousPos - This.Position / GAME.GameDeltaTime # Speed
+                                   )
+
+  String      Mesh:               "scenery_spaceship02.abiff"
+  Unsigned    VisibilityTesting:  e_Yes
+  Unsigned    LightCulling:       e_Yes
+  Unsigned    SubMeshSorting:     e_No
+
+  Expansion BP01:
+  {
+    StateBlob 0:
+    {
+      Criteria:	Game.RenderEngine == e_RenderEngine_DX7
+
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_ALPHABLENDENABLE , Unsigned e_FALSE
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_LIGHTING         , Unsigned e_TRUE
+      RenderState:    Unsigned 0u, Unsigned e_D3DRENDERSTATE_NORMALIZENORMALS , Unsigned e_TRUE
+    }
+  }
+
+
+
+  Float	      Counter:              GAME.DayTimeFactor
+
+  
+  Vector      I1        v( 175, 70, 0 )
+  Vector      I2        v( -25.0, 70, 0 )
+  Vector      I3        v(  10, 0, 0 )
+
+  Vector      UniversePosition [12]
+                                    RKWP.Pos_Newland_City_CityTrade
+                                    RKWP.Pos_Tir_CityTrade + This.I1
+                                    RKWP.Pos_Tir_CityTrade + This.I2
+                                    RKWP.Pos_Tir_CityTrade + This.I3
+                                    RKWP.Pos_Tir_CityTrade
+                                    RKWP.Pos_Borealis_CityTrade_Clan + This.I1
+                                    RKWP.Pos_Borealis_CityTrade_Clan + This.I2
+                                    RKWP.Pos_Borealis_CityTrade_Clan + This.I3
+                                    RKWP.Pos_Borealis_CityTrade_Clan 
+                                    RKWP.Pos_Newland_City_CityTrade + This.I1
+                                    RKWP.Pos_Newland_City_CityTrade + This.I2
+                                    RKWP.Pos_Newland_City_CityTrade + This.I3
+
+
+}
+
+Object Spaceship_RubiKa_Freighter_Clan_02
+{
+  
+
+  Float	      Counter:              Spaceship_RubiKa_Freighter_Clan_01.Counter + 0.2 % 1
+
+  
+}
+
+Object Spaceship_RubiKa_Freighter_Clan_03
+{
+  
+
+  Float	      Counter:              Spaceship_RubiKa_Freighter_Clan_01.Counter + 0.4 % 1
+
+  
+}
+
+Object Spaceship_RubiKa_Freighter_Clan_04
+{
+  
+
+  Float	      Counter:              Spaceship_RubiKa_Freighter_Clan_01.Counter + 0.6 % 1
+
+  
+}
+
+Object Spaceship_RubiKa_Freighter_Clan_05
+{
+  
+
+  Float	      Counter:              Spaceship_RubiKa_Freighter_Clan_01.Counter + 0.8 % 1
+
+  
+}
+
+
+Object Spaceship_RubiKa_Freighter_Omni_01
+{
+  
+
+  Float	      Counter:              GAME.DayTimeFactor
+
+  
+  Vector      I1        v( 175, 70, 0 )
+  Vector      I2        v( -25.0, 70, 0 )
+  Vector      I3        v(  10, 0, 0 )
+
+
+  Vector      UniversePosition [12]
+                                    RKWP.Pos_Borealis_CityTrade_Omni    
+                                    RKWP.Pos_Omni_1_Trade_CityTrade + This.I1
+                                    RKWP.Pos_Omni_1_Trade_CityTrade + This.I2
+                                    RKWP.Pos_Omni_1_Trade_CityTrade + This.I3
+                                    RKWP.Pos_Omni_1_Trade_CityTrade
+                                    RKWP.Pos_Rome_Red_district_CityTrade + This.I1
+                                    RKWP.Pos_Rome_Red_district_CityTrade + This.I2
+                                    RKWP.Pos_Rome_Red_district_CityTrade + This.I3
+                                    RKWP.Pos_Rome_Red_district_CityTrade
+                                    RKWP.Pos_Borealis_CityTrade_Omni     + This.I1
+                                    RKWP.Pos_Borealis_CityTrade_Omni     + This.I2
+                                    RKWP.Pos_Borealis_CityTrade_Omni     + This.I3
+
+
+}
+
+Object Spaceship_RubiKa_Freighter_Omni_02
+{
+  
+
+  Float	      Counter:              Spaceship_RubiKa_Freighter_Omni_01.Counter + 0.2 % 1
+
+  
+}
+
+Object Spaceship_RubiKa_Freighter_Omni_03
+{
+  
+
+  Float	      Counter:              Spaceship_RubiKa_Freighter_Omni_01.Counter + 0.4 % 1
+
+  
+}
+
+Object Spaceship_RubiKa_Freighter_Omni_04
+{
+  
+
+  Float	      Counter:              Spaceship_RubiKa_Freighter_Omni_01.Counter + 0.6 % 1
+
+  
+}
+
+Object Spaceship_RubiKa_Freighter_Omni_05
+{
+  
+
+  Float	      Counter:              Spaceship_RubiKa_Freighter_Omni_01.Counter + 0.8 % 1
+
+  
+}
+
+
+
+

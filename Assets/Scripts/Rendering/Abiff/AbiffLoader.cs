@@ -18,12 +18,35 @@ public sealed class AbiffLoader
     }
 
     public bool TryCreateVisual(int meshId, Transform parent, out GameObject visualRoot)
-        => TryCreateVisual(meshId, parent, overrideTextureId: 0, out visualRoot);
+        => TryCreateVisual(meshId, parent, overrideTextureId: 0, skyUnlit: false, out visualRoot);
 
     public bool TryCreateVisual(
         int meshId,
         Transform parent,
         int overrideTextureId,
+        out GameObject visualRoot)
+        => TryCreateVisual(meshId, parent, overrideTextureId, skyUnlit: false, skyIntensity: 1f, out visualRoot);
+
+    public bool TryCreateSkyVisual(int meshId, Transform parent, float intensity, out GameObject visualRoot)
+        => TryCreateVisual(meshId, parent, overrideTextureId: 0, skyUnlit: true, skyIntensity: intensity, out visualRoot);
+
+    public bool TryCreateSkyVisual(int meshId, Transform parent, out GameObject visualRoot)
+        => TryCreateSkyVisual(meshId, parent, 1f, out visualRoot);
+
+    public bool TryCreateVisual(
+        int meshId,
+        Transform parent,
+        int overrideTextureId,
+        bool skyUnlit,
+        out GameObject visualRoot)
+        => TryCreateVisual(meshId, parent, overrideTextureId, skyUnlit, skyIntensity: 1f, out visualRoot);
+
+    public bool TryCreateVisual(
+        int meshId,
+        Transform parent,
+        int overrideTextureId,
+        bool skyUnlit,
+        float skyIntensity,
         out GameObject visualRoot)
     {
         visualRoot = null;
@@ -78,11 +101,23 @@ public sealed class AbiffLoader
             filter.sharedMesh = mesh;
 
             var renderer = subGo.AddComponent<MeshRenderer>();
-            Material shared = _materials.Get(sub.Material);
+            Material shared = skyUnlit
+                ? _materials.GetSkyUnlit(sub.Material)
+                : _materials.Get(sub.Material);
+
+            Material material = shared;
+            if (skyUnlit && Mathf.Abs(skyIntensity - 1f) > 0.001f)
+            {
+                material = new Material(shared);
+                _materials.ApplySkyIntensity(material, skyIntensity);
+            }
+
             if (overrideDiffuse != null)
             {
-                Material instance = new Material(shared);
-                if (instance.HasProperty("_BaseColorMap"))
+                Material instance = new Material(material);
+                if (instance.HasProperty("_UnlitColorMap"))
+                    instance.SetTexture("_UnlitColorMap", overrideDiffuse);
+                else if (instance.HasProperty("_BaseColorMap"))
                     instance.SetTexture("_BaseColorMap", overrideDiffuse);
                 else if (instance.HasProperty("_MainTex"))
                     instance.SetTexture("_MainTex", overrideDiffuse);
@@ -90,7 +125,7 @@ public sealed class AbiffLoader
             }
             else
             {
-                renderer.sharedMaterial = shared;
+                renderer.sharedMaterial = material;
             }
 
             TryAttachUvAnimator(subGo, sub);

@@ -24,3 +24,6 @@ MonoBehaviour:
   _terrainAtlasMipBias: 0.5
   _waterSurfaceType: 2
   _waterMaterial: {fileID: 0}
+  _shoreWaveMaterial: {fileID: 0}
+  _applyAoPlayfieldTweaks: 1
+  _applyAoSkyMeshes: 0

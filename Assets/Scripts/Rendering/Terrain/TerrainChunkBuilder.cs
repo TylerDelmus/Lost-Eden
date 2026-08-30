@@ -5,7 +5,8 @@ using UnityEngine;
 
 public static class TerrainChunkBuilder
 {
-    const float UvPadding = 0.001f;
+    // Match commit 30d85f7: inset UVs enough to stay inside dilated atlas gutters.
+    const float UvPadding = 0.01f;
 
     public static TerrainChunkMeshData Build(
         int chunkX,

@@ -6,6 +6,7 @@ public class SceneInstaller : MonoBehaviour, IInstaller
     [SerializeField] PlayerController _playerController;
     [SerializeField] PlayfieldFactory _playfieldFactory;
     [SerializeField] LoadingScreenView _loadingScreenView;
+    [SerializeField] WorldOverlayController _worldOverlayController;
 
     public void InstallBindings(ContainerBuilder containerBuilder)
     {
@@ -32,6 +33,15 @@ public class SceneInstaller : MonoBehaviour, IInstaller
         _loadingScreenView ??= GetComponentInChildren<LoadingScreenView>(true);
         containerBuilder.RegisterValue(new LoadingScreen(_loadingScreenView, resourceDatabase));
 
+        _worldOverlayController ??= GetComponentInChildren<WorldOverlayController>(true);
+        if (_worldOverlayController == null)
+        {
+            var overlayGo = new GameObject("WorldOverlay");
+            overlayGo.transform.SetParent(transform, false);
+            _worldOverlayController = overlayGo.AddComponent<WorldOverlayController>();
+        }
+
+        containerBuilder.RegisterValue(_worldOverlayController);
         containerBuilder.RegisterValue(new UIInteractionManager(), new System.Type[] { typeof(IUINotifyService) });
     }
 }

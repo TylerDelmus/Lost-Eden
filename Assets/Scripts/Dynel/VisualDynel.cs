@@ -65,6 +65,86 @@ public class VisualDynel : MonoBehaviour
     public int LoadedMonsterDataId => _loadedMonsterDataId;
     public IReadOnlyDictionary<BodyPart, int> ArmorSlotTextureIds => _slotTextures;
 
+    float _cachedMeshHeight;
+    bool _meshHeightValid;
+
+    /// <summary>
+    /// AO GetIndicatorPosition: head attractor + 0.5 Y (clamp local Y to 1.5),
+    /// else plain mesh height + 0.3, else (0, 2, 0).
+    /// </summary>
+    public bool TryGetIndicatorPosition(Transform dynelTransform, out UnityEngine.Vector3 worldPos)
+    {
+        if (dynelTransform == null)
+        {
+            worldPos = default;
+            return false;
+        }
+
+        if (TryGetAttractor(AttractorPlace.Head, out Attractor head) && head != null)
+        {
+            worldPos = head.transform.position + UnityEngine.Vector3.up * 0.5f;
+            float localY = worldPos.y - dynelTransform.position.y;
+            if (localY < 1.5f)
+                worldPos.y = dynelTransform.position.y + 1.5f;
+            return true;
+        }
+
+        if (_visualRoot != null)
+        {
+            float height = GetCachedMeshHeight();
+            worldPos = dynelTransform.TransformPoint(new UnityEngine.Vector3(0f, height + 0.3f, 0f));
+            return true;
+        }
+
+        worldPos = dynelTransform.position + UnityEngine.Vector3.up * 2f;
+        return true;
+    }
+
+    void InvalidateMeshHeightCache()
+    {
+        _meshHeightValid = false;
+    }
+
+    float GetCachedMeshHeight()
+    {
+        if (_meshHeightValid)
+            return _cachedMeshHeight;
+
+        _cachedMeshHeight = ComputeMeshHeight();
+        _meshHeightValid = true;
+        return _cachedMeshHeight;
+    }
+
+    float ComputeMeshHeight()
+    {
+        if (_visualRoot == null)
+            return 2f;
+
+        Transform root = _visualRoot.transform;
+        Renderer[] renderers = _visualRoot.GetComponentsInChildren<Renderer>(true);
+        if (renderers == null || renderers.Length == 0)
+            return 2f;
+
+        float maxLocalY = 0f;
+        bool any = false;
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            Renderer r = renderers[i];
+            if (r == null)
+                continue;
+
+            Bounds lb = r.localBounds;
+            UnityEngine.Vector3 localMax = root.InverseTransformPoint(r.transform.TransformPoint(lb.max));
+            if (!any || localMax.y > maxLocalY)
+            {
+                maxLocalY = localMax.y;
+                any = true;
+            }
+        }
+
+        return any ? UnityEngine.Mathf.Max(0f, maxLocalY) : 2f;
+    }
+
     public bool TryGetRenderPose(out UnityEngine.Vector3 worldPos, out UnityEngine.Quaternion worldRot)
     {
         if (_visualRoot == null)
@@ -613,6 +693,7 @@ public class VisualDynel : MonoBehaviour
         int scaleStat = Stats.Get(Stat.Scale);
         float scale = scaleStat > 0 ? scaleStat / 100f : 1f;
         _visualRoot.transform.localScale = UnityEngine.Vector3.one * scale;
+        InvalidateMeshHeightCache();
     }
 
     public void ApplyBodySlotTextures()
@@ -995,6 +1076,7 @@ public class VisualDynel : MonoBehaviour
         Debug.Log(
             $"[VisualDynel] AttachedMeshes {FormatDynelLabel()} count={attachedCount} " +
             $"attach={attachMs:F1}ms total={total.Elapsed.TotalMilliseconds:F1}ms");
+        InvalidateMeshHeightCache();
     }
 
     public bool TryGetAttractor(AttractorPlace place, out Attractor attractor)
