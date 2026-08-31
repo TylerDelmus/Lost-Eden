@@ -158,6 +158,10 @@ public class StatCollection
 
         ApplyAppearance(msg.Appearance);
         ApplyCharacterInfo(msg.CharacterInfo, msg.Flags);
+
+        // SCFU carries current Health but often omits MaxHealth; treat as full until a later Stat update.
+        if (!_values.ContainsKey(Stat.MaxHealth))
+            Set(Stat.MaxHealth, msg.Health);
     }
 
     void ApplyAppearance(Appearance appearance)

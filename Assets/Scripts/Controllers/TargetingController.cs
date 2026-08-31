@@ -10,7 +10,6 @@ public class TargetingController : MonoBehaviour
     [SerializeField] private Camera _camera;
 
     [Header("Targeting")]
-    [SerializeField] private LayerMask _dynelMask;
     [SerializeField] private float _maxTargetDistance = 50f;
 
     public Character LocalPlayer { get; private set; }
@@ -162,7 +161,7 @@ public class TargetingController : MonoBehaviour
 
         Ray ray = _camera.ScreenPointToRay(Mouse.current.position.ReadValue());
 
-        if (!Physics.Raycast(ray, out RaycastHit hit, _maxTargetDistance, _dynelMask, QueryTriggerInteraction.Ignore))
+        if (!Physics.Raycast(ray, out RaycastHit hit, _maxTargetDistance, GameLayers.DynelMask, QueryTriggerInteraction.Ignore))
             return null;
 
         return hit.collider.GetComponentInParent<Dynel>();

@@ -59,6 +59,7 @@ public class PlayerController : MonoBehaviour
         _inputController.CharacterPressed += OnCharacterPress;
         _inputController.SitPressed += OnSitPress;
         _inputController.CancelPressed += OnCancelPress;
+        _inputController.AttackPressed += OnAttackPress;
     }
 
     private void OnCharacterPress()
@@ -218,6 +219,24 @@ public class PlayerController : MonoBehaviour
         TargetingController.ClearTarget();
     }
 
+    private void OnAttackPress()
+    {
+        if (_localPlayer == null || _networkClient == null || !_networkClient.InPlay)
+            return;
+
+        var target = TargetingController.CurrentTarget as Character;
+        if (target != null && target != _localPlayer && target != _localPlayer.FightingTarget)
+        {
+            _networkClient.Send(new LookAtMessage { Target = target.Identity });
+            _networkClient.Send(new AttackMessage { Target = target.Identity });
+            _localPlayer.SetFightingTarget(target);
+            return;
+        }
+
+        _networkClient.Send(new StopFightMessage());
+        _localPlayer.SetFightingTarget(null);
+    }
+
     private void OnHotbarPress(int slot)
     {
         if (_localPlayer == null)
@@ -239,5 +258,6 @@ public class PlayerController : MonoBehaviour
         _inputController.HotbarPressed -= OnHotbarPress;
         _inputController.SitPressed -= OnSitPress;
         _inputController.CancelPressed -= OnCancelPress;
+        _inputController.AttackPressed -= OnAttackPress;
     }
 }

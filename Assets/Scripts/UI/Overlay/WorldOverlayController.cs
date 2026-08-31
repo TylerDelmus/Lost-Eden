@@ -157,7 +157,8 @@ public class WorldOverlayController : MonoBehaviour
             return;
 
         NameplateState state = NameplateState.HasLevel;
-        if (_playerController?.TargetingController?.CurrentTarget == dynel)
+        if (dynel is Character
+            && _playerController?.TargetingController?.CurrentTarget == dynel)
             state |= NameplateState.HealthVisible;
 
         _nameplates.ShowNameplate(dynel, dynel.Name, state, () => SelectDynel(dynel));
@@ -183,33 +184,29 @@ public class WorldOverlayController : MonoBehaviour
         EnsureOverlays();
         UnsubscribeTargetHealth();
 
-        if (_nameplates == null)
+        if (_nameplates == null || target is not Character character)
             return;
 
-        if (target == null)
-            return;
-
-        SubscribeTargetHealth(target);
+        SubscribeTargetHealth(character);
 
         NameplateState state = NameplateState.HasLevel | NameplateState.HealthVisible;
-        if (_nameplates.TryGetNameplate(target, out ScreenNameplateView view))
+        if (_nameplates.TryGetNameplate(character, out ScreenNameplateView view))
         {
             view.ApplyState(view.State | NameplateState.HealthVisible);
-            ScreenNameplateOverlay.RefreshHealthIfNeeded(view, target, view.State);
+            ScreenNameplateOverlay.RefreshHealthIfNeeded(view, character, view.State);
         }
         else
         {
-            _nameplates.ShowNameplate(target, target.Name, state, () => SelectDynel(target));
-            if (_nameplates.TryGetNameplate(target, out view))
-                ScreenNameplateOverlay.RefreshHealthIfNeeded(view, target, state);
+            _nameplates.ShowNameplate(character, character.Name, state, () => SelectDynel(character));
+            if (_nameplates.TryGetNameplate(character, out view))
+                ScreenNameplateOverlay.RefreshHealthIfNeeded(view, character, state);
         }
     }
 
-    void SubscribeTargetHealth(Dynel target)
+    void SubscribeTargetHealth(Character target)
     {
         _healthSubscribedTarget = target;
-        if (target != null)
-            target.Stats.StatChanged += OnTargetStatChanged;
+        target.Stats.StatChanged += OnTargetStatChanged;
     }
 
     void UnsubscribeTargetHealth()

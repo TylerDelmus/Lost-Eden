@@ -1,0 +1,39 @@
+---
+description: Resolve ambiguous references between UnityEngine and AOSharp.Common.GameData
+alwaysApply: true
+---
+
+# UnityEngine vs AOSharp Ambiguity
+
+`AOSharp.Common.GameData` and `UnityEngine` define overlapping type names. When both namespaces are in scope, the compiler reports CS0104 ambiguous reference errors.
+
+## When editing C# files
+
+After adding or changing `using` directives, check for types shared by both namespaces:
+
+- `Mathf`, `Vector3`, `Vector2`, `Quaternion`, `Color`, `Rect`, `Matrix4x4`
+
+## Fix pattern
+
+Qualify with the namespace you intend:
+
+```csharp
+// Unity math / rendering
+UnityEngine.Mathf.Max(a, b);
+UnityEngine.Vector3.zero;
+
+// AO protocol / game data structs (when intentionally using AO types)
+AOSharp.Common.GameData.Vector3 aoPos = ...;
+```
+
+Prefer `UnityEngine.*` in Unity scripts (MonoBehaviours, UI, rendering, physics). Use AOSharp types only when converting to or from network/game-data messages.
+
+## Existing project conventions
+
+- Some files use aliases: `using Vector3 = UnityEngine.Vector3;`
+- Some files already qualify: `UnityEngine.Vector3 localPlayerPos`
+- Match the style of the file you are editing when one is already established.
+
+## Before finishing
+
+If a file has `using AOSharp.Common.GameData;` and `using UnityEngine;`, scan for unqualified uses of the shared types above and fix any ambiguity.

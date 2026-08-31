@@ -78,17 +78,15 @@ internal class ScreenNameplateOverlay : ObjectPoolOverlay<ScreenNameplateView>
 
     public static void RefreshHealthIfNeeded(ScreenNameplateView view, Dynel dynel, NameplateState state)
     {
-        if ((state & NameplateState.HealthVisible) == 0)
+        if ((state & NameplateState.HealthVisible) == 0 || dynel is not Character)
             return;
 
+        int health = dynel.Stats.Get(Stat.Health);
         int max = dynel.Stats.Get(Stat.MaxHealth);
         if (max <= 0)
-        {
-            view.ApplyState(state & ~NameplateState.HealthVisible);
-            return;
-        }
+            max = UnityEngine.Mathf.Max(health, 1);
 
-        view.SetHealth(dynel.Stats.Get(Stat.Health), max);
+        view.SetHealth(health, max);
     }
 
     public void HideNameplate(Dynel dynel)

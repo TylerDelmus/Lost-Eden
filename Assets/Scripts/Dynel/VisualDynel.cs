@@ -1009,71 +1009,111 @@ public class VisualDynel : MonoBehaviour
     {
         var total = Stopwatch.StartNew();
         ClearAttachedMeshes();
-        if (_visualRoot == null || _abiffLoader == null)
+        if (_visualRoot == null)
             return;
 
-        StatCollection stats = Stats;
-        int visualFlags = stats.Get(Stat.VisualFlags);
-        int headMeshStat = stats.Get(Stat.HeadMesh);
-        bool attachedHead = false;
-        int bestHeadLayer = int.MinValue;
-        AoMesh bestHead = null;
-        int attachedCount = 0;
-        double attachMs = 0;
-        var attachSw = new Stopwatch();
-
-        for (int i = 0; i < _attachedMeshes.Count; i++)
+        if (_abiffLoader != null)
         {
-            AoMesh mesh = _attachedMeshes[i];
-            int position = mesh.Position;
-            if (!Enum.IsDefined(typeof(AttractorPlace), position))
-                continue;
-            if (!ShouldShowMesh(position, (int)mesh.Id, headMeshStat, visualFlags))
-                continue;
+            StatCollection stats = Stats;
+            int visualFlags = stats.Get(Stat.VisualFlags);
+            int headMeshStat = stats.Get(Stat.HeadMesh);
+            bool attachedHead = false;
+            int bestHeadLayer = int.MinValue;
+            AoMesh bestHead = null;
+            int attachedCount = 0;
+            double attachMs = 0;
+            var attachSw = new Stopwatch();
 
-            if (position == (int)AttractorPlace.Head)
+            for (int i = 0; i < _attachedMeshes.Count; i++)
             {
-                if (bestHead == null || mesh.Layer > bestHeadLayer)
+                AoMesh mesh = _attachedMeshes[i];
+                int position = mesh.Position;
+                if (!Enum.IsDefined(typeof(AttractorPlace), position))
+                    continue;
+                if (!ShouldShowMesh(position, (int)mesh.Id, headMeshStat, visualFlags))
+                    continue;
+
+                if (position == (int)AttractorPlace.Head)
                 {
-                    bestHead = mesh;
-                    bestHeadLayer = mesh.Layer;
+                    if (bestHead == null || mesh.Layer > bestHeadLayer)
+                    {
+                        bestHead = mesh;
+                        bestHeadLayer = mesh.Layer;
+                    }
+                    continue;
                 }
-                continue;
+
+                attachSw.Restart();
+                AttachMesh(mesh);
+                attachMs += attachSw.Elapsed.TotalMilliseconds;
+                attachedCount++;
             }
 
-            attachSw.Restart();
-            AttachMesh(mesh);
-            attachMs += attachSw.Elapsed.TotalMilliseconds;
-            attachedCount++;
-        }
-
-        if (bestHead != null)
-        {
-            attachSw.Restart();
-            AttachMesh(bestHead);
-            attachMs += attachSw.Elapsed.TotalMilliseconds;
-            attachedCount++;
-            attachedHead = true;
-        }
-
-        if (!attachedHead && headMeshStat > 0)
-        {
-            attachSw.Restart();
-            AttachMesh(new AoMesh
+            if (bestHead != null)
             {
-                Position = (byte)AttractorPlace.Head,
-                Id = (uint)headMeshStat,
-                OverrideTextureId = 0,
-                Layer = 4
-            });
-            attachMs += attachSw.Elapsed.TotalMilliseconds;
-            attachedCount++;
+                attachSw.Restart();
+                AttachMesh(bestHead);
+                attachMs += attachSw.Elapsed.TotalMilliseconds;
+                attachedCount++;
+                attachedHead = true;
+            }
+
+            if (!attachedHead && headMeshStat > 0)
+            {
+                attachSw.Restart();
+                AttachMesh(new AoMesh
+                {
+                    Position = (byte)AttractorPlace.Head,
+                    Id = (uint)headMeshStat,
+                    OverrideTextureId = 0,
+                    Layer = 4
+                });
+                attachMs += attachSw.Elapsed.TotalMilliseconds;
+                attachedCount++;
+            }
+
+            Debug.Log(
+                $"[VisualDynel] AttachedMeshes {FormatDynelLabel()} count={attachedCount} " +
+                $"attach={attachMs:F1}ms total={total.Elapsed.TotalMilliseconds:F1}ms");
         }
 
-        Debug.Log(
-            $"[VisualDynel] AttachedMeshes {FormatDynelLabel()} count={attachedCount} " +
-            $"attach={attachMs:F1}ms total={total.Elapsed.TotalMilliseconds:F1}ms");
+        RefreshTargetingColliders();
         InvalidateMeshHeightCache();
+    }
+
+    void RefreshTargetingColliders()
+    {
+        if (_visualRoot == null)
+            return;
+
+        int dynelLayer = GameLayers.Dynel;
+        if (dynelLayer < 0)
+            return;
+
+        GameLayers.SetLayerRecursively(_visualRoot, dynelLayer);
+
+        Renderer[] renderers = _visualRoot.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            Renderer renderer = renderers[i];
+            if (renderer == null)
+                continue;
+
+            UnityEngine.Mesh mesh = null;
+            if (renderer is SkinnedMeshRenderer skinned)
+                mesh = skinned.sharedMesh;
+            else if (renderer.TryGetComponent(out MeshFilter filter))
+                mesh = filter.sharedMesh;
+
+            if (mesh == null)
+                continue;
+
+            if (!renderer.TryGetComponent(out MeshCollider collider))
+                collider = renderer.gameObject.AddComponent<MeshCollider>();
+
+            collider.sharedMesh = mesh;
+            collider.convex = false;
+        }
     }
 
     public bool TryGetAttractor(AttractorPlace place, out Attractor attractor)

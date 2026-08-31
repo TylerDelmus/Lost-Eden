@@ -22,6 +22,7 @@ public sealed class DynelDebugWindow : EditorWindow
     VisualDynel _visual;
     CharacterMotor _motor;
     DynelDebugTab _tab;
+    bool _fromGameTarget;
     string _statSearch = string.Empty;
     UnityEngine.Vector2 _statsScroll;
     UnityEngine.Vector2 _texturesScroll;
@@ -50,6 +51,17 @@ public sealed class DynelDebugWindow : EditorWindow
 
     void Update()
     {
+        if (EditorApplication.isPlaying)
+        {
+            Dynel resolved = FindSelectedDynel(out bool fromGameTarget);
+            if (resolved != _dynel || fromGameTarget != _fromGameTarget)
+            {
+                ResolveSelection();
+                Repaint();
+                return;
+            }
+        }
+
         if ((_tab == DynelDebugTab.Motor || _tab == DynelDebugTab.Textures)
             && EditorApplication.isPlaying
             && (_motor != null || _visual != null))
@@ -76,7 +88,7 @@ public sealed class DynelDebugWindow : EditorWindow
     void ResolveSelection()
     {
         UnbindStatChanged();
-        _dynel = FindSelectedDynel();
+        _dynel = FindSelectedDynel(out _fromGameTarget);
         _visual = FindVisual(_dynel);
         _motor = FindMotor(_dynel);
         BindStatChanged();
@@ -98,20 +110,42 @@ public sealed class DynelDebugWindow : EditorWindow
         _dynel.Stats.StatChanged -= _statChangedHandler;
     }
 
-    static Dynel FindSelectedDynel()
+    static Dynel FindSelectedDynel(out bool fromGameTarget)
     {
+        fromGameTarget = false;
+
         GameObject active = Selection.activeGameObject;
-        if (active == null)
+        if (active != null)
+        {
+            if (active.TryGetComponent(out Dynel onSelf))
+                return onSelf;
+
+            Dynel inParents = active.GetComponentInParent<Dynel>();
+            if (inParents != null)
+                return inParents;
+
+            Dynel inChildren = active.GetComponentInChildren<Dynel>(true);
+            if (inChildren != null)
+                return inChildren;
+        }
+
+        Dynel gameTarget = FindCurrentGameTarget();
+        if (gameTarget != null)
+        {
+            fromGameTarget = true;
+            return gameTarget;
+        }
+
+        return null;
+    }
+
+    static Dynel FindCurrentGameTarget()
+    {
+        if (!EditorApplication.isPlaying)
             return null;
 
-        if (active.TryGetComponent(out Dynel onSelf))
-            return onSelf;
-
-        Dynel inParents = active.GetComponentInParent<Dynel>();
-        if (inParents != null)
-            return inParents;
-
-        return active.GetComponentInChildren<Dynel>(true);
+        TargetingController targeting = UnityEngine.Object.FindFirstObjectByType<TargetingController>();
+        return targeting != null ? targeting.CurrentTarget : null;
     }
 
     static VisualDynel FindVisual(Dynel dynel)
@@ -152,7 +186,9 @@ public sealed class DynelDebugWindow : EditorWindow
 
         if (_dynel == null)
         {
-            EditorGUILayout.HelpBox("Select a Dynel (or a child of one) in the Hierarchy or Scene.", MessageType.Info);
+            EditorGUILayout.HelpBox(
+                "Select a Dynel (or a child of one) in the Hierarchy/Scene, or set a target in Play Mode.",
+                MessageType.Info);
             return;
         }
 
@@ -178,12 +214,14 @@ public sealed class DynelDebugWindow : EditorWindow
         {
             if (_dynel == null)
             {
+                EditorGUILayout.TextField("Source", "(none)");
                 EditorGUILayout.TextField("Name", "(none)");
                 EditorGUILayout.TextField("Identity", "(none)");
                 EditorGUILayout.Toggle("IsNpc", false);
                 return;
             }
 
+            EditorGUILayout.TextField("Source", _fromGameTarget ? "Game Target" : "Hierarchy");
             EditorGUILayout.ObjectField("GameObject", _dynel.gameObject, typeof(GameObject), true);
             EditorGUILayout.TextField("Name", string.IsNullOrEmpty(_dynel.Name) ? _dynel.gameObject.name : _dynel.Name);
             EditorGUILayout.TextField("Identity", $"{_dynel.Identity.Type} / {_dynel.Identity.Instance}");

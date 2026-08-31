@@ -116,6 +116,7 @@ internal class InputController : MonoBehaviour
     private InputAction _strafeAction;
     private InputAction _characterAction;
     private InputAction _sitAction;
+    private InputAction _attackAction;
 
     public Action CharacterPressed;
     public Action SitPressed;
@@ -124,6 +125,7 @@ internal class InputController : MonoBehaviour
     public Action TabPressed;
     public Action<int> HotbarPressed;
     public Action CancelPressed;
+    public Action AttackPressed;
 
     [Inject]
     private IUINotifyService _uiNotifyService;
@@ -146,9 +148,11 @@ internal class InputController : MonoBehaviour
         _strafeAction = InputSystem.actions.FindAction("Strafe");
         _characterAction = InputSystem.actions.FindAction("Character");
         _sitAction = InputSystem.actions.FindAction("Sit");
+        _attackAction = InputSystem.actions.FindAction("Attack");
 
         _characterAction.performed += OnCharacterPerformed;
         _sitAction.performed += OnSitPerformed;
+        _attackAction.performed += OnAttackPerformed;
 
         _jumpAction.performed += OnJumpPerformed;
         _jumpAction.canceled += OnJumpCanceled;
@@ -175,6 +179,11 @@ internal class InputController : MonoBehaviour
     private void OnSitPerformed(InputAction.CallbackContext ctx)
     {
         SitPressed?.Invoke();
+    }
+
+    private void OnAttackPerformed(InputAction.CallbackContext ctx)
+    {
+        AttackPressed?.Invoke();
     }
 
     private void OnJumpPerformed(InputAction.CallbackContext ctx)
@@ -355,5 +364,6 @@ internal class InputController : MonoBehaviour
 
         _characterAction.performed -= OnCharacterPerformed;
         _sitAction.performed -= OnSitPerformed;
+        _attackAction.performed -= OnAttackPerformed;
     }
 }

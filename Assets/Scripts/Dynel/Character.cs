@@ -29,7 +29,7 @@ public class Character : Dynel
 
     [SerializeField] MovementConfig _movementConfig;
 
-    internal Character FightingTarget { get; set; }
+    internal Character FightingTarget { get; private set; }
     CharacterMotor _motor;
     VisualDynel _visual;
     string _locomotionLogicalName;
@@ -43,6 +43,20 @@ public class Character : Dynel
     public VisualDynel Visual => _visual;
     public Action CombatStarted;
     public Action CombatEnded;
+
+    internal void SetFightingTarget(Character target)
+    {
+        if (FightingTarget == target)
+            return;
+
+        bool wasFighting = FightingTarget != null;
+        FightingTarget = target;
+
+        if (target != null)
+            CombatStarted?.Invoke();
+        else if (wasFighting)
+            CombatEnded?.Invoke();
+    }
 
     MovementConfig Config
     {

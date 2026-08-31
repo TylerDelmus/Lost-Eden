@@ -124,14 +124,12 @@ public class Playfield : MonoBehaviour
 
     public void ApplyHealthDamage(HealthDamageMessage msg)
     {
-        if (!_dynels.TryGetValue(msg.Identity, out Dynel dynel))
+        // Target is the damaged dynel (same as AttackInfo); Identity is typically the source.
+        Identity victim = msg.Target.Instance != 0 ? msg.Target : msg.Identity;
+        if (!_dynels.TryGetValue(victim, out Dynel dynel))
             return;
 
-        Stat stat = msg.Stat;
-        if (stat == 0)
-            stat = Stat.Health;
-
-        dynel.Stats.Set(stat, msg.TargetHp);
+        dynel.Stats.Set(Stat.Health, msg.TargetHp);
     }
 
     public void DespawnDynel(Identity identity)

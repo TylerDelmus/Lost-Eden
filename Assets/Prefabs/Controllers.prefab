@@ -433,7 +433,4 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TargetingController
   _camera: {fileID: 6632926322940167517}
-  _dynelMask:
-    serializedVersion: 2
-    m_Bits: 0
   _maxTargetDistance: 50
