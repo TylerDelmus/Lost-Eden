@@ -38,49 +38,79 @@ StructuredBuffer<float4x4> _GrassInstances;
 // places is a redefinition error.
 float4 _GrassWindParams; // xy = wind direction (world XZ, normalised), z = strength (metres), w = frequency
 float4 _GrassFadeParams; // x = cull distance, y = fade band width, z = blade height in mesh units
-float4 _GrassWindParams2; // x = per-instance phase scale, y = gust amplitude, zw = unused
+float4 _GrassWindParams2; // x = world phase scale, y = gust amplitude, z = per-instance phase jitter, w = unused
+
+// Dave Hoskins' hash13 - a stable 0..1 value from a world position, with no
+// trig. sin-based hashes band badly once world coordinates get into the
+// thousands, which playfield coordinates do.
+float GrassHash13(float3 p3)
+{
+    p3 = frac(p3 * 0.1031f);
+    p3 += dot(p3, p3.zyx + 31.32f);
+    return frac((p3.x + p3.y) * p3.z);
+}
 
 // --- Vertex stage ---------------------------------------------------------
 // Looks up this instance's transform, applies wind, and returns the result in
-// the space the Vertex Position / Normal blocks expect.
+// the space the Vertex Position / Normal blocks expect. Variation is a stable
+// per-instance 0..1 value for the fragment stage to tint with - route it through
+// a Custom Interpolator.
 void GrassInstance_float(
     float3 positionOS,
     float3 normalOS,
     float instanceID,
     out float3 PositionOut,
-    out float3 NormalOut)
+    out float3 NormalOut,
+    out float Variation)
 {
 #ifdef SHADERGRAPH_PREVIEW
     PositionOut = positionOS;
     NormalOut = normalOS;
+    Variation = 0.5f;
 #else
     float4x4 m = _GrassInstances[(uint) instanceID];
 
-    // Blade base in world space, and the instance's uniform scale - wind
-    // amplitude has to scale with the blade or big and small blades bend by
-    // different visual amounts.
+    // Basis vectors of the instance transform. Their lengths are the per-axis
+    // scales, which are no longer uniform: X and Z carry width, Y carries height.
+    float3 axisX = float3(m._m00, m._m10, m._m20);
+    float3 axisY = float3(m._m01, m._m11, m._m21);
+    float3 axisZ = float3(m._m02, m._m12, m._m22);
     float3 pivotWS = float3(m._m03, m._m13, m._m23);
-    float instanceScale = length(float3(m._m00, m._m10, m._m20));
+
+    // Wind amplitude follows the blade's HEIGHT, not its width - a tall thin blade
+    // and a short wide one should not sway by the same distance.
+    float heightScale = length(axisY);
+
+    Variation = GrassHash13(pivotWS);
 
     // 0 at the base, 1 at the tip, squared so the root stays planted.
     float bend = saturate(positionOS.y / max(_GrassFadeParams.z, 1e-4f));
     bend *= bend;
 
-    float phase = dot(pivotWS.xz, _GrassWindParams.xy) * _GrassWindParams2.x;
+    // Per-instance phase offset on top of the world-space wave, so neighbouring
+    // blades of different heights do not move in lockstep.
+    float phase = dot(pivotWS.xz, _GrassWindParams.xy) * _GrassWindParams2.x
+                + Variation * 6.2831853f * _GrassWindParams2.z;
     float t = _Time.y * _GrassWindParams.w;
 
     float sway = sin(t + phase);
     // Slower second harmonic so the field does not read as one sine wave.
     float gust = sin(t * 0.37f + phase * 0.63f) * _GrassWindParams2.y;
 
-    float amount = (sway + gust) * _GrassWindParams.z * bend * instanceScale;
+    float amount = (sway + gust) * _GrassWindParams.z * bend * heightScale;
 
     // Absolute world position of this vertex. Wind is added here, after the
     // transform, so every blade leans the same way regardless of its random yaw.
     float3 positionAWS = mul(m, float4(positionOS, 1.0f)).xyz;
     positionAWS += float3(_GrassWindParams.x, 0.0f, _GrassWindParams.y) * amount;
 
-    float3 normalAWS = normalize(mul((float3x3) m, normalOS));
+    // Rotation only: normalising the basis vectors strips the now non-uniform
+    // width/height scale, which would otherwise skew the normal.
+    float3x3 rotation = float3x3(
+        normalize(axisX),
+        normalize(axisY),
+        normalize(axisZ));
+    float3 normalAWS = normalize(mul(transpose(rotation), normalOS));
 
     // Round-trip back through the pipeline's own matrices instead of assuming the
     // draw's object-to-world is identity.

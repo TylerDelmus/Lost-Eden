@@ -37,14 +37,22 @@ public sealed class RenderConfig : ScriptableObject
     [Tooltip("When enabled, bake HDRP reflection probes after a playfield finishes loading.")]
     [SerializeField] bool _useReflectionProbe = true;
 
-    /// <summary>
-    /// Grass
-    /// </summary>
+    #region Grass
     [Header("Grass - assets")]
     [SerializeField] bool _grassEnabled = true;
     [SerializeField] Mesh _grassMesh;
     [SerializeField] Material _grassMaterial;
+
+    [Tooltip("Draw with stock GPU instancing instead of the custom indirect path. " +
+             "Works with any HDRP material that has GPU Instancing ticked. Slower, but " +
+             "if grass shows up here and not in indirect mode, the placement data is " +
+             "fine and the problem is the shader.")]
     [SerializeField] bool _grassUseInstancedFallback;
+
+    [Tooltip("Plain HDRP Lit material with GPU Instancing ticked, used only by the " +
+             "fallback draw mode. Must NOT be the grass Shader Graph material - that one " +
+             "declares procedural instancing, so it would still read the instance buffer " +
+             "and the test would prove nothing.")]
     [SerializeField] Material _grassFallbackMaterial;
 
     [Header("Grass - tile classification (GroundTexture RDB ids)")]
@@ -79,8 +87,14 @@ public sealed class RenderConfig : ScriptableObject
     [Range(0f, 90f)]
     [SerializeField] float _grassMaxSlopeDegrees = 35f;
 
-    [SerializeField] float _grassMinScale = 0.8f;
-    [SerializeField] float _grassMaxScale = 1.3f;
+    [Tooltip("Width multiplier on the grass mesh's X/Z. Varied independently of height - " +
+             "tying the two together just scales one silhouette up and down.")]
+    [SerializeField] float _grassMinWidth = 0.7f;
+    [SerializeField] float _grassMaxWidth = 1.2f;
+
+    [Tooltip("Height multiplier on the grass mesh's Y.")]
+    [SerializeField] float _grassMinHeight = 0.6f;
+    [SerializeField] float _grassMaxHeight = 1.4f;
 
     [Tooltip("0 = blades stand straight up, 1 = blades lie along the terrain normal.")]
     [Range(0f, 1f)]
@@ -116,6 +130,44 @@ public sealed class RenderConfig : ScriptableObject
     [Tooltip("Amplitude of the slower second harmonic that breaks up the single-sine look.")]
     [SerializeField] float _grassWindGustScale = 0.4f;
 
+    [Tooltip("How much each blade's sway phase is offset at random, 0-1. Stops neighbours " +
+             "of different heights moving in lockstep.")]
+    [Range(0f, 1f)]
+    [SerializeField] float _grassWindPhaseJitter = 0.25f;
+
+    public bool GrassEnabled => _grassEnabled;
+    public Mesh GrassMesh => _grassMesh;
+    public Material GrassMaterial => _grassMaterial;
+    public bool GrassUseInstancedFallback => _grassUseInstancedFallback;
+    public Material GrassFallbackMaterial => _grassFallbackMaterial;
+    public int[] GrassFullTextureIds => _grassFullTextureIds;
+    public int[] GrassPartialTextureIds => _grassPartialTextureIds;
+    public int GrassMaskResolution => _grassMaskResolution;
+    public float GrassMaskThreshold => _grassMaskThreshold;
+    public bool GrassLogMaskCoverage => _grassLogMaskCoverage;
+    public float GrassDensityPerSquareMetre => _grassDensityPerSquareMetre;
+    public float GrassCoverage => _grassCoverage;
+    public float GrassMaxSlopeDegrees => _grassMaxSlopeDegrees;
+    public float GrassMinWidth => _grassMinWidth;
+    public float GrassMaxWidth => _grassMaxWidth;
+    public float GrassMinHeight => _grassMinHeight;
+    public float GrassMaxHeight => _grassMaxHeight;
+    public float GrassNormalAlignment => _grassNormalAlignment;
+    public float GrassHeightOffset => _grassHeightOffset;
+    public int GrassMaxInstancesPerChunk => _grassMaxInstancesPerChunk;
+    public float GrassBladeHeight => _grassBladeHeight;
+    public float GrassCullDistance => _grassCullDistance;
+    public float GrassFadeBand => _grassFadeBand;
+    public uint GrassRenderingLayerMask => _grassRenderingLayerMask;
+    public float GrassWindDirectionDegrees => _grassWindDirectionDegrees;
+    public float GrassWindStrength => _grassWindStrength;
+    public float GrassWindFrequency => _grassWindFrequency;
+    public float GrassWindPhaseScale => _grassWindPhaseScale;
+    public float GrassWindGustScale => _grassWindGustScale;
+    public float GrassWindPhaseJitter => _grassWindPhaseJitter;
+    #endregion
+
+
     public float[] TerrainLodScreenHeights => _terrainLodScreenHeights;
     public int TerrainAtlasMaxSize => _terrainAtlasMaxSize;
     public int TerrainAtlasPadding => _terrainAtlasPadding;
@@ -130,36 +182,6 @@ public sealed class RenderConfig : ScriptableObject
     public bool ApplyAoSkyMeshes => _applyAoSkyMeshes;
     public bool UseReflectionProbe => _useReflectionProbe;
 
-    /// <summary>
-    /// Grass
-    /// </summary>
-    public bool GrassEnabled => _grassEnabled;
-    public Mesh GrassMesh => _grassMesh;
-    public Material GrassMaterial => _grassMaterial;
-    public bool GrassUseInstancedFallback => _grassUseInstancedFallback;
-    public Material GrassFallbackMaterial => _grassFallbackMaterial;
-    public int[] GrassFullTextureIds => _grassFullTextureIds;
-    public int[] GrassPartialTextureIds => _grassPartialTextureIds;
-    public int GrassMaskResolution => _grassMaskResolution;
-    public float GrassMaskThreshold => _grassMaskThreshold;
-    public bool GrassLogMaskCoverage => _grassLogMaskCoverage;
-    public float GrassDensityPerSquareMetre => _grassDensityPerSquareMetre;
-    public float GrassCoverage => _grassCoverage;
-    public float GrassMaxSlopeDegrees => _grassMaxSlopeDegrees;
-    public float GrassMinScale => _grassMinScale;
-    public float GrassMaxScale => _grassMaxScale;
-    public float GrassNormalAlignment => _grassNormalAlignment;
-    public float GrassHeightOffset => _grassHeightOffset;
-    public int GrassMaxInstancesPerChunk => _grassMaxInstancesPerChunk;
-    public float GrassBladeHeight => _grassBladeHeight;
-    public float GrassCullDistance => _grassCullDistance;
-    public float GrassFadeBand => _grassFadeBand;
-    public uint GrassRenderingLayerMask => _grassRenderingLayerMask;
-    public float GrassWindDirectionDegrees => _grassWindDirectionDegrees;
-    public float GrassWindStrength => _grassWindStrength;
-    public float GrassWindFrequency => _grassWindFrequency;
-    public float GrassWindPhaseScale => _grassWindPhaseScale;
-    public float GrassWindGustScale => _grassWindGustScale;
 
     public float GetTerrainLodScreenHeight(int lod)
     {

@@ -38,11 +38,13 @@ MonoBehaviour:
   _grassMaskResolution: 16
   _grassMaskThreshold: 0.5
   _grassLogMaskCoverage: 1
-  _grassDensityPerSquareMetre: 4
+  _grassDensityPerSquareMetre: 100
   _grassCoverage: 1
   _grassMaxSlopeDegrees: 35
-  _grassMinScale: 0.8
-  _grassMaxScale: 1.3
+  _grassMinWidth: 0.6
+  _grassMaxWidth: 1.2
+  _grassMinHeight: 0.3
+  _grassMaxHeight: 0.8
   _grassNormalAlignment: 0.35
   _grassHeightOffset: -0.05
   _grassMaxInstancesPerChunk: 200000
@@ -55,3 +57,4 @@ MonoBehaviour:
   _grassWindFrequency: 1.6
   _grassWindPhaseScale: 0.35
   _grassWindGustScale: 0.4
+  _grassWindPhaseJitter: 0.25

@@ -155,7 +155,10 @@ public sealed class PlayfieldGrassBuilder
             dir.x, dir.y, _renderConfig.GrassWindStrength, _renderConfig.GrassWindFrequency));
 
         Shader.SetGlobalVector(WindParams2Id, new Vector4(
-            _renderConfig.GrassWindPhaseScale, _renderConfig.GrassWindGustScale, 0f, 0f));
+            _renderConfig.GrassWindPhaseScale,
+            _renderConfig.GrassWindGustScale,
+            _renderConfig.GrassWindPhaseJitter,
+            0f));
 
         Shader.SetGlobalVector(FadeParamsId, new Vector4(
             _renderConfig.GrassCullDistance,
@@ -293,7 +296,12 @@ public sealed class PlayfieldGrassBuilder
                             (tileY + fy) * mapScale + anchor.z);
 
                         float yaw = Rand01(ref seed) * 360f;
-                        float scale = Mathf.Lerp(s.MinScale, s.MaxScale, Rand01(ref seed));
+
+                        // Width and height vary independently: tying them together
+                        // just scales the same silhouette up and down, which reads as
+                        // one blade repeated rather than a field of them.
+                        float bladeWidth = Mathf.Lerp(s.MinWidth, s.MaxWidth, Rand01(ref seed));
+                        float bladeHeight = Mathf.Lerp(s.MinHeight, s.MaxHeight, Rand01(ref seed));
 
                         Quaternion align = Quaternion.Slerp(
                             Quaternion.identity,
@@ -303,7 +311,7 @@ public sealed class PlayfieldGrassBuilder
                         instances.Add(Matrix4x4.TRS(
                             position,
                             align * Quaternion.Euler(0f, yaw, 0f),
-                            new Vector3(scale, scale, scale)));
+                            new Vector3(bladeWidth, bladeHeight, bladeWidth)));
 
                         min = Vector3.Min(min, position);
                         max = Vector3.Max(max, position);
@@ -319,11 +327,12 @@ public sealed class PlayfieldGrassBuilder
         if (instances.Count == 0)
             return new ChunkResult { Instances = Array.Empty<Matrix4x4>(), Bounds = new Bounds() };
 
-        // Pad vertically for blade height and horizontally for wind sway, so the chunk
-        // is not culled while a blade at its edge is still on screen.
-        float pad = s.BladeHeight * s.MaxScale + s.WindStrength + 1f;
+        // Pad so the chunk is not culled while a blade at its edge is still on screen:
+        // upward by the tallest possible blade, sideways by the widest plus wind travel.
+        float padXZ = s.MaxWidth + s.WindStrength + 1f;
+        float padY = s.BladeHeight * s.MaxHeight + s.WindStrength + 1f;
         var bounds = new Bounds();
-        bounds.SetMinMax(min - new Vector3(pad, 0f, pad), max + new Vector3(pad, pad, pad));
+        bounds.SetMinMax(min - new Vector3(padXZ, 0f, padXZ), max + new Vector3(padXZ, padY, padXZ));
 
         return new ChunkResult { Instances = instances.ToArray(), Bounds = bounds };
     }
@@ -375,8 +384,10 @@ public sealed class PlayfieldGrassBuilder
         public float DensityPerSquareMetre;
         public float Coverage;
         public float MaxSlopeDegrees;
-        public float MinScale;
-        public float MaxScale;
+        public float MinWidth;
+        public float MaxWidth;
+        public float MinHeight;
+        public float MaxHeight;
         public float NormalAlignment;
         public float HeightOffset;
         public float BladeHeight;
@@ -388,8 +399,10 @@ public sealed class PlayfieldGrassBuilder
             DensityPerSquareMetre = Mathf.Max(0.0001f, cfg.GrassDensityPerSquareMetre),
             Coverage = Mathf.Clamp01(cfg.GrassCoverage),
             MaxSlopeDegrees = Mathf.Clamp(cfg.GrassMaxSlopeDegrees, 0f, 90f),
-            MinScale = Mathf.Max(0.01f, cfg.GrassMinScale),
-            MaxScale = Mathf.Max(0.01f, cfg.GrassMaxScale),
+            MinWidth = Mathf.Max(0.01f, cfg.GrassMinWidth),
+            MaxWidth = Mathf.Max(0.01f, cfg.GrassMaxWidth),
+            MinHeight = Mathf.Max(0.01f, cfg.GrassMinHeight),
+            MaxHeight = Mathf.Max(0.01f, cfg.GrassMaxHeight),
             NormalAlignment = Mathf.Clamp01(cfg.GrassNormalAlignment),
             HeightOffset = cfg.GrassHeightOffset,
             BladeHeight = Mathf.Max(0.0001f, cfg.GrassBladeHeight),
