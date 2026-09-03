@@ -37,23 +37,26 @@ MonoBehaviour:
   _grassPartialTextureIds: 5700000006010000080100000501000007010000560000000d010000
   _grassMaskResolution: 16
   _grassMaskThreshold: 0.5
-  _grassLogMaskCoverage: 1
-  _grassDensityPerSquareMetre: 100
+  _grassLogMaskCoverage: 0
+  _grassDensityPerSquareMetre: 64
   _grassCoverage: 1
   _grassMaxSlopeDegrees: 35
-  _grassMinWidth: 0.6
-  _grassMaxWidth: 1.2
-  _grassMinHeight: 0.3
-  _grassMaxHeight: 0.8
+  _grassMinWidth: 0.8
+  _grassMaxWidth: 1.6
+  _grassMinHeight: 0.1
+  _grassMaxHeight: 0.6
   _grassNormalAlignment: 0.35
   _grassHeightOffset: -0.05
-  _grassMaxInstancesPerChunk: 200000
+  _grassMaxInstancesPerChunk: 2000000
   _grassBladeHeight: 1
   _grassCullDistance: 120
   _grassFadeBand: 25
+  _grassLodStartDistance: 25
+  _grassLodMinDensity: 0.15
+  _grassLodSteps: 16
   _grassRenderingLayerMask: 1
   _grassWindDirectionDegrees: 45
-  _grassWindStrength: 0.15
+  _grassWindStrength: 0.3
   _grassWindFrequency: 1.6
   _grassWindPhaseScale: 0.35
   _grassWindGustScale: 0.4

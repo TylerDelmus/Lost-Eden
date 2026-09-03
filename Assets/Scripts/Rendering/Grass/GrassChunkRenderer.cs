@@ -36,6 +36,27 @@ public sealed class GrassChunkRenderer : MonoBehaviour
         InstancedFallback = 1
     }
 
+    /// <summary>
+    /// Distance thinning. Instances were shuffled at bake time, so drawing the first N of
+    /// them is a uniform random sample of the chunk - which means LOD is just a smaller
+    /// number in the indirect args. No compute pass, no second buffer, no per-frame
+    /// filtering.
+    /// </summary>
+    [System.Serializable]
+    public struct LodSettings
+    {
+        /// <summary>Full density inside this radius.</summary>
+        public float StartDistance;
+
+        /// <summary>Fraction of instances still drawn at the cull distance.</summary>
+        public float MinDensity;
+
+        /// <summary>Number of discrete density levels. More steps = smaller pops.</summary>
+        public int Steps;
+
+        public static LodSettings Disabled => new LodSettings { StartDistance = 0f, MinDensity = 1f, Steps = 1 };
+    }
+
     const int InstancedBatchSize = 511;
 
     [SerializeField] DrawMode _mode = DrawMode.Indirect;
@@ -52,6 +73,11 @@ public sealed class GrassChunkRenderer : MonoBehaviour
 
     Matrix4x4[] _instances;      // kept for the fallback path and for gizmos
     Matrix4x4[] _batchScratch;
+
+    GraphicsBuffer.IndirectDrawIndexedArgs[] _args;
+    LodSettings _lod;
+    int _lodStep = -1;           // -1 forces the first update to write the buffer
+    int _drawCount;
 
     List<Vector3> _gizmoPositions;
 
@@ -76,9 +102,15 @@ public sealed class GrassChunkRenderer : MonoBehaviour
         Bounds chunkBounds,
         float cullDistance,
         uint renderingLayerMask,
+        LodSettings lod,
         Material fallbackMaterial = null)
     {
         _fallbackMaterial = fallbackMaterial;
+
+        _lod = lod;
+        _lod.Steps = Mathf.Max(1, _lod.Steps);
+        _lod.MinDensity = Mathf.Clamp01(_lod.MinDensity <= 0f ? 1f : _lod.MinDensity);
+        _lod.StartDistance = Mathf.Clamp(_lod.StartDistance, 0f, cullDistance);
 
         if (mesh == null || sharedMaterial == null || instances == null || instances.Length == 0)
         {
@@ -122,8 +154,8 @@ public sealed class GrassChunkRenderer : MonoBehaviour
         // Index start and base vertex must come from the submesh, not be hard-coded to
         // zero: a mesh imported as part of a larger asset can have a non-zero base
         // vertex, and zeros there draw garbage or nothing at all.
-        var args = new GraphicsBuffer.IndirectDrawIndexedArgs[1];
-        args[0] = new GraphicsBuffer.IndirectDrawIndexedArgs
+        _args = new GraphicsBuffer.IndirectDrawIndexedArgs[1];
+        _args[0] = new GraphicsBuffer.IndirectDrawIndexedArgs
         {
             indexCountPerInstance = _mesh.GetIndexCount(0),
             instanceCount = (uint)_instanceCount,
@@ -134,7 +166,8 @@ public sealed class GrassChunkRenderer : MonoBehaviour
 
         _argsBuffer = new GraphicsBuffer(
             GraphicsBuffer.Target.IndirectArguments, 1, GraphicsBuffer.IndirectDrawIndexedArgs.size);
-        _argsBuffer.SetData(args);
+        _argsBuffer.SetData(_args);
+        _drawCount = _instanceCount;
 
         _batchScratch = new Matrix4x4[Mathf.Min(InstancedBatchSize, _instanceCount)];
 
@@ -146,8 +179,8 @@ public sealed class GrassChunkRenderer : MonoBehaviour
 
         Debug.Log(
             $"GrassChunkRenderer '{name}': {_instanceCount} instances, mesh='{mesh.name}' " +
-            $"(indexCount={args[0].indexCountPerInstance}, startIndex={args[0].startIndex}, " +
-            $"baseVertex={args[0].baseVertexIndex}), material='{sharedMaterial.name}' " +
+            $"(indexCount={_args[0].indexCountPerInstance}, startIndex={_args[0].startIndex}, " +
+            $"baseVertex={_args[0].baseVertexIndex}), material='{sharedMaterial.name}' " +
             $"(shader='{sharedMaterial.shader.name}'), bounds center={chunkBounds.center} size={chunkBounds.size}.");
     }
 
@@ -171,14 +204,14 @@ public sealed class GrassChunkRenderer : MonoBehaviour
             return;
         }
 
-        // Cheap chunk-level cull. Per-blade fade happens in the shader via
-        // _GrassFadeParams so there is no hard edge where a chunk drops out.
-        float distSqr = (_bounds.center - cam.transform.position).sqrMagnitude;
-        float maxDist = _cullDistance + _bounds.extents.magnitude;
-        if (distSqr > maxDist * maxDist)
+        // Distance to the nearest point of the chunk, not its centre - a centre-based test
+        // culls a large chunk you are standing at the edge of, and makes the LOD level
+        // depend on chunk size rather than on how far the grass actually is.
+        float distance = Mathf.Sqrt(_bounds.SqrDistance(cam.transform.position));
+        if (distance > _cullDistance)
         {
-            LogCullOnce($"culled by DISTANCE - camera is {Mathf.Sqrt(distSqr):F1} units from bounds " +
-                        $"center, threshold {maxDist:F1}.");
+            LogCullOnce($"culled by DISTANCE - camera is {distance:F1} units from the chunk, " +
+                        $"cull distance {_cullDistance:F1}.");
             return;
         }
 
@@ -188,12 +221,41 @@ public sealed class GrassChunkRenderer : MonoBehaviour
             return;
         }
 
-        LogCullOnce($"passed both culls - drawing {_instanceCount} instances in {_mode} mode.");
+        UpdateLod(distance);
+
+        LogCullOnce($"passed both culls - drawing {_drawCount}/{_instanceCount} instances in {_mode} mode.");
 
         if (_mode == DrawMode.Indirect)
             DrawIndirect();
         else
             DrawInstancedFallback();
+    }
+
+    /// <summary>
+    /// Picks how many of this chunk's instances to draw for the current distance and,
+    /// only when that changes, writes the new count into the indirect args.
+    ///
+    /// The quantisation into discrete steps is the point: without it every chunk would
+    /// upload a new args buffer every frame, which is a CPU write and a potential pipeline
+    /// stall per chunk. With it, a chunk touches the buffer a couple of dozen times over
+    /// the whole approach from the cull distance to the camera.
+    /// </summary>
+    void UpdateLod(float distance)
+    {
+        float span = _cullDistance - _lod.StartDistance;
+        float t = span <= 0.001f ? 0f : Mathf.Clamp01((distance - _lod.StartDistance) / span);
+        float fraction = Mathf.Lerp(1f, _lod.MinDensity, t);
+
+        int step = Mathf.Clamp(Mathf.CeilToInt(fraction * _lod.Steps), 1, _lod.Steps);
+        if (step == _lodStep)
+            return;
+
+        _lodStep = step;
+        _drawCount = Mathf.Clamp(
+            Mathf.CeilToInt(_instanceCount * (step / (float)_lod.Steps)), 1, _instanceCount);
+
+        _args[0].instanceCount = (uint)_drawCount;
+        _argsBuffer.SetData(_args);
     }
 
     RenderParams BuildRenderParams(Material material) => new RenderParams(material)
@@ -232,9 +294,9 @@ public sealed class GrassChunkRenderer : MonoBehaviour
 
         RenderParams rp = BuildRenderParams(_fallbackMaterial);
 
-        for (int start = 0; start < _instanceCount; start += InstancedBatchSize)
+        for (int start = 0; start < _drawCount; start += InstancedBatchSize)
         {
-            int count = Mathf.Min(InstancedBatchSize, _instanceCount - start);
+            int count = Mathf.Min(InstancedBatchSize, _drawCount - start);
             if (_batchScratch.Length < count)
                 _batchScratch = new Matrix4x4[count];
 

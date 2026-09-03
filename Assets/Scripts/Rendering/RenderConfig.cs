@@ -37,6 +37,20 @@ public sealed class RenderConfig : ScriptableObject
     [Tooltip("When enabled, bake HDRP reflection probes after a playfield finishes loading.")]
     [SerializeField] bool _useReflectionProbe = true;
 
+    public float[] TerrainLodScreenHeights => _terrainLodScreenHeights;
+    public int TerrainAtlasMaxSize => _terrainAtlasMaxSize;
+    public int TerrainAtlasPadding => _terrainAtlasPadding;
+    public int TerrainAtlasFirstMipToSoften => _terrainAtlasFirstMipToSoften;
+    public int TerrainAtlasMipBlurPasses => _terrainAtlasMipBlurPasses;
+    public int TerrainAtlasAnisoLevel => _terrainAtlasAnisoLevel;
+    public float TerrainAtlasMipBias => _terrainAtlasMipBias;
+    public WaterSurfaceType WaterSurfaceType => _waterSurfaceType;
+    public Material WaterMaterial => _waterMaterial;
+    public Material ShoreWaveMaterial => _shoreWaveMaterial;
+    public bool ApplyAoPlayfieldTweaks => _applyAoPlayfieldTweaks;
+    public bool ApplyAoSkyMeshes => _applyAoSkyMeshes;
+    public bool UseReflectionProbe => _useReflectionProbe;
+
     #region Grass
     [Header("Grass - assets")]
     [SerializeField] bool _grassEnabled = true;
@@ -76,7 +90,7 @@ public sealed class RenderConfig : ScriptableObject
     [SerializeField] bool _grassLogMaskCoverage = true;
 
     [Header("Grass - placement")]
-    [Tooltip("Candidate blades per square metre of ground before coverage/slope/mask rejection.")]
+    [Tooltip("Candidate blades per square metre of ground before coverage/slope/mask rejection. (Max:128)")]
     [SerializeField] float _grassDensityPerSquareMetre = 4f;
 
     [Tooltip("Fraction of candidate points that survive. Thin the field out without " +
@@ -103,7 +117,9 @@ public sealed class RenderConfig : ScriptableObject
     [Tooltip("Sink blades slightly so their base is never floating over the mesh.")]
     [SerializeField] float _grassHeightOffset = -0.05f;
 
-    [SerializeField] int _grassMaxInstancesPerChunk = 200000;
+    [Tooltip("Safety valve. A chunk that hits this is cut off part-way through, so its " +
+             "grass stops abruptly rather than thinning - the load log warns when it happens.")]
+    [SerializeField] int _grassMaxInstancesPerChunk = 2000000;
 
     [Header("Grass - rendering")]
     [Tooltip("Height of the grass mesh in its own local units. Drives both the wind bend " +
@@ -115,6 +131,24 @@ public sealed class RenderConfig : ScriptableObject
 
     [Tooltip("Width of the band before the cull distance over which blades fade out.")]
     [SerializeField] float _grassFadeBand = 25f;
+
+    [Header("Grass - distance LOD")]
+    [Tooltip("Full density inside this radius. Beyond it, chunks progressively draw fewer " +
+             "of their instances, reaching Lod Min Density at the cull distance. This is " +
+             "what makes a long cull distance affordable: distant blades are sub-pixel and " +
+             "cost full price, so thinning them is nearly free visually.")]
+    [SerializeField] float _grassLodStartDistance = 25f;
+
+    [Tooltip("Fraction of a chunk's blades still drawn at the cull distance. 1 disables " +
+             "distance LOD entirely.")]
+    [Range(0.02f, 1f)]
+    [SerializeField] float _grassLodMinDensity = 0.15f;
+
+    [Tooltip("Number of discrete density levels between full and minimum. More steps means " +
+             "smaller, less noticeable changes as you walk, at the cost of writing the " +
+             "indirect args slightly more often.")]
+    [Range(2, 64)]
+    [SerializeField] int _grassLodSteps = 16;
 
     [Tooltip("HDRP rendering layer mask. 0 is treated as 1 (default layer).")]
     [SerializeField] uint _grassRenderingLayerMask = 1;
@@ -158,6 +192,9 @@ public sealed class RenderConfig : ScriptableObject
     public float GrassBladeHeight => _grassBladeHeight;
     public float GrassCullDistance => _grassCullDistance;
     public float GrassFadeBand => _grassFadeBand;
+    public float GrassLodStartDistance => _grassLodStartDistance;
+    public float GrassLodMinDensity => _grassLodMinDensity;
+    public int GrassLodSteps => _grassLodSteps;
     public uint GrassRenderingLayerMask => _grassRenderingLayerMask;
     public float GrassWindDirectionDegrees => _grassWindDirectionDegrees;
     public float GrassWindStrength => _grassWindStrength;
@@ -166,21 +203,6 @@ public sealed class RenderConfig : ScriptableObject
     public float GrassWindGustScale => _grassWindGustScale;
     public float GrassWindPhaseJitter => _grassWindPhaseJitter;
     #endregion
-
-
-    public float[] TerrainLodScreenHeights => _terrainLodScreenHeights;
-    public int TerrainAtlasMaxSize => _terrainAtlasMaxSize;
-    public int TerrainAtlasPadding => _terrainAtlasPadding;
-    public int TerrainAtlasFirstMipToSoften => _terrainAtlasFirstMipToSoften;
-    public int TerrainAtlasMipBlurPasses => _terrainAtlasMipBlurPasses;
-    public int TerrainAtlasAnisoLevel => _terrainAtlasAnisoLevel;
-    public float TerrainAtlasMipBias => _terrainAtlasMipBias;
-    public WaterSurfaceType WaterSurfaceType => _waterSurfaceType;
-    public Material WaterMaterial => _waterMaterial;
-    public Material ShoreWaveMaterial => _shoreWaveMaterial;
-    public bool ApplyAoPlayfieldTweaks => _applyAoPlayfieldTweaks;
-    public bool ApplyAoSkyMeshes => _applyAoSkyMeshes;
-    public bool UseReflectionProbe => _useReflectionProbe;
 
 
     public float GetTerrainLodScreenHeight(int lod)

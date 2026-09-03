@@ -17,6 +17,14 @@ public sealed class PlayfieldGrassBuilder
 {
     const int ChunksPerFrame = 4;
 
+    /// <summary>
+    /// Upper bound on the per-tile jittered-grid resolution. 128x128 is 16k candidate
+    /// points per tile, which is far past anything sane for single-blade meshes; it exists
+    /// to stop a typo in the inspector from trying to allocate a playfield's worth of
+    /// gigabytes. Density above what this allows is reported, not silently ignored.
+    /// </summary>
+    const int MaxSamplesPerTileAxis = 128;
+
     readonly ResourceDatabase _database;
     readonly RenderConfig _renderConfig;
 
@@ -84,7 +92,7 @@ public sealed class PlayfieldGrassBuilder
             yield break;
         }
 
-        var settings = PlacementSettings.From(_renderConfig);
+        var settings = PlacementSettings.From(_renderConfig, tilemap.MapScale);
         var results = new ChunkResult[chunks.Count];
 
         Task work = Task.Run(() =>
@@ -106,6 +114,7 @@ public sealed class PlayfieldGrassBuilder
 
         int totalInstances = 0;
         int createdChunks = 0;
+        int truncatedChunks = 0;
 
         for (int i = 0; i < results.Length; i++)
         {
@@ -128,10 +137,18 @@ public sealed class PlayfieldGrassBuilder
                 result.Bounds,
                 _renderConfig.GrassCullDistance,
                 _renderConfig.GrassRenderingLayerMask == 0 ? 1u : _renderConfig.GrassRenderingLayerMask,
+                new GrassChunkRenderer.LodSettings
+                {
+                    StartDistance = _renderConfig.GrassLodStartDistance,
+                    MinDensity = _renderConfig.GrassLodMinDensity,
+                    Steps = _renderConfig.GrassLodSteps
+                },
                 _renderConfig.GrassFallbackMaterial);
 
             totalInstances += result.Instances.Length;
             createdChunks++;
+            if (result.Truncated)
+                truncatedChunks++;
 
             if (createdChunks % ChunksPerFrame == 0)
                 yield return null;
@@ -139,8 +156,17 @@ public sealed class PlayfieldGrassBuilder
 
         Debug.Log(
             $"PlayfieldGrassBuilder: playfield {playfieldId} - {totalInstances} grass instances across " +
-            $"{createdChunks} chunk(s), {masks.Count} partial-tile mask(s), " +
+            $"{createdChunks} chunk(s) ({settings.SamplesPerTileAxis}x{settings.SamplesPerTileAxis} samples " +
+            $"per tile), {masks.Count} partial-tile mask(s), " +
             $"mode={(_renderConfig.GrassUseInstancedFallback ? "InstancedFallback" : "Indirect")}.");
+
+        if (truncatedChunks > 0)
+        {
+            Debug.LogWarning(
+                $"PlayfieldGrassBuilder: {truncatedChunks} chunk(s) hit GrassMaxInstancesPerChunk " +
+                $"({_renderConfig.GrassMaxInstancesPerChunk}) and were cut off part-way through, so " +
+                $"their grass stops abruptly rather than thinning. Raise the limit or lower the density.");
+        }
     }
 
     void ApplyGlobalShaderParams()
@@ -217,13 +243,13 @@ public sealed class PlayfieldGrassBuilder
         // Identical to TerrainChunkBuilder.Build's anchorOffset.
         var anchor = new Vector3(fullExtent * mapScale * c.ChunkX, 0f, fullExtent * mapScale * c.ChunkY);
 
-        // Density is per square metre of ground; a tile spans mapScale x mapScale.
-        int perAxis = Mathf.Clamp(Mathf.RoundToInt(mapScale * Mathf.Sqrt(Mathf.Max(0.0001f, s.DensityPerSquareMetre))), 1, 32);
+        int perAxis = s.SamplesPerTileAxis;
         float cellStep = 1f / perAxis;
 
         var instances = new List<Matrix4x4>(1024);
         Vector3 min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
         Vector3 max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+        bool truncated = false;
 
         for (int tileY = 0; tileY < fullExtent; tileY++)
         {
@@ -317,7 +343,10 @@ public sealed class PlayfieldGrassBuilder
                         max = Vector3.Max(max, position);
 
                         if (instances.Count >= s.MaxInstancesPerChunk)
+                        {
+                            truncated = true;
                             goto done;
+                        }
                     }
                 }
             }
@@ -327,6 +356,21 @@ public sealed class PlayfieldGrassBuilder
         if (instances.Count == 0)
             return new ChunkResult { Instances = Array.Empty<Matrix4x4>(), Bounds = new Bounds() };
 
+        Matrix4x4[] baked = instances.ToArray();
+
+        // Shuffle so that ANY prefix of the array is a uniform random sample of the
+        // whole chunk. That is what makes distance LOD work: the renderer thins a chunk
+        // purely by shrinking instanceCount in the indirect args, with no per-frame
+        // filtering and no extra buffers - the blades that drop out are scattered
+        // evenly rather than being one contiguous patch that visibly vanishes.
+        uint shuffleSeed = Hash((uint)c.ChunkIndex * 2654435761u + 0x5bd1e995u);
+        for (int i = baked.Length - 1; i > 0; i--)
+        {
+            int j = (int)(Rand01(ref shuffleSeed) * (i + 1));
+            j = j > i ? i : j;
+            (baked[i], baked[j]) = (baked[j], baked[i]);
+        }
+
         // Pad so the chunk is not culled while a blade at its edge is still on screen:
         // upward by the tallest possible blade, sideways by the widest plus wind travel.
         float padXZ = s.MaxWidth + s.WindStrength + 1f;
@@ -334,7 +378,7 @@ public sealed class PlayfieldGrassBuilder
         var bounds = new Bounds();
         bounds.SetMinMax(min - new Vector3(padXZ, 0f, padXZ), max + new Vector3(padXZ, padY, padXZ));
 
-        return new ChunkResult { Instances = instances.ToArray(), Bounds = bounds };
+        return new ChunkResult { Instances = baked, Bounds = bounds, Truncated = truncated };
     }
 
     /// <summary>
@@ -381,7 +425,7 @@ public sealed class PlayfieldGrassBuilder
 
     struct PlacementSettings
     {
-        public float DensityPerSquareMetre;
+        public int SamplesPerTileAxis;
         public float Coverage;
         public float MaxSlopeDegrees;
         public float MinWidth;
@@ -394,9 +438,34 @@ public sealed class PlayfieldGrassBuilder
         public float WindStrength;
         public int MaxInstancesPerChunk;
 
-        public static PlacementSettings From(RenderConfig cfg) => new PlacementSettings
+        /// <summary>
+        /// Grid resolution per tile. Worked out once on the main thread rather than per
+        /// chunk on a worker, so hitting the cap can be reported instead of silently
+        /// swallowing every density value above it.
+        /// </summary>
+        public static int ResolveSamplesPerTileAxis(RenderConfig cfg, float mapScale)
         {
-            DensityPerSquareMetre = Mathf.Max(0.0001f, cfg.GrassDensityPerSquareMetre),
+            float density = Mathf.Max(0.0001f, cfg.GrassDensityPerSquareMetre);
+            int wanted = Mathf.RoundToInt(mapScale * Mathf.Sqrt(density));
+            int clamped = Mathf.Clamp(wanted, 1, MaxSamplesPerTileAxis);
+
+            if (wanted > clamped)
+            {
+                float achievable = (clamped / mapScale) * (clamped / mapScale);
+                Debug.LogWarning(
+                    $"PlayfieldGrassBuilder: GrassDensityPerSquareMetre {density:F1} needs a " +
+                    $"{wanted}x{wanted} sample grid per tile, capped at {clamped}x{clamped}. " +
+                    $"Actual density will be about {achievable:F1}/m2 - raising the setting " +
+                    $"further will do nothing. Raise MaxSamplesPerTileAxis, or use a grass mesh " +
+                    $"with several blades per instance instead of one.");
+            }
+
+            return clamped;
+        }
+
+        public static PlacementSettings From(RenderConfig cfg, float mapScale) => new PlacementSettings
+        {
+            SamplesPerTileAxis = ResolveSamplesPerTileAxis(cfg, mapScale),
             Coverage = Mathf.Clamp01(cfg.GrassCoverage),
             MaxSlopeDegrees = Mathf.Clamp(cfg.GrassMaxSlopeDegrees, 0f, 90f),
             MinWidth = Mathf.Max(0.01f, cfg.GrassMinWidth),
@@ -430,5 +499,6 @@ public sealed class PlayfieldGrassBuilder
     {
         public Matrix4x4[] Instances;
         public Bounds Bounds;
+        public bool Truncated;
     }
 }
