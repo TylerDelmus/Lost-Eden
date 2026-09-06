@@ -147,7 +147,7 @@ public static class TerrainChunkBuilder
     /// Tiles cover faces: (chunkSize-1)². Index as x + z * tileSide when the blob matches;
     /// otherwise clamp into whatever AODB supplied.
     /// </summary>
-    static int ResolveTileIndex(int tileCount, int tileX, int tileY, int tileSide)
+    public static int ResolveTileIndex(int tileCount, int tileX, int tileY, int tileSide)
     {
         if (tileCount <= 0)
             return 0;

@@ -28,3 +28,28 @@ MonoBehaviour:
   _applyAoPlayfieldTweaks: 1
   _applyAoSkyMeshes: 1
   _useReflectionProbe: 0
+  _grassEnabled: 1
+  _grassMesh: {fileID: -462981019419857548, guid: 8d1293aa2d2896d4f937d9a60bc65842, type: 3}
+  _grassMaterial: {fileID: 2100000, guid: df8485d46beab204981b80b3a65a4874, type: 2}
+  _grassUseInstancedFallback: 0
+  _grassFallbackMaterial: {fileID: 0}
+  _grassVariantCount: 1
+  _grassMaskResolution: 16
+  _grassMaskThreshold: 0.5
+  _grassFullCoverageThreshold: 0.85
+  _grassMinCoverageThreshold: 0.06
+  _grassMinSaturation: 0.08
+  _grassMinGreenDominance: 0.01
+  _grassLogClassification: 1
+  _grassForceTextureIds: 
+  _grassExcludeTextureIds: 
+  _grassDensityPerSquareMetre: 64
+  _grassMaxSlopeDegrees: 45
+  _grassMinWidth: 2
+  _grassMaxWidth: 3
+  _grassMinHeight: 0.4
+  _grassMaxHeight: 0.8
+  _grassMaxInstancesPerChunk: 2000000
+  _grassExclusionVolumes: {fileID: 11400000, guid: 2fd850adef60bd84dbd2db1736ae18d4, type: 2}
+  _grassWindStrength: 0.3
+  _grassWindFrequency: 1.6

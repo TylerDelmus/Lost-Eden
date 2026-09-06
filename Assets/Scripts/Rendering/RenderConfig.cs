@@ -51,6 +51,202 @@ public sealed class RenderConfig : ScriptableObject
     public bool ApplyAoSkyMeshes => _applyAoSkyMeshes;
     public bool UseReflectionProbe => _useReflectionProbe;
 
+    #region Grass
+    [Header("Grass - assets")]
+    [SerializeField] bool _grassEnabled = true;
+    [SerializeField] Mesh _grassMesh;
+    [SerializeField] Material _grassMaterial;
+
+    [Tooltip("Draw with stock GPU instancing instead of the custom indirect path. " +
+             "Works with any HDRP material that has GPU Instancing ticked. Slower, but " +
+             "if grass shows up here and not in indirect mode, the placement data is " +
+             "fine and the problem is the shader.")]
+    [SerializeField] bool _grassUseInstancedFallback;
+
+    [Tooltip("Plain HDRP Lit material with GPU Instancing ticked, used only by the " +
+             "fallback draw mode. Must NOT be the grass Shader Graph material - that one " +
+             "declares procedural instancing, so it would still read the instance buffer " +
+             "and the test would prove nothing.")]
+    [SerializeField] Material _grassFallbackMaterial;
+
+    [Tooltip("Number of variants in the grass Texture2DArray. Only used as a fallback - if " +
+             "the material's Base Color Map is a Texture2DArray, its actual slice count wins.")]
+    [Min(1)]
+    [SerializeField] int _grassVariantCount = 1;
+
+    [Header("Grass - automatic tile classification")]
+    // Which ground textures are grass is worked out from their pixels at load. There is no
+    // list to maintain: AO has far too many ground textures to enumerate by hand, and the
+    // ids mean different things in different playfields.
+
+    [Range(4, 64)]
+    [SerializeField] int _grassMaskResolution = 16;
+
+    [Tooltip("Fraction of a mask cell's pixels that must read as grass-coloured for that " +
+             "cell to accept blades.")]
+    [Range(0f, 1f)]
+    [SerializeField] float _grassMaskThreshold = 0.5f;
+
+    [Tooltip("Coverage at or above which a texture counts as fully grass - the mask is " +
+             "dropped so stray pebbles don't punch holes in an otherwise solid lawn.")]
+    [Range(0.5f, 1f)]
+    [SerializeField] float _grassFullCoverageThreshold = 0.85f;
+
+    [Tooltip("Coverage below which a texture is ignored entirely. Raise this if faintly " +
+             "mossy rock or dirt is picking up stray blades.")]
+    [Range(0f, 0.5f)]
+    [SerializeField] float _grassMinCoverageThreshold = 0.06f;
+
+    [Tooltip("Minimum saturation for a pixel to read as grass.")]
+    [Range(0f, 1f)]
+    [SerializeField] float _grassMinSaturation = 0.08f;
+
+    [Tooltip("How far the green channel must lead red and blue. The main defence against " +
+             "grey-green rock: a desaturated surface can land in the hue band by accident, " +
+             "but cannot have green meaningfully ahead of both others. Raise to be stricter.")]
+    [Range(0f, 0.3f)]
+    [SerializeField] float _grassMinGreenDominance = 0.01f;
+
+    [Tooltip("Logs a table of every ground texture with its coverage % and verdict at load. " +
+             "Leave on until you trust the classification for a zone.")]
+    [SerializeField] bool _grassLogClassification = true;
+
+    [Tooltip("Escape hatch: GroundTexture RDB ids to always treat as fully grass, when the " +
+             "pixel test misses one. Normally empty.")]
+    [SerializeField] int[] _grassForceTextureIds = { };
+
+    [Tooltip("Escape hatch: GroundTexture RDB ids to never treat as grass - green water, " +
+             "mossy rock, canopy art. Normally empty.")]
+    [SerializeField] int[] _grassExcludeTextureIds = { };
+
+    [Header("Grass - placement")]
+    [Tooltip("Candidate blades per square metre of ground before slope/mask rejection.")]
+    [SerializeField] float _grassDensityPerSquareMetre = 32f;
+
+    [Range(0f, 90f)]
+    [SerializeField] float _grassMaxSlopeDegrees = 35f;
+
+    [Tooltip("Width multiplier on the grass mesh's X/Z. Varied independently of height - " +
+             "tying the two together just scales one silhouette up and down.")]
+    [SerializeField] float _grassMinWidth = 3f;
+    [SerializeField] float _grassMaxWidth = 5f;
+
+    [Tooltip("Height multiplier on the grass mesh's Y.")]
+    [SerializeField] float _grassMinHeight = 0.4f;
+    [SerializeField] float _grassMaxHeight = 0.8f;
+
+    [Tooltip("Safety valve. A chunk that hits this is cut off part-way through, so its " +
+             "grass stops abruptly rather than thinning - the load log warns when it happens.")]
+    [SerializeField] int _grassMaxInstancesPerChunk = 2000000;
+
+    [Tooltip("Hand-authored boxes, per playfield, where grass must not be placed - bridge " +
+             "decks, building floors. Blades whose vertical span intersects one are dropped " +
+             "at bake time. Author them with GrassExclusionAuthoring. Leave empty to disable.")]
+    [SerializeField] GrassExclusionVolumes _grassExclusionVolumes;
+
+    [Header("Grass - wind")]
+    [SerializeField] float _grassWindStrength = 0.3f;
+    [SerializeField] float _grassWindFrequency = 1.6f;
+
+
+    /// <summary>0 = blades stand straight up, 1 = blades lie along the terrain normal.</summary>
+    const float BakedGrassNormalAlignment = 0f;
+
+    /// <summary>Sink blades slightly so their base is never floating over the mesh.</summary>
+    const float BakedGrassHeightOffset = -0.05f;
+
+    /// <summary>Fraction of candidate points that survive, before slope and mask rejection.</summary>
+    const float BakedGrassCoverage = 1f;
+
+    /// <summary>
+    /// Height of the grass mesh in its own local units. Drives the wind bend falloff and
+    /// the chunk bounds padding - wrong here and blades bend from the wrong point or get
+    /// culled early.
+    /// </summary>
+    const float BakedGrassBladeHeight = 1f;
+
+    const float BakedGrassCullDistance = 120f;
+
+    /// <summary>Width of the band before the cull distance over which blades fade out.</summary>
+    const float BakedGrassFadeBand = 25f;
+
+    /// <summary>Full density inside this radius; thinning begins beyond it.</summary>
+    const float BakedGrassLodStartDistance = 25f;
+
+    /// <summary>Fraction of a chunk's blades still drawn at the cull distance.</summary>
+    const float BakedGrassLodMinDensity = 0.15f;
+
+    /// <summary>Discrete density levels between full and minimum. More = smaller pops.</summary>
+    const int BakedGrassLodSteps = 16;
+
+    /// <summary>HDRP rendering layer mask. 0 is treated as 1 (default layer).</summary>
+    const uint BakedGrassRenderingLayerMask = 1;
+
+    const float BakedGrassWindDirectionDegrees = 45f;
+
+    /// <summary>How fast the sway phase varies across world space. Higher = shorter waves.</summary>
+    const float BakedGrassWindPhaseScale = 0.35f;
+
+    /// <summary>Amplitude of the slower second harmonic that breaks up the single-sine look.</summary>
+    const float BakedGrassWindGustScale = 0.4f;
+
+    /// <summary>Random per-blade sway phase offset, 0-1. Stops neighbours moving in lockstep.</summary>
+    const float BakedGrassWindPhaseJitter = 0.25f;
+
+    /// <summary>
+    /// Margin added around each occluder volume, in metres. A little slack stops blades
+    /// clipping the very edge of a deck or wall; too much clears a visible gap around
+    /// every object.
+    /// </summary>
+    const float BakedGrassOccluderPadding = 0.1f;
+
+    // ---- Serialized ----
+    public bool GrassEnabled => _grassEnabled;
+    public Mesh GrassMesh => _grassMesh;
+    public Material GrassMaterial => _grassMaterial;
+    public bool GrassUseInstancedFallback => _grassUseInstancedFallback;
+    public Material GrassFallbackMaterial => _grassFallbackMaterial;
+    public int GrassVariantCount => _grassVariantCount;
+    public int GrassMaskResolution => _grassMaskResolution;
+    public float GrassMaskThreshold => _grassMaskThreshold;
+    public float GrassFullCoverageThreshold => _grassFullCoverageThreshold;
+    public float GrassMinCoverageThreshold => _grassMinCoverageThreshold;
+    public float GrassMinSaturation => _grassMinSaturation;
+    public float GrassMinGreenDominance => _grassMinGreenDominance;
+    public bool GrassLogClassification => _grassLogClassification;
+    public int[] GrassForceTextureIds => _grassForceTextureIds;
+    public int[] GrassExcludeTextureIds => _grassExcludeTextureIds;
+    public float GrassDensityPerSquareMetre => _grassDensityPerSquareMetre;
+    public float GrassMaxSlopeDegrees => _grassMaxSlopeDegrees;
+    public float GrassMinWidth => _grassMinWidth;
+    public float GrassMaxWidth => _grassMaxWidth;
+    public float GrassMinHeight => _grassMinHeight;
+    public float GrassMaxHeight => _grassMaxHeight;
+    public int GrassMaxInstancesPerChunk => _grassMaxInstancesPerChunk;
+    public float GrassWindStrength => _grassWindStrength;
+    public float GrassWindFrequency => _grassWindFrequency;
+    public GrassExclusionVolumes GrassExclusionVolumes => _grassExclusionVolumes;
+
+    // ---- Baked ----
+    public float GrassNormalAlignment => BakedGrassNormalAlignment;
+    public float GrassHeightOffset => BakedGrassHeightOffset;
+    public float GrassCoverage => BakedGrassCoverage;
+    public float GrassBladeHeight => BakedGrassBladeHeight;
+    public float GrassCullDistance => BakedGrassCullDistance;
+    public float GrassFadeBand => BakedGrassFadeBand;
+    public float GrassLodStartDistance => BakedGrassLodStartDistance;
+    public float GrassLodMinDensity => BakedGrassLodMinDensity;
+    public int GrassLodSteps => BakedGrassLodSteps;
+    public uint GrassRenderingLayerMask => BakedGrassRenderingLayerMask;
+    public float GrassWindDirectionDegrees => BakedGrassWindDirectionDegrees;
+    public float GrassWindPhaseScale => BakedGrassWindPhaseScale;
+    public float GrassWindGustScale => BakedGrassWindGustScale;
+    public float GrassWindPhaseJitter => BakedGrassWindPhaseJitter;
+    public float GrassOccluderPadding => BakedGrassOccluderPadding;
+
+    #endregion
+
+
     public float GetTerrainLodScreenHeight(int lod)
     {
         if (_terrainLodScreenHeights == null || _terrainLodScreenHeights.Length == 0)

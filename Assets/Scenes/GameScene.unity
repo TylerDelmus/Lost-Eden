@@ -358,6 +358,56 @@ MonoBehaviour:
   m_AreaLightEmissiveMeshShadowCastingMode: 0
   m_AreaLightEmissiveMeshMotionVectorGenerationMode: 0
   m_AreaLightEmissiveMeshLayer: -1
+--- !u!1 &172316950
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 172316952}
+  - component: {fileID: 172316951}
+  m_Layer: 0
+  m_Name: Grass
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &172316951
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 172316950}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b452bf3a6df7f014c8a5d9aea224ee59, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: LostEden.Runtime::GrassExclusionAuthoring
+  _asset: {fileID: 11400000, guid: 2fd850adef60bd84dbd2db1736ae18d4, type: 2}
+  _playfieldId: 0
+  _note: 
+  _newBoxSize: {x: 8, y: 4, z: 8}
+  _fillColour: {r: 1, g: 0.3, b: 0.2, a: 0.18}
+  _wireColour: {r: 1, g: 0.4, b: 0.25, a: 0.9}
+--- !u!4 &172316952
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 172316950}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 933.33044, y: 0, z: 781.71027}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &644626554 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 6693611663430360954, guid: 0840f0fb60bd91f4a86f0427b957dddb, type: 3}
@@ -1199,3 +1249,4 @@ SceneRoots:
   - {fileID: 899115618}
   - {fileID: 2015874473}
   - {fileID: 290694753635709543}
+  - {fileID: 172316952}

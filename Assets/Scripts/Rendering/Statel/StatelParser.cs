@@ -119,6 +119,7 @@ public sealed class StatelParser
             subGo.transform.localRotation = sub.BaseRotation;
             subGo.transform.localScale = Vector3.one;
 
+
             var filter = subGo.AddComponent<MeshFilter>();
             filter.sharedMesh = mesh;
 
@@ -308,7 +309,8 @@ public sealed class StatelParser
 
         // "[OCC]8x8.abiff" (occlusion) and "bsp_*.abiff" (collision) are not rendered.
         return name.StartsWith("[OCC]", StringComparison.Ordinal)
-            || name.StartsWith("bsp_", StringComparison.Ordinal);
+            || name.StartsWith("bsp_", StringComparison.Ordinal)
+            || name.Contains("grass", StringComparison.Ordinal);
     }
 
     string ResolveMeshName(int meshId)
