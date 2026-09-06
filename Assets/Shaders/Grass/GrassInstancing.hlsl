@@ -39,6 +39,7 @@ StructuredBuffer<float4x4> _GrassInstances;
 float4 _GrassWindParams; // xy = wind direction (world XZ, normalised), z = strength (metres), w = frequency
 float4 _GrassFadeParams; // x = cull distance, y = fade band width, z = blade height in mesh units
 float4 _GrassWindParams2; // x = world phase scale, y = gust amplitude, z = per-instance phase jitter, w = unused
+float4 _GrassVariantParams; // x = number of slices in the grass Texture2DArray
 
 // Dave Hoskins' hash13 - a stable 0..1 value from a world position, with no
 // trig. sin-based hashes band badly once world coordinates get into the
@@ -61,12 +62,14 @@ void GrassInstance_float(
     float instanceID,
     out float3 PositionOut,
     out float3 NormalOut,
-    out float Variation)
+    out float Variation,
+    out float SliceIndex)
 {
 #ifdef SHADERGRAPH_PREVIEW
     PositionOut = positionOS;
     NormalOut = normalOS;
     Variation = 0.5f;
+    SliceIndex = 0.0f;
 #else
     float4x4 m = _GrassInstances[(uint) instanceID];
 
@@ -82,6 +85,13 @@ void GrassInstance_float(
     float heightScale = length(axisY);
 
     Variation = GrassHash13(pivotWS);
+
+    // Deliberately a DIFFERENT hash to the tint variation. Sharing one would make every
+    // instance of a given mesh variant the same colour, which reads as a repeating pattern
+    // rather than as variety.
+    float sliceCount = max(_GrassVariantParams.x, 1.0f);
+    float variantRand = GrassHash13(pivotWS + 17.13f);
+    SliceIndex = min(floor(variantRand * sliceCount), sliceCount - 1.0f);
 
     // 0 at the base, 1 at the tip, squared so the root stays planted.
     float bend = saturate(positionOS.y / max(_GrassFadeParams.z, 1e-4f));

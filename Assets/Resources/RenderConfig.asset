@@ -33,31 +33,23 @@ MonoBehaviour:
   _grassMaterial: {fileID: 2100000, guid: df8485d46beab204981b80b3a65a4874, type: 2}
   _grassUseInstancedFallback: 0
   _grassFallbackMaterial: {fileID: 0}
-  _grassFullTextureIds: 0f000000020100001b0100001e0100001c0100002101000020010000
-  _grassPartialTextureIds: 5700000006010000080100000501000007010000560000000d010000
+  _grassVariantCount: 1
   _grassMaskResolution: 16
   _grassMaskThreshold: 0.5
-  _grassLogMaskCoverage: 0
+  _grassFullCoverageThreshold: 0.85
+  _grassMinCoverageThreshold: 0.06
+  _grassMinSaturation: 0.08
+  _grassMinGreenDominance: 0.01
+  _grassLogClassification: 1
+  _grassForceTextureIds: 
+  _grassExcludeTextureIds: 
   _grassDensityPerSquareMetre: 64
-  _grassCoverage: 1
-  _grassMaxSlopeDegrees: 35
-  _grassMinWidth: 0.8
-  _grassMaxWidth: 1.6
-  _grassMinHeight: 0.1
-  _grassMaxHeight: 0.6
-  _grassNormalAlignment: 0.35
-  _grassHeightOffset: -0.05
+  _grassMaxSlopeDegrees: 45
+  _grassMinWidth: 2
+  _grassMaxWidth: 3
+  _grassMinHeight: 0.4
+  _grassMaxHeight: 0.8
   _grassMaxInstancesPerChunk: 2000000
-  _grassBladeHeight: 1
-  _grassCullDistance: 120
-  _grassFadeBand: 25
-  _grassLodStartDistance: 25
-  _grassLodMinDensity: 0.15
-  _grassLodSteps: 16
-  _grassRenderingLayerMask: 1
-  _grassWindDirectionDegrees: 45
+  _grassExclusionVolumes: {fileID: 11400000, guid: 2fd850adef60bd84dbd2db1736ae18d4, type: 2}
   _grassWindStrength: 0.3
   _grassWindFrequency: 1.6
-  _grassWindPhaseScale: 0.35
-  _grassWindGustScale: 0.4
-  _grassWindPhaseJitter: 0.25

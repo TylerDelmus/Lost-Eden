@@ -254,7 +254,7 @@ public sealed class TerrainParser
     }
 
     bool TryCreateAtlas(short[] textureIds, out Texture2D atlas, out Rect[] texBounds)
-    {
+    { 
         atlas = null;
         texBounds = Array.Empty<Rect>();
 

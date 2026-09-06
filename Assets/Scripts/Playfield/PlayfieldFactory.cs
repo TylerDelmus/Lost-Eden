@@ -283,12 +283,12 @@ public class PlayfieldFactory : MonoBehaviour
         var waterBuilder = new PlayfieldWaterBuilder(_resourceDatabase, _renderConfig);
         yield return waterBuilder.BuildCoroutine(zoneId, _playfieldRoot);
 
-        var grassBuilder = new PlayfieldGrassBuilder(_resourceDatabase, _renderConfig);
-        yield return grassBuilder.BuildCoroutine(zoneId, _playfieldRoot);
-
         var abiffMaterials = new AbiffMaterialFactory(_resourceDatabase);
         var statelParser = new StatelParser(_resourceDatabase, _renderConfig, abiffMaterials);
         yield return statelParser.BuildCoroutine(zoneId, _playfieldRoot);
+
+        var grassBuilder = new PlayfieldGrassBuilder(_resourceDatabase, _renderConfig);
+        yield return grassBuilder.BuildCoroutine(zoneId, _playfieldRoot);
 
         TryApplyAoEnvironment(zoneId, abiffMaterials);
 

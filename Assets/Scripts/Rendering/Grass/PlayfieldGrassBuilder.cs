@@ -31,6 +31,8 @@ public sealed class PlayfieldGrassBuilder
     static readonly int WindParamsId = Shader.PropertyToID("_GrassWindParams");
     static readonly int WindParams2Id = Shader.PropertyToID("_GrassWindParams2");
     static readonly int FadeParamsId = Shader.PropertyToID("_GrassFadeParams");
+    static readonly int VariantParamsId = Shader.PropertyToID("_GrassVariantParams");
+    static readonly int BaseColorMapId = Shader.PropertyToID("_BaseColorMap");
 
     public PlayfieldGrassBuilder(ResourceDatabase database, RenderConfig renderConfig)
     {
@@ -65,27 +67,41 @@ public sealed class PlayfieldGrassBuilder
         if (tilemap.TextureIds == null || tilemap.TextureIds.Length == 0)
             yield break;
 
-        var fullIds = new HashSet<int>(_renderConfig.GrassFullTextureIds ?? Array.Empty<int>());
-        var partialIds = new HashSet<int>(_renderConfig.GrassPartialTextureIds ?? Array.Empty<int>());
-        if (fullIds.Count == 0 && partialIds.Count == 0)
+        ApplyGlobalShaderParams();
+
+        // Main thread: decode every ground texture this playfield references and work out
+        // from the pixels which ones are grass. AO has far too many ground textures to
+        // enumerate by hand, and the ids mean different things in different playfields, so
+        // classification is derived rather than configured. Immutable from here on, so the
+        // parallel placement pass can read it without locking.
+        var referencedIds = new HashSet<int>();
+        for (int i = 0; i < tilemap.TextureIds.Length; i++)
+            referencedIds.Add(tilemap.TextureIds[i]);
+
+        Dictionary<int, GrassTextureInfo> classified = GrassMaskLibrary.Classify(
+            _database,
+            referencedIds,
+            BuildClassifySettings(),
+            _renderConfig.GrassLogClassification);
+
+        int grassTextures = 0;
+        foreach (GrassTextureInfo info in classified.Values)
         {
-            Debug.LogWarning("PlayfieldGrassBuilder: no grass texture ids configured - nothing to place.");
+            if (info.Classification != GrassClassification.NotGrass)
+                grassTextures++;
+        }
+
+        if (grassTextures == 0)
+        {
+            Debug.Log(
+                $"PlayfieldGrassBuilder: playfield {playfieldId} has no ground textures that " +
+                $"classify as grass ({classified.Count} texture(s) examined).");
             yield break;
         }
 
-        ApplyGlobalShaderParams();
+        List<GrassOccluder> occluders = CollectOccluders(playfieldId);
 
-        // Main thread: decode the partial-tile textures into masks before any worker
-        // thread touches them. Immutable from here on, so the parallel pass can read
-        // the dictionary without locking.
-        Dictionary<int, GrassMask> masks = GrassMaskLibrary.Build(
-            _database,
-            partialIds,
-            _renderConfig.GrassMaskResolution,
-            _renderConfig.GrassMaskThreshold,
-            _renderConfig.GrassLogMaskCoverage);
-
-        List<ChunkSource> chunks = CollectChunks(tilemap, fullIds, partialIds);
+        List<ChunkSource> chunks = CollectChunks(tilemap, classified, occluders);
         if (chunks.Count == 0)
         {
             Debug.Log($"PlayfieldGrassBuilder: playfield {playfieldId} has no grass-classified tiles.");
@@ -97,7 +113,7 @@ public sealed class PlayfieldGrassBuilder
 
         Task work = Task.Run(() =>
         {
-            Parallel.For(0, chunks.Count, i => results[i] = PlaceChunk(chunks[i], masks, settings));
+            Parallel.For(0, chunks.Count, i => results[i] = PlaceChunk(chunks[i], settings));
         });
 
         while (!work.IsCompleted)
@@ -157,7 +173,7 @@ public sealed class PlayfieldGrassBuilder
         Debug.Log(
             $"PlayfieldGrassBuilder: playfield {playfieldId} - {totalInstances} grass instances across " +
             $"{createdChunks} chunk(s) ({settings.SamplesPerTileAxis}x{settings.SamplesPerTileAxis} samples " +
-            $"per tile), {masks.Count} partial-tile mask(s), " +
+            $"per tile), {grassTextures}/{classified.Count} ground texture(s) classified as grass, " +
             $"mode={(_renderConfig.GrassUseInstancedFallback ? "InstancedFallback" : "Indirect")}.");
 
         if (truncatedChunks > 0)
@@ -191,9 +207,130 @@ public sealed class PlayfieldGrassBuilder
             Mathf.Max(0.01f, _renderConfig.GrassFadeBand),
             Mathf.Max(0.0001f, _renderConfig.GrassBladeHeight),
             0f));
+
+        Shader.SetGlobalVector(VariantParamsId, new Vector4(ResolveVariantCount(), 0f, 0f, 0f));
     }
 
-    static List<ChunkSource> CollectChunks(Tilemap tilemap, HashSet<int> fullIds, HashSet<int> partialIds)
+    /// <summary>
+    /// How many slices the grass Texture2DArray has. Read off the material's own texture
+    /// when possible rather than trusting the inspector field - a count larger than the
+    /// array clamps to the last slice, so one variant would silently appear far more often
+    /// than the rest, which is a horrible thing to have to spot by eye.
+    /// </summary>
+    int ResolveVariantCount()
+    {
+        int configured = Mathf.Max(1, _renderConfig.GrassVariantCount);
+
+        Material material = _renderConfig.GrassMaterial;
+        if (material != null && material.HasProperty(BaseColorMapId) &&
+            material.GetTexture(BaseColorMapId) is Texture2DArray array)
+        {
+            int actual = Mathf.Max(1, array.depth);
+            if (actual != configured)
+            {
+                Debug.Log(
+                    $"PlayfieldGrassBuilder: grass variant count taken from '{array.name}' " +
+                    $"({actual} slice(s)); RenderConfig said {configured}.");
+            }
+
+            return actual;
+        }
+
+        return configured;
+    }
+
+    GrassClassifySettings BuildClassifySettings() => new GrassClassifySettings
+    {
+        MaskResolution = _renderConfig.GrassMaskResolution,
+        CellGrassFraction = _renderConfig.GrassMaskThreshold,
+        FullCoverage = _renderConfig.GrassFullCoverageThreshold,
+        MinCoverage = _renderConfig.GrassMinCoverageThreshold,
+        MinSaturation = _renderConfig.GrassMinSaturation,
+        MinGreenDominance = _renderConfig.GrassMinGreenDominance,
+        ForceGrass = ToSet(_renderConfig.GrassForceTextureIds),
+        Exclude = ToSet(_renderConfig.GrassExcludeTextureIds)
+    };
+
+    static HashSet<int> ToSet(int[] ids)
+        => ids == null || ids.Length == 0 ? null : new HashSet<int>(ids);
+
+    /// <summary>
+    /// Reads this playfield's hand-authored exclusion boxes into the oriented-box form the
+    /// placement pass tests against.
+    ///
+    /// These used to be derived from statel renderers, which meant tagging every object
+    /// with a layer and walking thousands of renderers at load - more expensive than
+    /// building the grass. A zone needs a handful of boxes, so they are authored by hand in
+    /// GrassExclusionAuthoring and stored per playfield.
+    ///
+    /// Oriented, not axis-aligned: a bridge running diagonally has an AABB many times its
+    /// own footprint, which would clear grass well to either side of the deck.
+    /// </summary>
+    List<GrassOccluder> CollectOccluders(int playfieldId)
+    {
+        var occluders = new List<GrassOccluder>();
+
+        GrassExclusionVolumes asset = _renderConfig.GrassExclusionVolumes;
+        List<GrassExclusionVolumes.Volume> volumes = asset != null ? asset.GetVolumes(playfieldId) : null;
+        if (volumes == null || volumes.Count == 0)
+            return occluders;
+
+        float padding = _renderConfig.GrassOccluderPadding;
+
+        for (int i = 0; i < volumes.Count; i++)
+        {
+            GrassExclusionVolumes.Volume volume = volumes[i];
+
+            Vector3 size = new Vector3(
+                Mathf.Abs(volume.Size.x), Mathf.Abs(volume.Size.y), Mathf.Abs(volume.Size.z));
+            if (size.x <= 0f || size.y <= 0f || size.z <= 0f)
+                continue;
+
+            Quaternion rotation = Quaternion.Euler(volume.EulerAngles);
+            Matrix4x4 trs = Matrix4x4.TRS(volume.Center, rotation, Vector3.one);
+
+            var local = new Bounds(Vector3.zero, size);
+            local.Expand(padding * 2f);
+
+            occluders.Add(new GrassOccluder
+            {
+                Shape = volume.Shape,
+                WorldToLocal = trs.inverse,
+                LocalBounds = local,
+
+                // A cylinder is inscribed in its box, so the box's world AABB is a valid
+                // superset for the broad phase either way.
+                WorldBounds = WorldAabb(volume.Center, rotation, local.size)
+            });
+        }
+
+        Debug.Log($"PlayfieldGrassBuilder: {occluders.Count} exclusion volume(s) for playfield {playfieldId}.");
+        return occluders;
+    }
+
+    /// <summary>
+    /// Axis-aligned bounds of a rotated box, used only as a broad-phase reject before the
+    /// exact oriented test.
+    /// </summary>
+    static Bounds WorldAabb(Vector3 center, Quaternion rotation, Vector3 size)
+    {
+        Vector3 e = size * 0.5f;
+        Matrix4x4 m = Matrix4x4.Rotate(rotation);
+
+        // Project the box's extents onto each world axis: the absolute value of the
+        // rotation matrix applied to the extent vector.
+        var extent = new Vector3(
+            Mathf.Abs(m.m00) * e.x + Mathf.Abs(m.m01) * e.y + Mathf.Abs(m.m02) * e.z,
+            Mathf.Abs(m.m10) * e.x + Mathf.Abs(m.m11) * e.y + Mathf.Abs(m.m12) * e.z,
+            Mathf.Abs(m.m20) * e.x + Mathf.Abs(m.m21) * e.y + Mathf.Abs(m.m22) * e.z);
+
+        return new Bounds(center, extent * 2f);
+    }
+
+    static List<ChunkSource> CollectChunks(
+        Tilemap tilemap,
+        Dictionary<int, GrassTextureInfo> classified,
+        List<GrassOccluder> occluders)
     {
         int chunkSize = tilemap.ChunkSize;
         int gridWidth = tilemap.GridWidth;
@@ -227,15 +364,63 @@ public sealed class PlayfieldGrassBuilder
                 Heightmap = heightmap,
                 TileData = tileData,
                 TextureIds = tilemap.TextureIds,
-                FullIds = fullIds,
-                PartialIds = partialIds
+                Classified = classified,
+
+                // Pre-filtered per chunk, so the inner placement loop usually iterates an
+                // empty array. Statels cluster; most chunks are open ground and pay nothing.
+                Occluders = FilterOccluders(
+                    occluders,
+                    ChunkWorldBounds(i % gridWidth, i / gridWidth, chunkSize, tilemap.MapScale, tilemap.HeightMod, heightmap))
             });
         }
 
         return chunks;
     }
 
-    static ChunkResult PlaceChunk(ChunkSource c, Dictionary<int, GrassMask> masks, PlacementSettings s)
+    static Bounds ChunkWorldBounds(
+        int chunkX, int chunkY, int chunkSize, float mapScale, float heightMod, ushort[,] heightmap)
+    {
+        int fullExtent = chunkSize - 1;
+        float minH = float.MaxValue;
+        float maxH = float.MinValue;
+
+        for (int y = 0; y <= fullExtent; y++)
+        {
+            for (int x = 0; x <= fullExtent; x++)
+            {
+                float h = heightmap[x, y] * heightMod;
+                if (h < minH) minH = h;
+                if (h > maxH) maxH = h;
+            }
+        }
+
+        var min = new Vector3(fullExtent * mapScale * chunkX, minH, fullExtent * mapScale * chunkY);
+        var max = new Vector3(min.x + fullExtent * mapScale, maxH, min.z + fullExtent * mapScale);
+
+        var bounds = new Bounds();
+        bounds.SetMinMax(min, max);
+        return bounds;
+    }
+
+    static GrassOccluder[] FilterOccluders(List<GrassOccluder> occluders, Bounds chunkBounds)
+    {
+        if (occluders == null || occluders.Count == 0)
+            return Array.Empty<GrassOccluder>();
+
+        List<GrassOccluder> hits = null;
+        for (int i = 0; i < occluders.Count; i++)
+        {
+            if (!occluders[i].WorldBounds.Intersects(chunkBounds))
+                continue;
+
+            hits ??= new List<GrassOccluder>();
+            hits.Add(occluders[i]);
+        }
+
+        return hits == null ? Array.Empty<GrassOccluder>() : hits.ToArray();
+    }
+
+    static ChunkResult PlaceChunk(ChunkSource c, PlacementSettings s)
     {
         int fullExtent = c.ChunkSize - 1;
         float mapScale = c.MapScale;
@@ -263,14 +448,14 @@ public sealed class PlayfieldGrassBuilder
                 int local = Mathf.Clamp(tile.TextureId, 0, c.TextureIds.Length - 1);
                 int rdbId = c.TextureIds[local];
 
-                bool isFull = c.FullIds.Contains(rdbId);
-                bool isPartial = !isFull && c.PartialIds.Contains(rdbId);
-                if (!isFull && !isPartial)
+                if (!c.Classified.TryGetValue(rdbId, out GrassTextureInfo info) ||
+                    info.Classification == GrassClassification.NotGrass)
+                {
                     continue;
+                }
 
-                GrassMask mask = null;
-                if (isPartial && !masks.TryGetValue(rdbId, out mask))
-                    mask = null; // decode failed earlier: fall back to full coverage
+                // Null for Full tiles - nothing to reject against, scatter over the lot.
+                GrassMask mask = info.Mask;
 
                 byte rotation = NormalizeTileRotation(tile.Rotation);
 
@@ -329,6 +514,17 @@ public sealed class PlayfieldGrassBuilder
                         float bladeWidth = Mathf.Lerp(s.MinWidth, s.MaxWidth, Rand01(ref seed));
                         float bladeHeight = Mathf.Lerp(s.MinHeight, s.MaxHeight, Rand01(ref seed));
 
+                        // Reject blades that would grow through static geometry. Tested as
+                        // the blade's whole vertical span, not just its base: a base-only
+                        // test keeps grass whose tip pokes through a bridge deck, and an
+                        // overlap test leaves grass under a raised walkway alone, which a
+                        // simple "is anything above me" test would wrongly remove.
+                        if (c.Occluders.Length > 0 &&
+                            IsOccluded(c.Occluders, position, s.BladeHeight * bladeHeight))
+                        {
+                            continue;
+                        }
+
                         Quaternion align = Quaternion.Slerp(
                             Quaternion.identity,
                             Quaternion.FromToRotation(Vector3.up, normal),
@@ -379,6 +575,144 @@ public sealed class PlayfieldGrassBuilder
         bounds.SetMinMax(min - new Vector3(padXZ, 0f, padXZ), max + new Vector3(padXZ, padY, padXZ));
 
         return new ChunkResult { Instances = baked, Bounds = bounds, Truncated = truncated };
+    }
+
+    static bool IsOccluded(GrassOccluder[] occluders, Vector3 basePosition, float height)
+    {
+        Vector3 tip = basePosition + new Vector3(0f, height, 0f);
+
+        for (int i = 0; i < occluders.Length; i++)
+        {
+            GrassOccluder o = occluders[i];
+
+            // Cheap world-AABB reject before the matrix multiply.
+            if (basePosition.y > o.WorldBounds.max.y || tip.y < o.WorldBounds.min.y)
+                continue;
+            if (basePosition.x < o.WorldBounds.min.x || basePosition.x > o.WorldBounds.max.x ||
+                basePosition.z < o.WorldBounds.min.z || basePosition.z > o.WorldBounds.max.z)
+            {
+                continue;
+            }
+
+            Vector3 p0 = o.WorldToLocal.MultiplyPoint3x4(basePosition);
+            Vector3 p1 = o.WorldToLocal.MultiplyPoint3x4(tip);
+
+            bool hit = o.Shape == GrassExclusionVolumes.Shape.Cylinder
+                ? SegmentIntersectsCylinder(p0, p1, o.LocalBounds.extents)
+                : SegmentIntersectsBounds(p0, p1, o.LocalBounds);
+
+            if (hit)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Slab test for a segment against an axis-aligned box, run in the occluder's local
+    /// space where its oriented box is axis-aligned. Exact, and cheaper than sampling
+    /// points along the blade - which would also miss thin geometry such as a plank deck
+    /// between two samples.
+    /// </summary>
+    static bool SegmentIntersectsBounds(Vector3 p0, Vector3 p1, Bounds box)
+    {
+        Vector3 d = p1 - p0;
+        Vector3 min = box.min;
+        Vector3 max = box.max;
+
+        float tMin = 0f;
+        float tMax = 1f;
+
+        for (int axis = 0; axis < 3; axis++)
+        {
+            float origin = p0[axis];
+            float delta = d[axis];
+
+            if (Mathf.Abs(delta) < 1e-8f)
+            {
+                if (origin < min[axis] || origin > max[axis])
+                    return false;
+                continue;
+            }
+
+            float inv = 1f / delta;
+            float t1 = (min[axis] - origin) * inv;
+            float t2 = (max[axis] - origin) * inv;
+            if (t1 > t2)
+                (t1, t2) = (t2, t1);
+
+            if (t1 > tMin) tMin = t1;
+            if (t2 < tMax) tMax = t2;
+            if (tMin > tMax)
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Segment against an elliptical cylinder along local Y, in the volume's local space.
+    ///
+    /// Elliptical rather than circular so a non-uniformly scaled authoring child still
+    /// behaves as drawn. Solved as the intersection of two intervals: the Y slab, and the
+    /// quadratic where the segment crosses the ellipse - which, after dividing x and z by
+    /// their radii, is just a unit circle.
+    /// </summary>
+    static bool SegmentIntersectsCylinder(Vector3 p0, Vector3 p1, Vector3 extents)
+    {
+        Vector3 d = p1 - p0;
+        float tMin = 0f;
+        float tMax = 1f;
+
+        // Y slab.
+        if (Mathf.Abs(d.y) < 1e-8f)
+        {
+            if (p0.y < -extents.y || p0.y > extents.y)
+                return false;
+        }
+        else
+        {
+            float inv = 1f / d.y;
+            float t1 = (-extents.y - p0.y) * inv;
+            float t2 = (extents.y - p0.y) * inv;
+            if (t1 > t2)
+                (t1, t2) = (t2, t1);
+
+            if (t1 > tMin) tMin = t1;
+            if (t2 < tMax) tMax = t2;
+            if (tMin > tMax)
+                return false;
+        }
+
+        float rx = Mathf.Max(extents.x, 1e-6f);
+        float rz = Mathf.Max(extents.z, 1e-6f);
+
+        float ox = p0.x / rx;
+        float oz = p0.z / rz;
+        float dx = d.x / rx;
+        float dz = d.z / rz;
+
+        float a = dx * dx + dz * dz;
+        float c = ox * ox + oz * oz - 1f;
+
+        // Segment is vertical in local space (the common case for an unrotated volume):
+        // no quadratic to solve, it is either inside the ellipse for its whole length or
+        // outside it for all of it.
+        if (a < 1e-12f)
+            return c <= 0f;
+
+        float b = 2f * (ox * dx + oz * dz);
+        float discriminant = b * b - 4f * a * c;
+        if (discriminant < 0f)
+            return false;
+
+        float root = Mathf.Sqrt(discriminant);
+        float enter = (-b - root) / (2f * a);
+        float exit = (-b + root) / (2f * a);
+
+        if (enter > tMin) tMin = enter;
+        if (exit < tMax) tMax = exit;
+        return tMin <= tMax;
     }
 
     /// <summary>
@@ -491,8 +825,20 @@ public sealed class PlayfieldGrassBuilder
         public ushort[,] Heightmap;
         public List<Tilemap.TileMapData> TileData;
         public short[] TextureIds;
-        public HashSet<int> FullIds;
-        public HashSet<int> PartialIds;
+        public Dictionary<int, GrassTextureInfo> Classified;
+        public GrassOccluder[] Occluders;
+    }
+
+    /// <summary>
+    /// An oriented box of static geometry that grass must not grow through. Pure value
+    /// type - no Unity object references - so worker threads can read it safely.
+    /// </summary>
+    struct GrassOccluder
+    {
+        public GrassExclusionVolumes.Shape Shape;
+        public Matrix4x4 WorldToLocal;
+        public Bounds LocalBounds;
+        public Bounds WorldBounds;
     }
 
     struct ChunkResult
