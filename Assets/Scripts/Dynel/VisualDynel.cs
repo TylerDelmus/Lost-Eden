@@ -60,6 +60,43 @@ public class VisualDynel : MonoBehaviour
     readonly List<Texture2D> _bakedSlotTextures = new List<Texture2D>();
     readonly List<Material> _bakedSlotMaterials = new List<Material>();
 
+    const string FacingRootName = "Facing";
+
+    Transform _facingRoot;
+
+    /// <summary>
+    /// Persistent pivot between the dynel transform and the CatMesh visual root.
+    ///
+    /// Carries the cosmetic travel-direction yaw from <see cref="CharacterFacing"/>. It has to be
+    /// its own object for two reasons: the visual root is destroyed and rebuilt on every
+    /// appearance change, and its local rotation is already owned by the remote render-offset
+    /// smoothing (<see cref="SmoothRenderOffsetTowardIdentity"/>), which decays local yaw toward
+    /// zero every frame and would eat the facing yaw.
+    /// </summary>
+    public Transform FacingRoot
+    {
+        get
+        {
+            if (_facingRoot != null)
+                return _facingRoot;
+
+            Transform existing = transform.Find(FacingRootName);
+            if (existing != null)
+            {
+                _facingRoot = existing;
+                return _facingRoot;
+            }
+
+            var go = new GameObject(FacingRootName);
+            _facingRoot = go.transform;
+            _facingRoot.SetParent(transform, false);
+            _facingRoot.localPosition = UnityEngine.Vector3.zero;
+            _facingRoot.localRotation = UnityEngine.Quaternion.identity;
+            _facingRoot.localScale = UnityEngine.Vector3.one;
+            return _facingRoot;
+        }
+    }
+
     public GameObject VisualRoot => _visualRoot;
     public int LoadedCatMeshId => _loadedCatMeshId;
     public int LoadedMonsterDataId => _loadedMonsterDataId;
@@ -411,8 +448,9 @@ public class VisualDynel : MonoBehaviour
                 ClearAttachedMeshes();
                 ClearBakedSlotTextures();
                 ClearCatMeshDiffuseCache();
+                // Waiter and CacheHit branches, and ApplyResolvedCatMesh:
                 if (!_catMeshLoader.ApplyCatMeshVisual(
-                        transform,
+                        FacingRoot,          // was: transform
                         catMeshId,
                         monsterDataId,
                         animSet,
@@ -429,8 +467,9 @@ public class VisualDynel : MonoBehaviour
                 ClearAttachedMeshes();
                 ClearBakedSlotTextures();
                 ClearCatMeshDiffuseCache();
+                // Waiter and CacheHit branches, and ApplyResolvedCatMesh:
                 if (!_catMeshLoader.ApplyCatMeshVisual(
-                        transform,
+                        FacingRoot,          // was: transform
                         catMeshId,
                         monsterDataId,
                         animSet,
@@ -499,8 +538,9 @@ public class VisualDynel : MonoBehaviour
                 ClearAttachedMeshes();
                 ClearBakedSlotTextures();
                 ClearCatMeshDiffuseCache();
+                // Builder branch:
                 buildOk = _catMeshLoader.ApplyBuildData(
-                    transform,
+                    FacingRoot,              // was: transform
                     build,
                     monsterDataId,
                     animSet,
@@ -648,8 +688,9 @@ public class VisualDynel : MonoBehaviour
             ClearAttachedMeshes();
             ClearBakedSlotTextures();
             ClearCatMeshDiffuseCache();
+            // Waiter and CacheHit branches, and ApplyResolvedCatMesh:
             if (!_catMeshLoader.ApplyCatMeshVisual(
-                    transform,
+                    FacingRoot,          // was: transform
                     catMeshId,
                     monsterDataId,
                     animSet,

@@ -18,6 +18,18 @@ public enum MovementFlags
     Jump = 1 << 6,
     MouseTurn = 1 << 7,
 }
+/// <summary>
+/// Which locomotion clip family the character should play. Derived from movement intent
+/// *minus* any cosmetic yaw the mesh already absorbed, not from raw flags.
+/// </summary>
+public enum LocomotionDirection
+{
+    Idle,
+    Forward,
+    Backward,
+    Left,
+    Right,
+}
 
 public readonly struct VelocityLimits
 {
@@ -93,6 +105,22 @@ public class CharacterMotor : MonoBehaviour
 
     public MovementState State => _state;
 
+    /// <summary>
+    /// Cosmetic yaw (degrees, character space) applied to the visual mesh by
+    /// <see cref="CharacterFacing"/>. Never affects movement, collision or network heading.
+    /// Clip selection subtracts it, so a mesh already turned to face travel plays the
+    /// forward clip instead of doubling up with a strafe clip.
+    /// </summary>
+    public float VisualYawOffset { get; set; }
+
+    public bool IsFollowingPath => HasPath;
+
+    // Residual angle (intent minus absorbed yaw) at which the clip family changes.
+    // Tuned so that at VisualYawOffset == 0 these reproduce the original flag priority:
+    // a 45-degree diagonal still plays the forward clip, as it did before.
+    const float LateralResidualDegrees = 60f;
+    const float BackwardResidualDegrees = 120f;
+
     public float CurrentSpeed => _velocity.magnitude;
     public float DesiredSpeed => _desiredVelocity.magnitude;
     public Vector3 Velocity => _velocity;
@@ -111,29 +139,67 @@ public class CharacterMotor : MonoBehaviour
         || (_flags & TranslationFlags) != 0
         || HasPath;
 
+
     /// <summary>
-    /// Logical animation name for current locomotion (idle, run/walk, run-back/walk-back, walk-left, walk-right).
+    /// Locomotion clip family for the current intent, after removing the yaw the mesh
+    /// already absorbed. Fully rotated (free movement) always resolves to Forward;
+    /// clamped (combat) leaves a residual that selects the strafe or backpedal clip.
+    /// </summary>
+    public LocomotionDirection GetLocomotionDirection()
+    {
+        if ((_flags & TranslationFlags) == 0 && !HasPath)
+            return LocomotionDirection.Idle;
+
+        // Pathing rotates the transform toward the waypoint, so it is always head-on.
+        if (HasPath)
+            return LocomotionDirection.Forward;
+
+        float x = 0f;
+        float z = 0f;
+        if ((_flags & MovementFlags.Forward) != 0)
+            z += 1f;
+        if ((_flags & MovementFlags.Backward) != 0)
+            z -= 1f;
+        if ((_flags & MovementFlags.StrafeRight) != 0)
+            x += 1f;
+        if ((_flags & MovementFlags.StrafeLeft) != 0)
+            x -= 1f;
+
+        if (x == 0f && z == 0f)
+            return LocomotionDirection.Idle;
+
+        float desired = Mathf.Atan2(x, z) * Mathf.Rad2Deg;
+        float residual = Mathf.DeltaAngle(VisualYawOffset, desired);
+        float magnitude = Mathf.Abs(residual);
+
+        if (magnitude < LateralResidualDegrees)
+            return LocomotionDirection.Forward;
+
+        if (magnitude > BackwardResidualDegrees)
+            return LocomotionDirection.Backward;
+
+        return residual > 0f ? LocomotionDirection.Right : LocomotionDirection.Left;
+    }
+
+    /// <summary>
+    /// Logical animation name for current locomotion (idle, run/walk, run-back/walk-back,
+    /// walk-left, walk-right), chosen from the residual direction rather than raw flags.
     /// </summary>
     public string GetLocomotionLogicalName()
     {
-        if ((_flags & TranslationFlags) == 0 && !HasPath)
+        LocomotionDirection direction = GetLocomotionDirection();
+        if (direction == LocomotionDirection.Idle)
             return GetIdleLogicalName();
 
         bool walking = _state == MovementState.Walk;
 
-        if (HasPath || (_flags & MovementFlags.Forward) != 0)
-            return walking ? "walk" : "run";
-
-        if ((_flags & MovementFlags.Backward) != 0)
-            return walking ? "walk-back" : "run-back";
-
-        if ((_flags & MovementFlags.StrafeLeft) != 0)
-            return "walk-left";
-
-        if ((_flags & MovementFlags.StrafeRight) != 0)
-            return "walk-right";
-
-        return walking ? "walk" : "run";
+        return direction switch
+        {
+            LocomotionDirection.Backward => walking ? "walk-back" : "run-back",
+            LocomotionDirection.Left => "walk-left",
+            LocomotionDirection.Right => "walk-right",
+            _ => walking ? "walk" : "run",
+        };
     }
 
     public string GetIdleLogicalName()
@@ -157,16 +223,16 @@ public class CharacterMotor : MonoBehaviour
 
     /// <summary>
     /// Land clip from planar intent at touchdown.
-    /// Forward walk/run → land-walk/land-run; back, strafe, or idle → land-idle.
+    /// Forward walk/run -> land-walk/land-run; back, strafe, or idle -> land-idle.
     /// </summary>
     public string GetJumpLandLogicalName()
     {
-        if ((_flags & TranslationFlags) == 0 && !HasPath)
+        LocomotionDirection direction = GetLocomotionDirection();
+        if (direction == LocomotionDirection.Idle)
             return "jump-land-idle";
 
         // Back/strafe use idle land overlaid on directional locomotion.
-        bool forward = HasPath || (_flags & MovementFlags.Forward) != 0;
-        if (!forward)
+        if (direction != LocomotionDirection.Forward)
             return "jump-land-idle";
 
         if (_state == MovementState.Walk)
@@ -236,28 +302,25 @@ public class CharacterMotor : MonoBehaviour
 
     /// <summary>
     /// Authored mode base velocity for playback-rate scaling (not stat-scaled max speed).
+    /// Follows the clip that was actually selected, so a mesh turned to face a strafe plays
+    /// the forward clip slowed to the strafe speed rather than at full run rate.
     /// </summary>
     public float GetLocomotionBaseVelocity()
     {
         MovementConfig config = Config;
-        float walkBase = WalkBaseVelocity;
+        if (_state == MovementState.Walk)
+            return WalkBaseVelocity;
+
         float runForwardBase = config != null ? config.RunForwardBase : 5f;
         float runBackwardBase = config != null ? config.RunBackwardBase : 3f;
         float runStrafeBase = config != null ? config.RunStrafeBase : 2.5f;
 
-        if (_state == MovementState.Walk)
-            return walkBase;
-
-        if (HasPath || (_flags & MovementFlags.Forward) != 0)
-            return runForwardBase;
-
-        if ((_flags & MovementFlags.Backward) != 0)
-            return runBackwardBase;
-
-        if ((_flags & MovementFlags.StrafeLeft) != 0 || (_flags & MovementFlags.StrafeRight) != 0)
-            return runStrafeBase;
-
-        return runForwardBase;
+        return GetLocomotionDirection() switch
+        {
+            LocomotionDirection.Backward => runBackwardBase,
+            LocomotionDirection.Left or LocomotionDirection.Right => runStrafeBase,
+            _ => runForwardBase,
+        };
     }
 
     public void UpdateRunLimitsFromStats(int runSpeed, int currentHealth, int maxHealth)
