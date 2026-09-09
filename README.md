@@ -4,7 +4,7 @@ Open source [Anarchy Online](https://www.anarchyonline.com/) client, rebuilt in 
 
 ## Requirements
 
-- **Unity 6000.4.9f1** (Unity 6)
+- **Unity 6000.6.0f1** (Unity 6)
 - High Definition Render Pipeline (HDRP)
 - A local Anarchy Online client install (for game data)
 
