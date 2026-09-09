@@ -1,0 +1,9 @@
+{
+  "prefixes": [
+    "[OCC]",
+    "bsp_"
+  ],
+  "contains": [
+    "grass"
+  ]
+}

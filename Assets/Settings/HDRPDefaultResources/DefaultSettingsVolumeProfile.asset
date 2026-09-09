@@ -189,7 +189,7 @@ MonoBehaviour:
     m_Value: 65535
   reflectionLightingMultiplier:
     m_OverrideState: 1
-    m_Value: 1
+    m_Value: 0.2
   reflectionLightingLayers:
     m_OverrideState: 1
     m_Value: 65535
@@ -1937,16 +1937,16 @@ MonoBehaviour:
     m_Value: 1
   fixedExposure:
     m_OverrideState: 1
-    m_Value: 0
+    m_Value: 14.25
   compensation:
-    m_OverrideState: 1
+    m_OverrideState: 0
     m_Value: 1
   limitMin:
     m_OverrideState: 1
-    m_Value: -1
+    m_Value: 13
   limitMax:
-    m_OverrideState: 1
-    m_Value: 14
+    m_OverrideState: 0
+    m_Value: 13.5
   curveMap:
     m_OverrideState: 1
     m_Value:

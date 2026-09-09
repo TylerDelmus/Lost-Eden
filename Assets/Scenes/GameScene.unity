@@ -389,10 +389,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: LostEden.Runtime::GrassExclusionAuthoring
   _asset: {fileID: 11400000, guid: 2fd850adef60bd84dbd2db1736ae18d4, type: 2}
   _playfieldId: 0
-  _note: 
-  _newBoxSize: {x: 8, y: 4, z: 8}
+  _newVolumeSize: {x: 8, y: 4, z: 8}
+  _showStoredVolumes: 1
+  _showLabels: 1
   _fillColour: {r: 1, g: 0.3, b: 0.2, a: 0.18}
   _wireColour: {r: 1, g: 0.4, b: 0.25, a: 0.9}
+  _storedColour: {r: 0.3, g: 0.7, b: 1, a: 0.8}
 --- !u!4 &172316952
 Transform:
   m_ObjectHideFlags: 0

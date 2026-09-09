@@ -1,0 +1,122 @@
+{
+  "halo_cyan_small": {
+    "type": "Point",
+    "color": [0.3, 0.95, 1],
+    "intensity": 375000,
+    "range": 12,
+    "shadows": false,
+    "volumetricDimmer": 4
+  },
+  "halo_cyan_medium": {
+    "type": "Point",
+    "color": [0.3, 0.95, 1],
+    "intensity": 900000,
+    "range": 20,
+    "shadows": false,
+    "volumetricDimmer": 4
+  },
+  "halo_green_medium": {
+    "type": "Point",
+    "color": [0.3, 1, 0.35],
+    "intensity": 900000,
+    "range": 20,
+    "shadows": false,
+    "volumetricDimmer": 4
+  },
+  "halo_orange_medium": {
+    "type": "Point",
+    "color": [1, 0.5, 0.15],
+    "intensity": 900000,
+    "range": 20,
+    "shadows": false,
+    "volumetricDimmer": 4
+  },
+  "halo_purple_medium": {
+    "type": "Point",
+    "color": [0.7, 0.3, 1],
+    "intensity": 900000,
+    "range": 20,
+    "shadows": false,
+    "volumetricDimmer": 4
+  },
+  "halo_red_medium": {
+    "type": "Point",
+    "color": [1, 0.25, 0.2],
+    "intensity": 900000,
+    "range": 20,
+    "shadows": false,
+    "volumetricDimmer": 4
+  },
+  "halo_red_large": {
+    "type": "Point",
+    "color": [1, 0.25, 0.2],
+    "intensity": 1800000,
+    "range": 35,
+    "shadows": false,
+    "volumetricDimmer": 6
+  },
+  "halo_violet_medium": {
+    "type": "Point",
+    "color": [0.6, 0.2, 1],
+    "intensity": 900000,
+    "range": 20,
+    "shadows": false,
+    "volumetricDimmer": 4
+  },
+  "halo_white_medium": {
+    "type": "Point",
+    "color": [1, 1, 1],
+    "intensity": 900000,
+    "range": 20,
+    "shadows": false,
+    "volumetricDimmer": 4
+  },
+  "halo_whiteblue_medium": {
+    "type": "Point",
+    "color": [0.85, 0.9, 1],
+    "intensity": 900000,
+    "range": 20,
+    "shadows": false,
+    "volumetricDimmer": 4
+  },
+  "halo_whitecyan_medium": {
+    "type": "Point",
+    "color": [0.85, 1, 1],
+    "intensity": 900000,
+    "range": 20,
+    "shadows": false,
+    "volumetricDimmer": 4
+  },
+  "halo_whitegreen_medium": {
+    "type": "Point",
+    "color": [0.9, 1, 0.9],
+    "intensity": 900000,
+    "range": 20,
+    "shadows": false,
+    "volumetricDimmer": 4
+  },
+  "halo_whiteorange_medium": {
+    "type": "Point",
+    "color": [1, 0.92, 0.8],
+    "intensity": 900000,
+    "range": 20,
+    "shadows": false,
+    "volumetricDimmer": 4
+  },
+  "halo_whitepeach_medium": {
+    "type": "Point",
+    "color": [1, 0.9, 0.85],
+    "intensity": 900000,
+    "range": 20,
+    "shadows": false,
+    "volumetricDimmer": 4
+  },
+  "halo_yellow_medium": {
+    "type": "Point",
+    "color": [1, 0.95, 0.4],
+    "intensity": 900000,
+    "range": 20,
+    "shadows": false,
+    "volumetricDimmer": 4
+  }
+}

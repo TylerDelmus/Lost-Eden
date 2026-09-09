@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 using AODB.Common.DbClasses;
 using AODB.Common.RDBObjects;
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.HighDefinition;
 
 public sealed class StatelParser
 {
@@ -47,6 +49,39 @@ public sealed class StatelParser
         if (placements.Count == 0)
             yield break;
 
+        List<StatelPlacement> lightPlacements = ExtractLightPlacements(placements);
+
+        var root = new GameObject($"Statels_{playfieldId}");
+        root.transform.SetParent(parent, false);
+
+        // Lights must not live under the static mesh root — static flags / batching can
+        // prevent punctual lights from contributing in HDRP.
+        Transform lightRoot = root.transform;
+        if (lightPlacements.Count > 0)
+        {
+            var lightsGo = new GameObject($"StatelLights_{playfieldId}");
+            lightsGo.transform.SetParent(parent, false);
+            lightRoot = lightsGo.transform;
+        }
+
+        int created = 0;
+        for (int i = 0; i < lightPlacements.Count; i++)
+        {
+            InstantiateLight(lightRoot, lightPlacements[i], i);
+            created++;
+            if (created % InstantiateBatchSize == 0)
+                yield return null;
+        }
+
+        if (lightPlacements.Count > 0)
+            Debug.Log($"StatelParser: Spawned {lightPlacements.Count} lights from Lights.json for playfield {playfieldId}.");
+
+        if (placements.Count == 0)
+        {
+            root.isStatic = true;
+            yield break;
+        }
+
         Dictionary<int, MeshSource> meshSources = SnapshotMeshes(placements);
         CollectAndCreateMaterials(placements, meshSources);
         yield return null;
@@ -61,10 +96,6 @@ public sealed class StatelParser
         CreateUnityMeshes(built);
         yield return null;
 
-        var root = new GameObject($"Statels_{playfieldId}");
-        root.transform.SetParent(parent, false);
-
-        int created = 0;
         for (int i = 0; i < placements.Count; i++)
         {
             StatelPlacement placement = placements[i];
@@ -140,6 +171,115 @@ public sealed class StatelParser
         // UV-animated materials need per-instance property blocks; static batching would freeze them.
         if (!hasUvAnim)
             go.isStatic = true;
+    }
+
+    List<StatelPlacement> ExtractLightPlacements(List<StatelPlacement> placements)
+    {
+        var lights = new List<StatelPlacement>();
+        for (int i = placements.Count - 1; i >= 0; i--)
+        {
+            if (!TryGetRawMeshName(placements[i].MeshId, out string rawName))
+                continue;
+
+            if (!StatelLightsCatalog.TryGet(rawName, out StatelLightTweak settings) || settings == null)
+                continue;
+
+            placements[i].LightSettings = settings;
+            lights.Add(placements[i]);
+            placements.RemoveAt(i);
+        }
+
+        lights.Reverse();
+        return lights;
+    }
+
+    void InstantiateLight(Transform parent, StatelPlacement placement, int index)
+    {
+        StatelLightTweak cfg = placement.LightSettings;
+        if (cfg == null)
+            return;
+
+        string name = ResolveMeshName(placement.MeshId);
+        var go = new GameObject($"Light_{name}_{index}");
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = placement.Position;
+        go.transform.localRotation = placement.Rotation;
+        go.transform.localScale = Vector3.one;
+
+        LightType lightType = ParseLightType(cfg.Type);
+        Color color = LostEdenTweakColorUtil.TryReadRgb(cfg.Color, out Color c) ? c : Color.white;
+        float intensity = Mathf.Max(0f, cfg.Intensity ?? 5000f);
+        float range = Mathf.Max(0.1f, cfg.Range ?? 15f);
+        bool shadows = cfg.Shadows ?? false;
+        // HDRP volumetric dimmer is 0–16 (not 0–1).
+        float volumetric = Mathf.Clamp(cfg.VolumetricDimmer ?? 1f, 0f, 16f);
+        float bounce = Mathf.Max(0f, cfg.BounceIntensity ?? 1f);
+
+        HDAdditionalLightData hd = go.AddHDLight(lightType);
+        Light light = go.GetComponent<Light>();
+
+        // AddHDLight enables color temperature by default; that fights authored RGB colors.
+        hd.EnableColorTemperature(false);
+        hd.affectDiffuse = true;
+        hd.affectSpecular = true;
+        hd.applyRangeAttenuation = true;
+        hd.affectsVolumetric = volumetric > 0f;
+
+        // High Fidelity enables HDRP light layers — ensure we hit default mesh layers.
+        hd.linkShadowLayers = false;
+        hd.SetLightLayer(
+            UnityEngine.Rendering.HighDefinition.RenderingLayerMask.Everything,
+            UnityEngine.Rendering.HighDefinition.RenderingLayerMask.Everything);
+
+        light.color = color;
+        light.range = range;
+        light.bounceIntensity = bounce;
+        light.shadows = shadows ? LightShadows.Soft : LightShadows.None;
+        light.enabled = true;
+#if UNITY_EDITOR
+        light.lightmapBakeType = LightmapBakeType.Realtime;
+#endif
+
+        if (lightType == LightType.Spot)
+        {
+            float spotAngle = Mathf.Clamp(cfg.SpotAngle ?? 60f, 1f, 179f);
+            float innerPercent = Mathf.Clamp(cfg.InnerSpotPercent ?? 50f, 0f, 100f);
+            light.spotAngle = spotAngle;
+            light.innerSpotAngle = spotAngle * (innerPercent / 100f);
+        }
+
+        // Intensity is authored in Candela for punctual lights (native HDRP unit).
+        // Avoid Lumen conversion — it has been unreliable across HDRP lightUnit changes.
+        if (lightType == LightType.Point || lightType == LightType.Spot)
+        {
+            light.lightUnit = LightUnit.Candela;
+            light.intensity = intensity;
+        }
+        else
+        {
+            light.lightUnit = LightUnit.Lux;
+            light.intensity = intensity;
+        }
+
+        hd.SetColor(color);
+        hd.range = range;
+        hd.SetLightDimmer(1f, volumetric);
+        hd.EnableShadows(shadows);
+        hd.UpdateAllLightValues();
+    }
+
+    static LightType ParseLightType(string type)
+    {
+        if (string.IsNullOrWhiteSpace(type))
+            return LightType.Point;
+
+        if (type.Equals("Spot", StringComparison.OrdinalIgnoreCase))
+            return LightType.Spot;
+
+        if (type.Equals("Directional", StringComparison.OrdinalIgnoreCase))
+            return LightType.Directional;
+
+        return LightType.Point;
     }
 
     static List<MeshVariantKey> CollectMeshKeys(List<StatelPlacement> placements)
@@ -307,10 +447,7 @@ public sealed class StatelParser
         if (!TryGetRawMeshName(meshId, out string name))
             return false;
 
-        // "[OCC]8x8.abiff" (occlusion) and "bsp_*.abiff" (collision) are not rendered.
-        return name.StartsWith("[OCC]", StringComparison.Ordinal)
-            || name.StartsWith("bsp_", StringComparison.Ordinal)
-            || name.Contains("grass", StringComparison.Ordinal);
+        return SkippedStatelsCatalog.ShouldSkip(name);
     }
 
     string ResolveMeshName(int meshId)
@@ -625,6 +762,7 @@ public sealed class StatelParser
         public byte Flags2;
         public ScaleRotationInfo Transform;
         public int[] TextureOverrides;
+        public StatelLightTweak LightSettings;
     }
 
     sealed class MeshSource

@@ -16,6 +16,8 @@ public sealed class PlayfieldLocality : MonoBehaviour
     Transform _surfacesRoot;
     bool _indoorLogged;
 
+    public bool IsReady => _surfaceLoader != null && _layout != null;
+
     public void Initialize(
         IPlayfieldCellLayout layout,
         ResourceDatabase database,
@@ -39,6 +41,41 @@ public sealed class PlayfieldLocality : MonoBehaviour
             _indoorLogged = true;
             Debug.Log($"[PlayfieldLocality] Indoor playfield {layout.PlayfieldId}: surface streaming idle until rooms exist.");
         }
+    }
+
+    public SurfaceCollisionState GetCollisionState(Vector3 worldPosition)
+    {
+        if (_surfaceLoader == null || _layout == null)
+            return SurfaceCollisionState.Unavailable;
+
+        return _surfaceLoader.GetCollisionState(worldPosition);
+    }
+
+    public bool TryGetCollisionState(Vector3 worldPosition, out SurfaceCollisionState state)
+    {
+        if (_surfaceLoader == null || _layout == null)
+        {
+            state = SurfaceCollisionState.Unavailable;
+            return false;
+        }
+
+        state = _surfaceLoader.GetCollisionState(worldPosition);
+        return true;
+    }
+
+    /// <summary>
+    /// Seed the locality monitor from <paramref name="worldPosition"/>, prioritize surface
+    /// loads for that cell, and pump the hub once so spawn frames make progress immediately.
+    /// </summary>
+    public void PrioritizeAround(Vector3 worldPosition)
+    {
+        if (_monitor == null || _hub == null || _surfaceLoader == null)
+            return;
+
+        _monitor.Update(worldPosition);
+        _surfaceLoader.SetReferenceCell(_monitor.CurrentCellId);
+        _surfaceLoader.PrioritizeAround(worldPosition);
+        _hub.Tick();
     }
 
     void Update()

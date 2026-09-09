@@ -12,6 +12,9 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
     public const int WarmCacheCap = 64;
     public const int MaxAppliesPerFrame = 1;
     public const int MaxLoadsPerFrame = 2;
+    public const int PriorityBurstLoads = 8;
+    public const int PriorityBurstApplies = 8;
+    public const int PriorityNeighborRadius = 1;
 
     enum CellState
     {
@@ -44,13 +47,17 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
     readonly IPlayfieldCellLayout _layout;
     readonly Transform _parent;
     readonly Dictionary<int, CellEntry> _entries = new();
+    readonly HashSet<int> _unavailable = new();
     readonly List<int> _queue = new();
     readonly List<int> _warmOrder = new();
     readonly List<int> _scratch = new();
+    readonly List<int> _priorityNeighbors = new();
     readonly Queue<PreparedSurface> _prepared = new();
 
     int _generation;
     int _referenceCellId = -1;
+    int _burstLoads;
+    int _burstApplies;
 
     public SurfaceCellLoader(ResourceDatabase database, IPlayfieldCellLayout layout, Transform parent)
     {
@@ -65,6 +72,82 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
             return;
 
         _referenceCellId = cellId;
+        ResortQueue();
+    }
+
+    public SurfaceCollisionState GetCollisionState(Vector3 worldPosition)
+    {
+        if (_layout.IsIndoor)
+            return SurfaceCollisionState.Unavailable;
+
+        if (!_layout.TryGetCellId(worldPosition, out int cellId))
+            return SurfaceCollisionState.Unavailable;
+
+        return GetCollisionState(cellId);
+    }
+
+    public SurfaceCollisionState GetCollisionState(int cellId)
+    {
+        if (_layout.IsIndoor)
+            return SurfaceCollisionState.Unavailable;
+
+        if (_unavailable.Contains(cellId))
+            return SurfaceCollisionState.Unavailable;
+
+        if (!_entries.TryGetValue(cellId, out CellEntry entry))
+            return SurfaceCollisionState.Pending;
+
+        switch (entry.State)
+        {
+            case CellState.Ready:
+                return entry.Root != null && entry.Root.activeInHierarchy
+                    ? SurfaceCollisionState.Ready
+                    : SurfaceCollisionState.Pending;
+            case CellState.Cached:
+            case CellState.Queued:
+            case CellState.Loading:
+                return SurfaceCollisionState.Pending;
+            default:
+                return SurfaceCollisionState.Pending;
+        }
+    }
+
+    /// <summary>
+    /// Request the standing cell (and near neighbors), bump them to the front of the
+    /// load queue, and grant a one-shot burst so zone-enter clears quickly.
+    /// </summary>
+    public void PrioritizeAround(Vector3 worldPosition)
+    {
+        if (_layout.IsIndoor)
+            return;
+
+        if (!_layout.TryGetCellId(worldPosition, out int cellId))
+            return;
+
+        _referenceCellId = cellId;
+        _unavailable.Remove(cellId);
+
+        _layout.CollectNeighbors(cellId, PriorityNeighborRadius, _priorityNeighbors);
+        for (int i = 0; i < _priorityNeighbors.Count; i++)
+        {
+            int id = _priorityNeighbors[i];
+            _unavailable.Remove(id);
+            RequestDesired(id);
+        }
+
+        BumpQueueFront(cellId);
+        for (int i = 0; i < _priorityNeighbors.Count; i++)
+        {
+            int id = _priorityNeighbors[i];
+            if (id != cellId)
+                BumpQueueFront(id);
+        }
+
+        // Standing cell first after neighbor bumps.
+        BumpQueueFront(cellId);
+
+        _burstLoads = Math.Max(_burstLoads, PriorityBurstLoads);
+        _burstApplies = Math.Max(_burstApplies, PriorityBurstApplies);
         ResortQueue();
     }
 
@@ -96,6 +179,9 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
         _queue.Clear();
         _warmOrder.Clear();
         _prepared.Clear();
+        _unavailable.Clear();
+        _burstLoads = 0;
+        _burstApplies = 0;
 
         foreach (var kv in _entries)
             DestroyCollider(kv.Value);
@@ -166,8 +252,10 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
 
     void PumpLoads()
     {
+        int budget = MaxLoadsPerFrame + _burstLoads;
+        _burstLoads = 0;
         int loaded = 0;
-        while (loaded < MaxLoadsPerFrame && _queue.Count > 0)
+        while (loaded < budget && _queue.Count > 0)
         {
             int cellId = _queue[0];
             _queue.RemoveAt(0);
@@ -200,7 +288,7 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
             if (resource == null || !SurfaceCollisionBuilder.TryBuild(resource, out SurfaceCollisionBuilder.MeshData meshData))
             {
                 Debug.Log($"[Surface] Skip missing/empty surface cell={cellId}");
-                _entries.Remove(cellId);
+                MarkUnavailable(cellId);
                 loaded++;
                 continue;
             }
@@ -217,8 +305,10 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
 
     void PumpApplies()
     {
+        int budget = MaxAppliesPerFrame + _burstApplies;
+        _burstApplies = 0;
         int applied = 0;
-        while (applied < MaxAppliesPerFrame && _prepared.Count > 0)
+        while (applied < budget && _prepared.Count > 0)
         {
             PreparedSurface prepared = _prepared.Dequeue();
             if (!_entries.TryGetValue(prepared.CellId, out CellEntry entry)
@@ -228,7 +318,7 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
 
             if (!TryCreateCollider(prepared.CellId, prepared.MeshData, entry))
             {
-                _entries.Remove(prepared.CellId);
+                MarkUnavailable(prepared.CellId);
                 applied++;
                 continue;
             }
@@ -237,6 +327,27 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
             entry.State = CellState.Ready;
             applied++;
         }
+    }
+
+    void MarkUnavailable(int cellId)
+    {
+        if (_entries.TryGetValue(cellId, out CellEntry entry))
+        {
+            DestroyCollider(entry);
+            _entries.Remove(cellId);
+        }
+
+        _queue.Remove(cellId);
+        _unavailable.Add(cellId);
+    }
+
+    void BumpQueueFront(int cellId)
+    {
+        if (!_queue.Contains(cellId))
+            return;
+
+        _queue.Remove(cellId);
+        _queue.Insert(0, cellId);
     }
 
     bool TryCreateCollider(int cellId, SurfaceCollisionBuilder.MeshData data, CellEntry entry)

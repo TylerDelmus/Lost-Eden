@@ -43,7 +43,6 @@ public class PlayerController : MonoBehaviour
 
     public Action<Collider> OnInteraction;
 
-
     internal bool IsLocalPlayer(Character character) => _localPlayer != null && _localPlayer == character;
 
     internal bool TryGetLocalPlayer(out Character localPlayer) => (localPlayer = _localPlayer) != null;

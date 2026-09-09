@@ -38,6 +38,8 @@ public class Playfield : MonoBehaviour
         {
             Debug.Log($"[Playfield] Dynel updated: {msg.Identity.Type}:{msg.Identity.Instance} \"{msg.Name}\"");
             existing.Apply(msg);
+            if (existing is Character existingCharacter)
+                existingCharacter.Motor.RequestSurfacePriorityForSpawn(existingCharacter.transform.position);
             DynelSpawned?.Invoke(existing);
             return;
         }
@@ -48,6 +50,7 @@ public class Playfield : MonoBehaviour
             GameObjectInjector.InjectObject(character.gameObject, _container);
             character.Initialize(msg);
             _dynels[msg.Identity] = character;
+            character.Motor.RequestSurfacePriorityForSpawn(character.transform.position);
             Debug.Log($"[Playfield] Dynel spawned: {msg.Identity.Type}:{msg.Identity.Instance} \"{msg.Name}\" @ ({msg.Position.X:F1}, {msg.Position.Y:F1}, {msg.Position.Z:F1}) (total={_dynels.Count})");
             DynelSpawned?.Invoke(character);
         }

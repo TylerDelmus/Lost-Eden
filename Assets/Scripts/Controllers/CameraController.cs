@@ -1,3 +1,4 @@
+using System;
 using Reflex.Attributes;
 using UnityEngine;
 
@@ -70,6 +71,11 @@ public class CameraController : MonoBehaviour
     [Inject]
     IUINotifyService _uiNotifyService;
 
+    /// <summary>
+    /// Fired when a pending character target is fully resolved (head attractor found and pose snapped).
+    /// </summary>
+    public event Action TargetAttached;
+
     private void Awake()
     {
         _targetFollowDistance = _defaultFollowDistance;
@@ -135,6 +141,8 @@ public class CameraController : MonoBehaviour
         transform.SetPositionAndRotation(
             followPos + cameraDirection * _currentFollowDistance,
             Quaternion.Euler(0f, yaw, 0f));
+
+        TargetAttached?.Invoke();
     }
 
     internal void ClearTarget()

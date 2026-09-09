@@ -58,6 +58,8 @@ public class CharacterMotor : MonoBehaviour
     int _jumpAgility;
     int _jumpGmLevel;
     bool _jumpArmed = true;
+    PlayfieldLocality _locality;
+    bool _localityResolved;
 
     MovementFlags _flags;
     MovementState _state = MovementState.Run;
@@ -390,6 +392,8 @@ public class CharacterMotor : MonoBehaviour
         {
             _velocity = Quaternion.Euler(0f, yawDelta, 0f) * _velocity;
         }
+
+        RequestSurfacePriority(position);
     }
 
     public void ApplyMovementStatus(CharMovementStatus status)
@@ -567,6 +571,9 @@ public class CharacterMotor : MonoBehaviour
 
     void Update()
     {
+        if (ShouldHoldForSurfaceCollision())
+            return;
+
         float dt = Time.deltaTime;
         Vector3 desiredVelocity;
         float maxVel;
@@ -616,6 +623,45 @@ public class CharacterMotor : MonoBehaviour
 
         if (!_jumpArmed && _controller.isGrounded && _verticalVelocity <= 0f)
             CompleteLanding();
+    }
+
+    bool ShouldHoldForSurfaceCollision()
+    {
+        PlayfieldLocality locality = ResolveLocality();
+        if (locality == null || !locality.IsReady)
+            return false;
+
+        SurfaceCollisionState state = locality.GetCollisionState(transform.position);
+        if (state != SurfaceCollisionState.Pending)
+            return false;
+
+        // Keep requesting priority while we wait so burst budget refreshes if needed.
+        locality.PrioritizeAround(transform.position);
+
+        MovementConfig config = Config;
+        _verticalVelocity = config != null ? config.GroundStickVelocity : -2f;
+        return true;
+    }
+
+    public void RequestSurfacePriorityForSpawn(Vector3 worldPosition)
+        => RequestSurfacePriority(worldPosition);
+
+    void RequestSurfacePriority(Vector3 worldPosition)
+    {
+        // Parent locality may not be cached yet on the first spawn frame.
+        _localityResolved = false;
+        PlayfieldLocality locality = ResolveLocality();
+        locality?.PrioritizeAround(worldPosition);
+    }
+
+    PlayfieldLocality ResolveLocality()
+    {
+        if (_localityResolved)
+            return _locality;
+
+        _locality = GetComponentInParent<PlayfieldLocality>();
+        _localityResolved = true;
+        return _locality;
     }
 
     bool TryStartJump(bool requireGrounded = true)

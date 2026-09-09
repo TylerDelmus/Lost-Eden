@@ -63,6 +63,9 @@ public class PlayfieldFactory : MonoBehaviour
         _networkClient.DynelDespawned += OnDynelDespawn;
         _networkClient.AppearanceUpdateReceived += OnAppearanceUpdate;
         _networkClient.HealthDamageReceived += OnHealthDamage;
+
+        if (_playerController?.CameraController != null)
+            _playerController.CameraController.TargetAttached += OnCameraTargetAttached;
     }
 
     void OnDisable()
@@ -77,6 +80,17 @@ public class PlayfieldFactory : MonoBehaviour
         _networkClient.DynelDespawned -= OnDynelDespawn;
         _networkClient.AppearanceUpdateReceived -= OnAppearanceUpdate;
         _networkClient.HealthDamageReceived -= OnHealthDamage;
+
+        if (_playerController?.CameraController != null)
+            _playerController.CameraController.TargetAttached -= OnCameraTargetAttached;
+    }
+
+    void OnCameraTargetAttached()
+    {
+        if (!NetworkDriven)
+            return;
+
+        _loadingScreen.HideFade();
     }
 
     void OnNetworkPlayfieldReceived(int zoneId)
@@ -264,6 +278,8 @@ public class PlayfieldFactory : MonoBehaviour
         _current = null;
         CurrentPlayfieldChanged?.Invoke(null);
         PlayfieldTweakCatalog.ClearCache();
+        SkippedStatelsCatalog.ClearCache();
+        StatelLightsCatalog.ClearCache();
         yield return null;
     }
 
@@ -302,10 +318,8 @@ public class PlayfieldFactory : MonoBehaviour
         Debug.Log($"[PlayfieldFactory] Playfield ready for dynels (id={zoneId}, prefab={(_characterPrefab != null ? _characterPrefab.name : "MISSING")})");
         PlayfieldReady?.Invoke(zoneId);
 
-        // Always dismiss loading UI once zone geometry is ready, even if dynel
-        // spawning hit recoverable errors (otherwise builds can soft-lock).
-        if (NetworkDriven)
-            _loadingScreen.HideFade();
+        // Network-driven loading stays up until the local player is possessed and the
+        // camera snaps (see ApplyFullCharacter). Zone geometry alone is too early.
     }
 
     IEnumerator BakeReflectionProbesRoutine()
@@ -425,6 +439,12 @@ public class PlayfieldFactory : MonoBehaviour
         localPlayer.Apply(msg);
         _playerController.SetLocalPlayer(localPlayer);
         _networkClient.EnterPlay();
+
+        PlayfieldLocality locality = _playfieldRoot != null
+            ? _playfieldRoot.GetComponent<PlayfieldLocality>()
+            : null;
+        locality?.PrioritizeAround(localPlayer.transform.position);
+
         Debug.Log($"[PlayfieldFactory] Local player set from FullCharacter: {localPlayer.Identity.Type}:{localPlayer.Identity.Instance} \"{localPlayer.Name}\"");
     }
 

@@ -219,6 +219,8 @@ public class LoginScreenController : MonoBehaviour
     void OnEnable()
     {
         _playfieldFactory.PlayfieldReady += OnPlayfieldReady;
+        if (_playerController?.CameraController != null)
+            _playerController.CameraController.TargetAttached += OnCameraTargetAttached;
         _networkClient.CharacterListReceived += OnCharacterListReceived;
         _networkClient.LoginFailed += OnLoginFailed;
         _networkClient.Disconnected += OnDisconnected;
@@ -228,6 +230,8 @@ public class LoginScreenController : MonoBehaviour
     void OnDisable()
     {
         _playfieldFactory.PlayfieldReady -= OnPlayfieldReady;
+        if (_playerController?.CameraController != null)
+            _playerController.CameraController.TargetAttached -= OnCameraTargetAttached;
         _networkClient.CharacterListReceived -= OnCharacterListReceived;
         _networkClient.LoginFailed -= OnLoginFailed;
         _networkClient.Disconnected -= OnDisconnected;
@@ -413,11 +417,19 @@ public class LoginScreenController : MonoBehaviour
 
         if (_awaitingPlayfieldReady && _state == LoginScreenState.EnteringGame)
         {
-            _awaitingPlayfieldReady = false;
-            _state = LoginScreenState.InGame;
-            _loadingScreen.HideFade();
-            Debug.Log($"[LoginScreen] Entered world (id={zoneId})");
+            // Zone geometry is ready; keep loading until CameraController resolves its target.
+            Debug.Log($"[LoginScreen] Zone ready, awaiting camera attach (id={zoneId})");
         }
+    }
+
+    void OnCameraTargetAttached()
+    {
+        if (!_awaitingPlayfieldReady || _state != LoginScreenState.EnteringGame)
+            return;
+
+        _awaitingPlayfieldReady = false;
+        _state = LoginScreenState.InGame;
+        Debug.Log("[LoginScreen] Entered world (camera attached)");
     }
 
     void ApplyLoginCameraPose()

@@ -32,6 +32,7 @@ public class SceneInstaller : MonoBehaviour, IInstaller
 
         _loadingScreenView ??= GetComponentInChildren<LoadingScreenView>(true);
         containerBuilder.RegisterValue(new LoadingScreen(_loadingScreenView, resourceDatabase));
+        containerBuilder.RegisterValue(new UvgaTextureCache(resourceDatabase));
 
         _worldOverlayController ??= GetComponentInChildren<WorldOverlayController>(true);
         if (_worldOverlayController == null)
