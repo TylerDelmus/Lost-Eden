@@ -38,7 +38,7 @@ public class VisualDynel : MonoBehaviour
     int _loadGeneration;
     Coroutine _loadRoutine;
 
-    static readonly Dictionary<(int skinId, int armorId), Texture2D> SharedBakeCache = new();
+    static readonly Dictionary<BodyBakeCacheKey, Texture2D> SharedBakeCache = new();
     static int _applyFrame = -1;
     static int _appliesThisFrame;
     const int MaxMainThreadAppliesPerFrame = 1;
@@ -741,7 +741,7 @@ public class VisualDynel : MonoBehaviour
         for (int i = 0; i < jobs.Count; i++)
         {
             BodyTextureJob job = jobs[i];
-            var key = (job.SkinId, job.ArmorId);
+            var key = BodyBakeCacheKey.Create(job.SkinId, job.ArmorId, job.Armor);
             lock (SharedBakeCache)
             {
                 if (SharedBakeCache.TryGetValue(key, out Texture2D cached) && cached != null)
@@ -918,9 +918,6 @@ public class VisualDynel : MonoBehaviour
             if (nakedSkin == null)
                 continue;
 
-            if (armor != null && armorId <= 0)
-                armorId = -armor.GetInstanceID();
-
             jobs.Add(new BodyTextureJob
             {
                 Part = part,
@@ -936,7 +933,7 @@ public class VisualDynel : MonoBehaviour
 
     Texture2D GetOrBakeBodyTexture(BodyTextureJob job)
     {
-        var key = (job.SkinId, job.ArmorId);
+        var key = BodyBakeCacheKey.Create(job.SkinId, job.ArmorId, job.Armor);
         lock (SharedBakeCache)
         {
             if (SharedBakeCache.TryGetValue(key, out Texture2D cached) && cached != null)
@@ -981,6 +978,40 @@ public class VisualDynel : MonoBehaviour
         _ = previousTextures;
     }
 
+    readonly struct BodyBakeCacheKey : IEquatable<BodyBakeCacheKey>
+    {
+        public readonly int SkinId;
+        public readonly int ArmorResourceId;
+        public readonly EntityId FallbackArmorEntityId;
+
+        BodyBakeCacheKey(int skinId, int armorResourceId, EntityId fallbackArmorEntityId)
+        {
+            SkinId = skinId;
+            ArmorResourceId = armorResourceId;
+            FallbackArmorEntityId = fallbackArmorEntityId;
+        }
+
+        public static BodyBakeCacheKey Create(int skinId, int armorResourceId, Texture2D armor)
+        {
+            if (armorResourceId > 0)
+                return new BodyBakeCacheKey(skinId, armorResourceId, EntityId.None);
+
+            if (armor != null)
+                return new BodyBakeCacheKey(skinId, 0, armor.GetEntityId());
+
+            return new BodyBakeCacheKey(skinId, 0, EntityId.None);
+        }
+
+        public bool Equals(BodyBakeCacheKey other) =>
+            SkinId == other.SkinId &&
+            ArmorResourceId == other.ArmorResourceId &&
+            FallbackArmorEntityId == other.FallbackArmorEntityId;
+
+        public override bool Equals(object obj) => obj is BodyBakeCacheKey other && Equals(other);
+
+        public override int GetHashCode() => HashCode.Combine(SkinId, ArmorResourceId, FallbackArmorEntityId);
+    }
+
     struct BodyTextureJob
     {
         public BodyPart Part;
@@ -1001,7 +1032,7 @@ public class VisualDynel : MonoBehaviour
         public Color32[] ArmorPixels;
         public Color32[] Pixels;
         public Texture2D Cached;
-        public (int skinId, int armorId) CacheKey;
+        public BodyBakeCacheKey CacheKey;
         public bool NeedsBackgroundBake;
     }
 
