@@ -1,0 +1,12 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <ui:Style src="AoWindow.uss" />
+    <ui:VisualElement name="root" class="ao-window-root">
+        <UvgaBackground name="window-frame" class="ao-window-frame" texture-name="GFX_GUI_BORDER01_BACKGROUND" scale-mode="StretchToFill">
+            <ui:VisualElement name="window-header" class="ao-window-header">
+                <ui:Label name="window-title" text="Window" class="ao-window-title" />
+                <UvgaImage name="close-button" class="ao-window-close" texture-name="GFX_GUI_BOREDER3_CLOSEBUTTON_NORMAL" scale-mode="ScaleToFit" size-to-texture="true" picking-mode="Position" />
+            </ui:VisualElement>
+            <ui:VisualElement name="window-body" class="ao-window-body" />
+        </UvgaBackground>
+    </ui:VisualElement>
+</ui:UXML>

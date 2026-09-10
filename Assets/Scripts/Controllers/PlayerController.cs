@@ -1,10 +1,13 @@
 using System;
+using AOSharp.Common.GameData;
 using Reflex.Attributes;
 using SmokeLounge.AOtomation.Messaging.GameData;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using UnityEngine;
 using MovementAction = AOSharp.Common.GameData.MovementAction;
 using MovementState = AOSharp.Common.GameData.MovementState;
+using Quaternion = UnityEngine.Quaternion;
+using Vector3 = UnityEngine.Vector3;
 
 [RequireComponent(typeof(InputController))]
 [DefaultExecutionOrder(-100)]
@@ -37,17 +40,40 @@ public class PlayerController : MonoBehaviour
     internal TargetingController TargetingController;
 
     [Inject] NetworkClient _networkClient;
+    [Inject] PlayfieldFactory _playfieldFactory;
+    [Inject] ItemTemplateCache _itemTemplates;
 
     private Quaternion _lastSentRotation;
     private MovementFlags _lastSentFlags;
 
+    FullCharacterMessage _pendingFullCharacter;
+
     public Action<Collider> OnInteraction;
+
+    /// <summary>
+    /// Raised after the local player is bound and inventory slots from FullCharacter are applied.
+    /// </summary>
+    public event Action InventoryReady;
+
+    public PlayerInventory Inventory { get; private set; }
 
     internal bool IsLocalPlayer(Character character) => _localPlayer != null && _localPlayer == character;
 
     internal bool TryGetLocalPlayer(out Character localPlayer) => (localPlayer = _localPlayer) != null;
 
     private Character _localPlayer;
+
+    private void OnEnable()
+    {
+        if (_networkClient != null)
+            _networkClient.FullCharacterReceived += OnFullCharacter;
+    }
+
+    private void OnDisable()
+    {
+        if (_networkClient != null)
+            _networkClient.FullCharacterReceived -= OnFullCharacter;
+    }
 
     private void Start()
     {
@@ -59,6 +85,13 @@ public class PlayerController : MonoBehaviour
         _inputController.SitPressed += OnSitPress;
         _inputController.CancelPressed += OnCancelPress;
         _inputController.AttackPressed += OnAttackPress;
+
+        // Reflex inject may land after the first OnEnable on some boot paths.
+        if (_networkClient != null)
+        {
+            _networkClient.FullCharacterReceived -= OnFullCharacter;
+            _networkClient.FullCharacterReceived += OnFullCharacter;
+        }
     }
 
     private void OnCharacterPress()
@@ -151,6 +184,23 @@ public class PlayerController : MonoBehaviour
         _networkClient.Send(new CharacterActionMessage { Action = action });
     }
 
+    internal void CastNanoSpell(int nanoId)
+    {
+        if (_localPlayer == null || _networkClient == null || !_networkClient.InPlay)
+            return;
+
+        var target = TargetingController.CurrentTarget;
+        var targetIdentity = target != null ? target.Identity : _localPlayer.Identity;
+
+        _networkClient.Send(new CharacterActionMessage
+        {
+            Action = CharacterActionType.CastNano,
+            Target = targetIdentity,
+            Parameter1 = (int)IdentityType.NanoProgram,
+            Parameter2 = nanoId,
+        });
+    }
+
     void OnSitPress()
     {
         if (_localPlayer == null || _networkClient == null || !_networkClient.InPlay)
@@ -171,9 +221,61 @@ public class PlayerController : MonoBehaviour
         _lastSentFlags = MovementFlags.None;
     }
 
+    void OnFullCharacter(FullCharacterMessage msg)
+    {
+        if (_playfieldFactory == null || !_playfieldFactory.NetworkDriven)
+            return;
+
+        _pendingFullCharacter = msg;
+        Debug.Log($"[PlayerController] FullCharacter received (awaiting local SCFU if needed): {msg.Identity.Type}:{msg.Identity.Instance}");
+        TryBindPendingFullCharacter();
+    }
+
+    /// <summary>
+    /// Attempt to apply a pending FullCharacter once the local Character exists on the playfield.
+    /// Called when FullCharacter arrives and after local SCFU spawn.
+    /// </summary>
+    internal void TryBindPendingFullCharacter()
+    {
+        if (_pendingFullCharacter == null || _playfieldFactory == null)
+            return;
+
+        Identity identity = _pendingFullCharacter.Identity;
+        if (!_playfieldFactory.TryGetCharacter(identity, out Character localPlayer))
+            return;
+
+        FullCharacterMessage msg = _pendingFullCharacter;
+        _pendingFullCharacter = null;
+
+        try
+        {
+            localPlayer.Apply(msg);
+            SetLocalPlayer(localPlayer);
+            Inventory?.Apply(msg.InventorySlots, _itemTemplates);
+            _networkClient.EnterPlay();
+            _playfieldFactory.PrioritizeLocalityAround(localPlayer.transform.position);
+
+            Debug.Log(
+                $"[PlayerController] Local player set from FullCharacter: " +
+                $"{localPlayer.Identity.Type}:{localPlayer.Identity.Instance} \"{localPlayer.Name}\"");
+
+            InventoryReady?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[PlayerController] Failed to apply FullCharacter for local player: {ex}");
+        }
+    }
+
+    internal void ClearPendingFullCharacter()
+    {
+        _pendingFullCharacter = null;
+    }
+
     internal void SetLocalPlayer(Character player)
     {
         _localPlayer = player;
+        Inventory = player != null ? new PlayerInventory(player.Identity.Instance) : null;
         _lastSentFlags = MovementFlags.None;
         _lastSentRotation = player != null ? player.transform.rotation : Quaternion.identity;
         // _localPlayer.Nameplate.Hide();

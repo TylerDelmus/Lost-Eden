@@ -14,6 +14,11 @@ public sealed class StatelParser
 {
     const int InstantiateBatchSize = 64;
 
+    /// <summary>
+    /// When true, each placement root gets a <see cref="StatelDebugInfo"/> component.
+    /// Leave off for normal play; <see cref="PlayfieldTest_DEV"/> enables it.
+    /// </summary>
+    public static bool AttachDebugInfo;
     readonly ResourceDatabase _database;
     readonly RenderConfig _renderConfig;
     readonly AbiffMaterialFactory _materials;
@@ -133,6 +138,21 @@ public sealed class StatelParser
         go.transform.localScale = placement.Transform.Sheared
             ? new Vector3(placement.Scale.x, 1f, 1f)
             : placement.Scale;
+
+        if (AttachDebugInfo)
+        {
+            var debug = go.AddComponent<StatelDebugInfo>();
+            debug.Set(
+                index,
+                placement.MeshId,
+                name,
+                placement.Position,
+                go.transform.localScale,
+                placement.Flag,
+                placement.Flags2,
+                placement.TextureOverrides,
+                placement.Transform);
+        }
 
         Dictionary<int, int> overrides = BuildOverrideMap(placement.TextureOverrides);
         bool hasUvAnim = false;

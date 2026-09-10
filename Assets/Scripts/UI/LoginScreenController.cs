@@ -124,6 +124,7 @@ public class LoginScreenController : MonoBehaviour
         try
         {
             _resourceDatabase.Initialize(path);
+            UvgaTextureSource.RaiseChanged();
             return true;
         }
         catch (System.Exception ex)
@@ -172,6 +173,7 @@ public class LoginScreenController : MonoBehaviour
 
         LoginPreferences.SaveAoPath(path);
         _loginView.AoPathField.value = path;
+        UvgaTextureSource.RaiseChanged();
         BeginBootLoading();
     }
 

@@ -1,0 +1,39 @@
+---
+description: Lost-Eden UI architecture — how game code and UI Toolkit interact
+alwaysApply: true
+---
+
+# UI Architecture
+
+Hybrid pattern: UI listens to domain events; input opens windows via a narrow facade. Static `UserInterface` is Toolkit plumbing only.
+
+## Rules
+
+1. **UI listens to the game.** Controllers subscribe to domain events (`NetworkClient`, `Playfield`, stats). Gameplay raises facts; UI decides presentation.
+2. **One feature = Controller + View + UXML/USS.** Controller owns flow and domain deps. View owns `VisualElement` queries and clicks. No networking in views; no Toolkit in game systems.
+3. **`UserInterface` is Toolkit plumbing only.** Static load/style/panel helpers. Never add game APIs (`ToggleInventory`, `SetHealth`). Do not inject or register it in Reflex.
+4. **Open/toggle via narrow facade (`IGameHud`).** Input may call `Open`/`Close`/`Toggle(WindowId)`. Do not inject Views or a fat UI hub into gameplay.
+5. **Dependencies flow UI → Game.** Thin high-level exceptions OK (`LoadingScreen.Show`/`HideFade`). Never inject Views into combat/network/playfield.
+6. **Prefer existing domain C# events** over a new global message bus.
+7. **`IUINotifyService` is input gating only** (pointer over UI / drag), not a general UI API.
+8. **World overlay (nameplates/hits) stays reactive** and separate from the window shell — do not route every HUD pixel through `IGameHud`.
+
+## Patterns
+
+```csharp
+// ✅ Reactive: UI controller subscribes to domain
+_networkClient.AttackInfoReceived += OnAttackInfo;
+
+// ✅ Intentional: input toggles via facade
+_gameHud.Toggle(WindowId.Character);
+
+// ✅ View loads Toolkit via static helper
+_menu = UserInterface.Load(this, "UI/Inventory", sortOrder: 80);
+
+// ❌ Fat hub / game APIs on UserInterface
+UserInterface.Instance.ToggleCharacterPanel();
+UserInterface.SetHealth(hp);
+
+// ❌ Game systems depending on Views
+containerBuilder.RegisterValue(inventoryView);
+```

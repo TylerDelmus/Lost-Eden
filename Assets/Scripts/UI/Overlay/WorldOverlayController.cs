@@ -9,8 +9,8 @@ using UnityEngine.UIElements;
 public class WorldOverlayController : MonoBehaviour
 {
     const string OverlayResourcePath = "UI/WorldOverlay";
-    const string NameplateResourcePath = "UI/ScreenNameplate";
-    const string HitIndicatorResourcePath = "UI/HitIndicator";
+    const string NameplateResourcePath = "UI/Unit/ScreenNameplate";
+    const string HitIndicatorResourcePath = "UI/Unit/HitIndicator";
     const int SortOrder = 50;
 
     [Inject] PlayerController _playerController;

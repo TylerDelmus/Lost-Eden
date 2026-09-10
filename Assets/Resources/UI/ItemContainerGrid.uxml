@@ -1,0 +1,6 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <ui:Style src="ItemContainerGrid.uss" />
+    <ui:VisualElement name="root" class="item-container-grid-root">
+        <ui:VisualElement name="cell-grid" class="item-container-grid" />
+    </ui:VisualElement>
+</ui:UXML>

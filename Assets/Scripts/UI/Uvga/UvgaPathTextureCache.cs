@@ -4,29 +4,55 @@ using System.IO;
 using UnityEngine;
 
 /// <summary>
-/// Lazy name-keyed cache of AO Default GUI textures from Graphics.uvgi/uvga.
+/// Path-based UVGA texture cache (editor preview and any AO-base-path consumer).
+/// Does not write textures into the Assets folder.
 /// </summary>
-public sealed class UvgaTextureCache
+public sealed class UvgaPathTextureCache
 {
-    const string DefaultRelativeUvgiPath = @"cd_image\gui\Default\Graphics.uvgi";
+    public const string DefaultRelativeUvgiPath = @"cd_image\gui\Default\Graphics.uvgi";
 
-    readonly ResourceDatabase _database;
     readonly Dictionary<string, Texture2D> _textures =
         new Dictionary<string, Texture2D>(StringComparer.OrdinalIgnoreCase);
 
+    string _aoBasePath = string.Empty;
     UvgaArchive _archive;
     bool _loadAttempted;
     bool _missingWarned;
 
-    public UvgaTextureCache(ResourceDatabase database)
-    {
-        _database = database ?? throw new ArgumentNullException(nameof(database));
-    }
+    public string AoBasePath => _aoBasePath;
 
     public bool IsLoaded => _archive != null;
 
     public IReadOnlyCollection<string> Names =>
         _archive != null ? _archive.Names : Array.Empty<string>();
+
+    public void SetAoBasePath(string aoBasePath)
+    {
+        string normalized = NormalizeBasePath(aoBasePath);
+
+        if (string.Equals(_aoBasePath, normalized, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        Clear();
+        _aoBasePath = normalized;
+    }
+
+    public void Reload(string aoBasePath)
+    {
+        Clear();
+        _aoBasePath = string.Empty;
+        SetAoBasePath(aoBasePath);
+        TryEnsureLoaded();
+    }
+
+    static string NormalizeBasePath(string aoBasePath)
+    {
+        if (string.IsNullOrWhiteSpace(aoBasePath))
+            return string.Empty;
+
+        return Path.GetFullPath(
+            aoBasePath.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+    }
 
     public Texture2D Get(string name)
     {
@@ -42,13 +68,14 @@ public sealed class UvgaTextureCache
 
         if (_textures.TryGetValue(name, out texture))
         {
+            // Unity destroys textures on play-mode exit; drop dead entries and reload.
             if (texture != null)
                 return true;
 
             _textures.Remove(name);
         }
 
-        if (!EnsureArchive())
+        if (!TryEnsureLoaded())
             return false;
 
         if (!_archive.TryGetPngBytes(name, out byte[] png))
@@ -59,7 +86,7 @@ public sealed class UvgaTextureCache
         return texture != null;
     }
 
-    bool EnsureArchive()
+    public bool TryEnsureLoaded()
     {
         if (_archive != null)
             return true;
@@ -67,15 +94,12 @@ public sealed class UvgaTextureCache
         if (_loadAttempted)
             return false;
 
-        if (_database?.Rdb == null)
-        {
-            // Path may be confirmed later at login; do not latch failure or warn.
+        if (string.IsNullOrEmpty(_aoBasePath))
             return false;
-        }
 
         _loadAttempted = true;
 
-        string uvgiPath = Path.Combine(_database.Rdb.BaseAoPath, DefaultRelativeUvgiPath);
+        string uvgiPath = Path.Combine(_aoBasePath, DefaultRelativeUvgiPath);
         if (!File.Exists(uvgiPath))
         {
             WarnOnce($"Missing GUI archive index at '{uvgiPath}'.");
@@ -92,10 +116,18 @@ public sealed class UvgaTextureCache
             return false;
         }
 
-        if (_archive != null)
-            UvgaTextureSource.RaiseChanged();
-
         return _archive != null;
+    }
+
+    public void Clear()
+    {
+        foreach (KeyValuePair<string, Texture2D> pair in _textures)
+            UvgaTextureDecoder.DestroyTexture(pair.Value);
+
+        _textures.Clear();
+        _archive = null;
+        _loadAttempted = false;
+        _missingWarned = false;
     }
 
     void WarnOnce(string message)
@@ -104,6 +136,6 @@ public sealed class UvgaTextureCache
             return;
 
         _missingWarned = true;
-        Debug.LogWarning($"[UvgaTextureCache] {message}");
+        Debug.LogWarning($"[UvgaPathTextureCache] {message}");
     }
 }

@@ -24,7 +24,6 @@ public class PlayfieldFactory : MonoBehaviour
     [Inject] LoadingScreen _loadingScreen;
 
     readonly Dictionary<Identity, SimpleCharFullUpdateMessage> _pendingCharacters = new();
-    FullCharacterMessage _pendingFullCharacter;
 
     Coroutine _loadRoutine;
     Transform _playfieldRoot;
@@ -55,7 +54,6 @@ public class PlayfieldFactory : MonoBehaviour
     {
         _networkClient.PlayfieldAnarchyFReceived += OnNetworkPlayfieldReceived;
         _networkClient.SimpleCharFullUpdateReceived += OnSimpleCharFullUpdate;
-        _networkClient.FullCharacterReceived += OnFullCharacter;
         _networkClient.StatReceived += OnStat;
         _networkClient.CharDCMoveReceived += OnCharDCMove;
         _networkClient.CharacterActionReceived += OnCharacterAction;
@@ -72,7 +70,6 @@ public class PlayfieldFactory : MonoBehaviour
     {
         _networkClient.PlayfieldAnarchyFReceived -= OnNetworkPlayfieldReceived;
         _networkClient.SimpleCharFullUpdateReceived -= OnSimpleCharFullUpdate;
-        _networkClient.FullCharacterReceived -= OnFullCharacter;
         _networkClient.StatReceived -= OnStat;
         _networkClient.CharDCMoveReceived -= OnCharDCMove;
         _networkClient.CharacterActionReceived -= OnCharacterAction;
@@ -150,17 +147,7 @@ public class PlayfieldFactory : MonoBehaviour
         }
 
         _current.SpawnDynel(msg);
-        TryApplyPendingFullCharacter(msg.Identity);
-    }
-
-    void OnFullCharacter(FullCharacterMessage msg)
-    {
-        if (!NetworkDriven)
-            return;
-
-        _pendingFullCharacter = msg;
-        Debug.Log($"[PlayfieldFactory] FullCharacter received (awaiting local SCFU if needed): {msg.Identity.Type}:{msg.Identity.Instance}");
-        TryApplyPendingFullCharacter(LocalPlayerIdentity());
+        NotifyLocalCharacterSpawned(msg.Identity);
     }
 
     void OnStat(StatMessage msg)
@@ -272,7 +259,7 @@ public class PlayfieldFactory : MonoBehaviour
             yield break;
 
         _pendingCharacters.Clear();
-        _pendingFullCharacter = null;
+        _playerController?.ClearPendingFullCharacter();
         Destroy(_playfieldRoot.gameObject);
         _playfieldRoot = null;
         _current = null;
@@ -319,7 +306,15 @@ public class PlayfieldFactory : MonoBehaviour
         PlayfieldReady?.Invoke(zoneId);
 
         // Network-driven loading stays up until the local player is possessed and the
-        // camera snaps (see ApplyFullCharacter). Zone geometry alone is too early.
+        // camera snaps (see PlayerController FullCharacter bind). Zone geometry alone is too early.
+    }
+
+    public void PrioritizeLocalityAround(Vector3 position)
+    {
+        PlayfieldLocality locality = _playfieldRoot != null
+            ? _playfieldRoot.GetComponent<PlayfieldLocality>()
+            : null;
+        locality?.PrioritizeAround(position);
     }
 
     IEnumerator BakeReflectionProbesRoutine()
@@ -404,7 +399,7 @@ public class PlayfieldFactory : MonoBehaviour
             try
             {
                 _current.SpawnDynel(msg);
-                TryApplyPendingFullCharacter(msg.Identity);
+                NotifyLocalCharacterSpawned(msg.Identity);
             }
             catch (Exception ex)
             {
@@ -415,37 +410,12 @@ public class PlayfieldFactory : MonoBehaviour
         _pendingCharacters.Clear();
     }
 
-    void TryApplyPendingFullCharacter(Identity identity)
+    void NotifyLocalCharacterSpawned(Identity identity)
     {
-        if (_pendingFullCharacter == null || _current == null || identity != LocalPlayerIdentity())
+        if (identity != LocalPlayerIdentity())
             return;
 
-        if (!_current.TryGetCharacter(identity, out Character localPlayer))
-            return;
-
-        try
-        {
-            ApplyFullCharacter(localPlayer, _pendingFullCharacter);
-            _pendingFullCharacter = null;
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[PlayfieldFactory] Failed to apply FullCharacter for local player: {ex}");
-        }
-    }
-
-    void ApplyFullCharacter(Character localPlayer, FullCharacterMessage msg)
-    {
-        localPlayer.Apply(msg);
-        _playerController.SetLocalPlayer(localPlayer);
-        _networkClient.EnterPlay();
-
-        PlayfieldLocality locality = _playfieldRoot != null
-            ? _playfieldRoot.GetComponent<PlayfieldLocality>()
-            : null;
-        locality?.PrioritizeAround(localPlayer.transform.position);
-
-        Debug.Log($"[PlayfieldFactory] Local player set from FullCharacter: {localPlayer.Identity.Type}:{localPlayer.Identity.Instance} \"{localPlayer.Name}\"");
+        _playerController?.TryBindPendingFullCharacter();
     }
 
     void TryApplyAoEnvironment(int playfieldId, AbiffMaterialFactory abiffMaterials)

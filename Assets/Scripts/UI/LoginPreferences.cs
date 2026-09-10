@@ -4,7 +4,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 using UnityEngine;
 
-static class LoginPreferences
+public static class LoginPreferences
 {
     const string FileName = "login_preferences.json";
 

@@ -26,6 +26,8 @@ public static class UserInterface
 
     public static IReadOnlyList<UiMenu> Menus => ActiveMenus;
 
+    const string WindowShellResourcePath = "UI/AoWindow";
+
     public static UiMenu Load(
         MonoBehaviour host,
         string uxmlResourcePath,
@@ -72,6 +74,62 @@ public static class UserInterface
         return menu;
     }
 
+    /// <summary>
+    /// Loads the shared AO window shell and nests a content UXML into <c>#window-body</c>.
+    /// </summary>
+    public static UiWindow LoadWindow(
+        MonoBehaviour host,
+        string title,
+        string contentUxmlResourcePath,
+        int sortOrder,
+        bool startVisible = false,
+        string logName = null)
+    {
+        if (string.IsNullOrEmpty(contentUxmlResourcePath))
+            throw new ArgumentException("Content UXML resource path is required.", nameof(contentUxmlResourcePath));
+
+        UiMenu menu = Load(
+            host,
+            WindowShellResourcePath,
+            sortOrder,
+            startVisible,
+            logName ?? title ?? contentUxmlResourcePath,
+            stretchContentRoot: true,
+            centerPanelRoot: true);
+
+        if (menu == null)
+            return null;
+
+        Label titleLabel = menu.Q<Label>("window-title");
+        VisualElement closeButton = menu.Q("close-button");
+        VisualElement body = menu.Q("window-body");
+        if (body == null)
+        {
+            Debug.LogError("[UserInterface] AoWindow shell is missing #window-body.");
+            Unregister(menu);
+            return null;
+        }
+
+        VisualTreeAsset contentAsset = LoadTemplate(contentUxmlResourcePath);
+        if (contentAsset == null)
+        {
+            Debug.LogError($"[UserInterface] Missing content VisualTreeAsset at Resources/{contentUxmlResourcePath}");
+            Unregister(menu);
+            return null;
+        }
+
+        body.Clear();
+        TemplateContainer contentInstance = contentAsset.Instantiate();
+        contentInstance.style.flexGrow = 1;
+        contentInstance.style.width = Length.Percent(100);
+        body.Add(contentInstance);
+
+        VisualElement contentRoot = contentInstance.Q<VisualElement>("root") ?? contentInstance;
+        EnsureStylesheet(contentRoot, contentUxmlResourcePath);
+
+        return new UiWindow(menu, titleLabel, closeButton, body, contentRoot, title);
+    }
+
     public static T FindOrCreateMenuView<T>(Transform parent, string childName) where T : Component
     {
         var view = parent.GetComponentInChildren<T>(true);
@@ -95,6 +153,11 @@ public static class UserInterface
 
         menu.Dispose();
         ActiveMenus.Remove(menu);
+    }
+
+    public static void Unregister(UiWindow window)
+    {
+        window?.Dispose();
     }
 
     public static void EnsurePanelSettings(UIDocument document, int sortingOrder)

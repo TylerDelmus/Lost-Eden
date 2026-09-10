@@ -1,0 +1,6 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <ui:Style src="ItemCell.uss" />
+    <ui:VisualElement name="cell" class="item-cell">
+        <ui:Image name="icon" class="item-cell-icon" picking-mode="Ignore" />
+    </ui:VisualElement>
+</ui:UXML>

@@ -1,0 +1,15 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <ui:Style src="AoWindowDemo.uss" />
+    <ui:VisualElement name="root" class="ao-window-demo-root">
+        <UvgaBackground name="window-frame" class="ao-window-frame" texture-name="GFX_GUI_BORDER01_BACKGROUND" scale-mode="StretchToFill">
+            <ui:VisualElement name="window-header" class="ao-window-header">
+                <ui:Label name="window-title" text="Inventory" class="ao-window-title" />
+                <UvgaImage name="close-button" class="ao-window-close" texture-name="GFX_GUI_BOREDER3_CLOSEBUTTON_NORMAL" scale-mode="ScaleToFit" size-to-texture="true" />
+            </ui:VisualElement>
+            <ui:VisualElement name="window-body" class="ao-window-body">
+                <ui:Label text="UVGA textures resolve by name at edit time and runtime — nothing imported under Assets." class="ao-window-body-text" />
+                <UvgaImage name="accept-button" class="ao-window-accept" texture-name="GFX_GUI_BUTTON_ACCEPT" scale-mode="ScaleToFit" size-to-texture="true" />
+            </ui:VisualElement>
+        </UvgaBackground>
+    </ui:VisualElement>
+</ui:UXML>
