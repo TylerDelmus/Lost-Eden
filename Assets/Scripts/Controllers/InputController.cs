@@ -117,6 +117,7 @@ internal class InputController : MonoBehaviour
     private InputAction _characterAction;
     private InputAction _sitAction;
     private InputAction _attackAction;
+    private InputAction _toggleInventoryAction;
 
     public Action CharacterPressed;
     public Action SitPressed;
@@ -126,9 +127,13 @@ internal class InputController : MonoBehaviour
     public Action<int> HotbarPressed;
     public Action CancelPressed;
     public Action AttackPressed;
+    public Action InventoryPressed;
 
     [Inject]
     private IUINotifyService _uiNotifyService;
+
+    [Inject]
+    private IGameHud _gameHud;
 
     private void Awake()
     {
@@ -149,10 +154,13 @@ internal class InputController : MonoBehaviour
         _characterAction = InputSystem.actions.FindAction("Character");
         _sitAction = InputSystem.actions.FindAction("Sit");
         _attackAction = InputSystem.actions.FindAction("Attack");
+        _toggleInventoryAction = InputSystem.actions.FindAction("ToggleInventory");
 
         _characterAction.performed += OnCharacterPerformed;
         _sitAction.performed += OnSitPerformed;
         _attackAction.performed += OnAttackPerformed;
+        if (_toggleInventoryAction != null)
+            _toggleInventoryAction.performed += OnToggleInventoryPerformed;
 
         _jumpAction.performed += OnJumpPerformed;
         _jumpAction.canceled += OnJumpCanceled;
@@ -184,6 +192,12 @@ internal class InputController : MonoBehaviour
     private void OnAttackPerformed(InputAction.CallbackContext ctx)
     {
         AttackPressed?.Invoke();
+    }
+
+    private void OnToggleInventoryPerformed(InputAction.CallbackContext ctx)
+    {
+        InventoryPressed?.Invoke();
+        _gameHud?.Toggle(WindowId.Inventory);
     }
 
     private void OnJumpPerformed(InputAction.CallbackContext ctx)
@@ -365,5 +379,7 @@ internal class InputController : MonoBehaviour
         _characterAction.performed -= OnCharacterPerformed;
         _sitAction.performed -= OnSitPerformed;
         _attackAction.performed -= OnAttackPerformed;
+        if (_toggleInventoryAction != null)
+            _toggleInventoryAction.performed -= OnToggleInventoryPerformed;
     }
 }

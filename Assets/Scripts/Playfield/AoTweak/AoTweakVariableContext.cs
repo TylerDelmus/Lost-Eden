@@ -6,20 +6,31 @@ using UnityEngine;
 using static AoTweakObjectParser;
 
 /// <summary>
-/// Resolves AO tweak float expressions across the flattened object graph
-/// (GAME.ThickCloudsIntensity, This.TFACTOR, array subscripts, + - * /).
-/// Not a full tweak VM — enough for environment/sky evaluation.
+/// Resolves AO tweak float/quaternion expressions across the flattened object graph
+/// (GAME.ThickCloudsIntensity, This.TFACTOR, Object.Prop, [ROT], array subscripts, + - * / %).
+/// Not a full tweak VM — enough for environment/sky evaluation at a frozen snapshot.
 /// </summary>
 public sealed class AoTweakVariableContext
 {
     static readonly Regex RefPattern = new Regex(
-        @"^(GAME|This)\.([A-Za-z_][A-Za-z0-9_]*)(?:\[(.+)\])?\s*$",
+        @"^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)(?:\[(.+)\])?\s*$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    static readonly Regex AxisAnglePattern = new Regex(
+        @"^v\s*\(\s*([^)]+)\)\s*,\s*(.+)$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    static readonly Regex QuatLiteralPattern = new Regex(
+        @"^q\s*\(\s*([^)]+)\)\s*$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     readonly Dictionary<string, AoObject> _objects;
     readonly AoObject _game;
     readonly Dictionary<string, float> _resolved = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
     readonly HashSet<string> _inProgress = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, Quaternion> _resolvedQuats =
+        new Dictionary<string, Quaternion>(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> _inProgressQuats = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     public AoTweakVariableContext(Dictionary<string, AoObject> objects)
     {
@@ -113,6 +124,155 @@ public sealed class AoTweakVariableContext
     }
 
     /// <summary>
+    /// Resolve a quaternion property (literals, axis-angle, This/GAME/Object refs, [ROT] composition).
+    /// Animated counters that cannot freeze evaluate as 0° so static tilts still apply.
+    /// </summary>
+    public bool TryResolveQuaternion(AoObject owner, AoObject self, string propName, out Quaternion value)
+    {
+        value = Quaternion.identity;
+        if (owner == null || string.IsNullOrWhiteSpace(propName))
+            return false;
+
+        string key = owner.Name + "." + propName;
+        if (_resolvedQuats.TryGetValue(key, out value))
+            return true;
+
+        if (!_inProgressQuats.Add(key))
+            return false;
+
+        bool ok = false;
+        try
+        {
+            if (!owner.Properties.TryGetValue(propName, out AoProperty prop))
+                return false;
+
+            // Prefer expression eval when Raw needs the graph (refs / [ROT] / non-literal angles).
+            if (!string.IsNullOrWhiteSpace(prop.Raw)
+                && NeedsQuaternionExpression(prop.Raw))
+            {
+                ok = TryEvaluateQuaternion(self ?? owner, prop.Raw, out value);
+            }
+            else if (prop.QuaternionValue.HasValue)
+            {
+                value = prop.QuaternionValue.Value;
+                ok = true;
+            }
+            else if (!string.IsNullOrWhiteSpace(prop.Raw))
+            {
+                ok = TryEvaluateQuaternion(self ?? owner, prop.Raw, out value);
+            }
+        }
+        finally
+        {
+            _inProgressQuats.Remove(key);
+        }
+
+        if (ok)
+            _resolvedQuats[key] = value;
+        return ok;
+    }
+
+    public bool TryEvaluateQuaternion(AoObject self, string expr, out Quaternion value)
+    {
+        value = Quaternion.identity;
+        if (string.IsNullOrWhiteSpace(expr))
+            return false;
+
+        expr = StripAoSuffixes(expr.Trim());
+        if (expr.Length == 0)
+            return false;
+
+        // A [ROT] B [ROT] C — left-associative; A [ROT] B ≡ B * A (apply A then B).
+        if (SplitAtRot(expr, out string lhs, out string rhs))
+        {
+            if (!TryEvaluateQuaternion(self, lhs, out Quaternion a)
+                || !TryEvaluateQuaternion(self, rhs, out Quaternion b))
+                return false;
+
+            value = b * a;
+            return true;
+        }
+
+        Match qLit = QuatLiteralPattern.Match(expr);
+        if (qLit.Success)
+        {
+            float[] nums = ParseFloatList(qLit.Groups[1].Value);
+            if (nums == null || nums.Length < 4)
+                return false;
+            value = new Quaternion(nums[0], nums[1], nums[2], nums[3]);
+            return true;
+        }
+
+        Match aa = AxisAnglePattern.Match(expr);
+        if (aa.Success)
+        {
+            float[] axis = ParseFloatList(aa.Groups[1].Value);
+            if (axis == null || axis.Length < 3)
+                return false;
+
+            Vector3 a = new Vector3(axis[0], axis[1], axis[2]);
+            if (a.sqrMagnitude < 1e-8f)
+                return false;
+
+            // Frozen snapshot: unresolved/cyclic angles (e.g. Counter accumulators) → 0°.
+            float degrees = 0f;
+            TryEvaluateExpression(self, aa.Groups[2].Value.Trim(), out degrees);
+
+            value = Quaternion.AngleAxis(degrees, a.normalized);
+            return true;
+        }
+
+        Match refMatch = RefPattern.Match(expr);
+        if (refMatch.Success)
+        {
+            if (!TryResolveRefOwner(self, refMatch.Groups[1].Value, out AoObject owner))
+                return false;
+
+            // Quaternion props do not use array subscripts.
+            if (refMatch.Groups[3].Success)
+                return false;
+
+            return TryResolveQuaternion(owner, self, refMatch.Groups[2].Value, out value);
+        }
+
+        return false;
+    }
+
+    static bool NeedsQuaternionExpression(string raw)
+    {
+        if (raw.IndexOf("[ROT]", StringComparison.OrdinalIgnoreCase) >= 0)
+            return true;
+        if (raw.IndexOf("<|", StringComparison.Ordinal) >= 0)
+            return true;
+        if (raw.IndexOf('.') >= 0)
+            return true;
+
+        Match aa = AxisAnglePattern.Match(raw.Trim());
+        if (aa.Success)
+            return !TryEvalSimpleFloat(aa.Groups[2].Value.Trim(), out _);
+
+        return false;
+    }
+
+    bool TryResolveRefOwner(AoObject self, string ownerName, out AoObject owner)
+    {
+        owner = null;
+        if (ownerName.Equals("GAME", StringComparison.OrdinalIgnoreCase))
+        {
+            owner = _game;
+            return owner != null;
+        }
+
+        if (ownerName.Equals("This", StringComparison.OrdinalIgnoreCase))
+        {
+            owner = self;
+            return owner != null;
+        }
+
+        return _objects.TryGetValue(ownerName, out owner) && owner != null;
+    }
+
+    /// <summary>
     /// Sky opacity from TFACTOR / Intensity tweak properties.
     /// </summary>
     public float ResolveSkyIntensity(AoObject obj)
@@ -167,12 +327,19 @@ public sealed class AoTweakVariableContext
     bool TryEvalMul(AoObject self, string expr, out float value)
     {
         value = 0f;
-        if (SplitAtDepthZero(expr, '*', out string lhs, out string rhs))
-            return TryEvalMul(self, lhs, out float a) && TryEvalMul(self, rhs, out float b) && Set(out value, a * b);
+        // Same precedence for * / %; rightmost split → left-associative (a * b % c == (a*b)%c).
+        if (SplitAtDepthZeroAny(expr, out string lhs, out string rhs, out char op, '*', '/', '%'))
+        {
+            if (!TryEvalMul(self, lhs, out float a) || !TryEvalUnary(self, rhs, out float b))
+                return false;
 
-        if (SplitAtDepthZero(expr, '/', out lhs, out rhs))
-            return TryEvalMul(self, lhs, out float a) && TryEvalUnary(self, rhs, out float b)
-                   && Mathf.Abs(b) > 1e-12f && Set(out value, a / b);
+            if (op == '*')
+                return Set(out value, a * b);
+            if (op == '/')
+                return Mathf.Abs(b) > 1e-12f && Set(out value, a / b);
+            // %
+            return Mathf.Abs(b) > 1e-12f && Set(out value, a % b);
+        }
 
         return TryEvalUnary(self, expr, out value);
     }
@@ -203,10 +370,7 @@ public sealed class AoTweakVariableContext
         Match refMatch = RefPattern.Match(expr);
         if (refMatch.Success)
         {
-            AoObject owner = refMatch.Groups[1].Value.Equals("GAME", StringComparison.OrdinalIgnoreCase)
-                ? _game
-                : self;
-            if (owner == null)
+            if (!TryResolveRefOwner(self, refMatch.Groups[1].Value, out AoObject owner))
                 return false;
 
             string propName = refMatch.Groups[2].Value;
@@ -247,18 +411,53 @@ public sealed class AoTweakVariableContext
 
     static string StripAoSuffixes(string expr)
     {
-        // Drop AO-only operators we do not evaluate yet (~, [ROT], etc.).
+        // Side-effect / bitwise suffixes we ignore for frozen eval.
         int tilde = expr.IndexOf('~');
         if (tilde >= 0)
             expr = expr.Substring(0, tilde).Trim();
 
+        int trigger = expr.IndexOf("<|", StringComparison.Ordinal);
+        if (trigger >= 0)
+            expr = expr.Substring(0, trigger).Trim();
+
         return expr.TrimEnd('u', 'U', 'f', 'F');
+    }
+
+    static bool SplitAtRot(string expr, out string lhs, out string rhs)
+    {
+        lhs = null;
+        rhs = null;
+        const string op = "[ROT]";
+        int depth = 0;
+        for (int i = expr.Length - op.Length; i >= 0; i--)
+        {
+            char c = expr[i];
+            if (c == ')')
+                depth++;
+            else if (c == '(')
+                depth--;
+            else if (depth == 0
+                     && string.Compare(expr, i, op, 0, op.Length, StringComparison.OrdinalIgnoreCase) == 0)
+            {
+                lhs = expr.Substring(0, i).Trim();
+                rhs = expr.Substring(i + op.Length).Trim();
+                return lhs.Length > 0 && rhs.Length > 0;
+            }
+        }
+
+        return false;
     }
 
     static bool SplitAtDepthZero(string expr, char op, out string lhs, out string rhs)
     {
+        return SplitAtDepthZeroAny(expr, out lhs, out rhs, out _, op);
+    }
+
+    static bool SplitAtDepthZeroAny(string expr, out string lhs, out string rhs, out char foundOp, params char[] ops)
+    {
         lhs = null;
         rhs = null;
+        foundOp = '\0';
         int depth = 0;
         for (int i = expr.Length - 1; i >= 0; i--)
         {
@@ -267,14 +466,20 @@ public sealed class AoTweakVariableContext
                 depth++;
             else if (c == '(')
                 depth--;
-            else if (depth == 0 && c == op)
+            else if (depth == 0)
             {
-                if (op == '-' && i == 0)
-                    continue;
+                for (int o = 0; o < ops.Length; o++)
+                {
+                    if (c != ops[o])
+                        continue;
+                    if (ops[o] == '-' && i == 0)
+                        continue;
 
-                lhs = expr.Substring(0, i).Trim();
-                rhs = expr.Substring(i + 1).Trim();
-                return lhs.Length > 0 && rhs.Length > 0;
+                    lhs = expr.Substring(0, i).Trim();
+                    rhs = expr.Substring(i + 1).Trim();
+                    foundOp = ops[o];
+                    return lhs.Length > 0 && rhs.Length > 0;
+                }
             }
         }
 

@@ -42,7 +42,7 @@ public static class AoTweakEnvironmentBuilder
             else if (dayTime > 0f)
                 dayTimeFactor = Mathf.Clamp01(dayTime / 6480f);
 
-            if (TryGetQuaternion(game, "Sun1Rotation", out Quaternion sunRot))
+            if (vars.TryResolveQuaternion(game, game, "Sun1Rotation", out Quaternion sunRot))
             {
                 tweak.SunRotation = sunRot;
                 tweak.HasLighting = true;
@@ -102,7 +102,9 @@ public static class AoTweakEnvironmentBuilder
             bool enabled = IsEnabled(obj);
 
             Vector3 pos = TryGetVector(obj, "Position", out Vector3 p) ? p : Vector3.zero;
-            Quaternion rot = TryGetQuaternion(obj, "Rotation", out Quaternion r) ? r : Quaternion.identity;
+            Quaternion rot = vars.TryResolveQuaternion(obj, obj, "Rotation", out Quaternion r)
+                ? r
+                : Quaternion.identity;
 
             var placement = new AoSkyMeshPlacement
             {
@@ -200,15 +202,6 @@ public static class AoTweakEnvironmentBuilder
         if (!obj.Properties.TryGetValue(name, out AoProperty prop) || !prop.VectorValue.HasValue)
             return false;
         value = prop.VectorValue.Value;
-        return true;
-    }
-
-    static bool TryGetQuaternion(AoObject obj, string name, out Quaternion value)
-    {
-        value = Quaternion.identity;
-        if (!obj.Properties.TryGetValue(name, out AoProperty prop) || !prop.QuaternionValue.HasValue)
-            return false;
-        value = prop.QuaternionValue.Value;
         return true;
     }
 }

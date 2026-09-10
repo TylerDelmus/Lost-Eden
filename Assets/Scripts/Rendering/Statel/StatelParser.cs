@@ -133,10 +133,15 @@ public sealed class StatelParser
         go.transform.SetParent(parent, false);
         go.transform.localPosition = placement.Position;
         go.transform.localRotation = placement.Rotation;
-        // Sheared: slant baked into verts; packed scale applied on X only.
-        // Non-sheared: uniform XYZ scale.
-        go.transform.localScale = placement.Transform.Sheared
-            ? new Vector3(placement.Scale.x, 1f, 1f)
+        // Direct-quat arm (flags&1): stock Anim = PostScale(1,1/var,1/var) then
+        // shear(s,0), with uniform FinalScale=base*var on the ref-frame.
+        // Net axis scales = (FinalScale, BaseScale, BaseScale). Using (Final,1,1)
+        // only matches when base≈1 (e.g. pf 4582 fences); pf 4310 brink uses
+        // base=0.43 and looked stretched on Y/Z.
+        // Lat/lon arm: uniform FinalScale.
+        ScaleRotationInfo xform = placement.Transform;
+        go.transform.localScale = xform.Sheared
+            ? new Vector3(xform.FinalScale, xform.BaseScale, xform.BaseScale)
             : placement.Scale;
 
         if (AttachDebugInfo)
@@ -657,11 +662,13 @@ public sealed class StatelParser
             info.ScaleFactor = info.ScaleSteps / 100f + 0.5f;
             info.FinalScale = info.BaseScale * info.ScaleFactor;
 
-            // Unity mesh bake uses Z-slant (matches prior working AODB ExtractAbiff path).
-            // Sign is flipped vs the raw packed value for that bake.
-            float rawShear = info.RotationSteps / 0xD3 / 100f - 1.25f;
-            info.ShearFactor = -rawShear;
-            info.ShearMatrix = CreateShear(new Vector2(0f, info.ShearFactor));
+            // Stock direct-quat anim matrix:
+            //   Mat4_PostScaleByDiagXYZ(1, 1/var, 1/var)
+            //   FUN_10026d5c(mat, shear, 0)  → Y-slant (y += shear * x)
+            // Shear magnitude from high bits; second arg always 0. Applied scale
+            // on the root is (FinalScale, BaseScale, BaseScale).
+            info.ShearFactor = info.RotationSteps / 0xD3 / 100f - 1.25f;
+            info.ShearMatrix = CreateShear(new Vector2(info.ShearFactor, 0f));
         }
         else
         {

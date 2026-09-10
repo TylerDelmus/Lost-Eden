@@ -36,12 +36,12 @@ public sealed class AoWindowDemoPreviewWindow : EditorWindow
             return;
         }
 
-        AoWindowDemoView view = Object.FindFirstObjectByType<AoWindowDemoView>();
+        InventoryView view = Object.FindFirstObjectByType<InventoryView>();
         if (view == null)
         {
-            var go = new GameObject("AoWindowDemo");
+            var go = new GameObject("InventoryWindow");
             go.SetActive(false);
-            view = go.AddComponent<AoWindowDemoView>();
+            view = go.AddComponent<InventoryView>();
             try
             {
                 Container container = go.scene.GetSceneContainer();
@@ -49,16 +49,13 @@ public sealed class AoWindowDemoPreviewWindow : EditorWindow
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning($"[AoWindowDemo] Could not inject dependencies: {ex.Message}");
+                Debug.LogWarning($"[Inventory] Could not inject dependencies: {ex.Message}");
             }
 
             go.SetActive(true);
         }
 
-        if (view.IsReady && view.IsVisible)
-            view.Hide();
-        else
-            view.Show();
+        view.Toggle();
     }
 
     void CreateGUI()

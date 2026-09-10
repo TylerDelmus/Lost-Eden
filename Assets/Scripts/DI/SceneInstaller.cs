@@ -7,7 +7,7 @@ public class SceneInstaller : MonoBehaviour, IInstaller
     [SerializeField] PlayfieldFactory _playfieldFactory;
     [SerializeField] LoadingScreenView _loadingScreenView;
     [SerializeField] WorldOverlayController _worldOverlayController;
-    [SerializeField] AoWindowDemoView _inventoryWindowView;
+    [SerializeField] InventoryView _inventoryWindowView;
 
     public void InstallBindings(ContainerBuilder containerBuilder)
     {
@@ -51,15 +51,15 @@ public class SceneInstaller : MonoBehaviour, IInstaller
 
         containerBuilder.RegisterValue(_worldOverlayController);
 
-        _inventoryWindowView ??= GetComponentInChildren<AoWindowDemoView>(true);
+        _inventoryWindowView ??= GetComponentInChildren<InventoryView>(true);
         if (_inventoryWindowView == null)
         {
             var inventoryGo = new GameObject("InventoryWindow");
             inventoryGo.transform.SetParent(transform, false);
-            _inventoryWindowView = inventoryGo.AddComponent<AoWindowDemoView>();
+            _inventoryWindowView = inventoryGo.AddComponent<InventoryView>();
         }
 
-        containerBuilder.RegisterValue(_inventoryWindowView);
+        containerBuilder.RegisterValue(new GameHud(_inventoryWindowView), new System.Type[] { typeof(IGameHud) });
         containerBuilder.RegisterValue(new UIInteractionManager(), new System.Type[] { typeof(IUINotifyService) });
     }
 }

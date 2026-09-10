@@ -32,10 +32,9 @@ public sealed class StatelDebugInfo : MonoBehaviour
     [SerializeField] float _scaleFactor;
     [SerializeField] float _finalScale;
     [SerializeField] float _shearFactor;
-    [SerializeField] float _rawShearFactor;
     [SerializeField] Matrix4x4 _shearMatrix;
-    [Tooltip("Mesh-space slant currently baked: z' = z + shearFactor * x")]
-    [SerializeField] string _bakeFormula = "z' = z + shearFactor * x";
+    [Tooltip("Stock FUN_10026d5c(mat,s,0): y' = y + s*x; root scale (Final, Base, Base)")]
+    [SerializeField] string _bakeFormula = "y' = y + shear*x; scale=(Final,Base,Base)";
 
     [Header("Non-Shear Path")]
     [SerializeField] bool _rotationOverflow;
@@ -93,9 +92,8 @@ public sealed class StatelDebugInfo : MonoBehaviour
         _scaleFactor = info.ScaleFactor;
         _finalScale = info.FinalScale;
         _shearFactor = info.ShearFactor;
-        _rawShearFactor = -info.ShearFactor;
         _shearMatrix = info.ShearMatrix;
-        _bakeFormula = "z' = z + shearFactor * x";
+        _bakeFormula = "y' = y + shear*x; scale=(Final,Base,Base)";
 
         _rotationOverflow = info.RotationOverflow;
         _x = info.X;
@@ -118,8 +116,7 @@ public sealed class StatelDebugInfo : MonoBehaviour
                 $"flags={_flags} flags2={_flags2} packed={_rotationPacked} " +
                 $"yaw={_yawDegrees:F2}° steps={_rotationSteps} scaleSteps={_scaleSteps} " +
                 $"scaleFactor={_scaleFactor:F4} finalScale={_finalScale:F4} " +
-                $"rawShear={_rawShearFactor:F4} appliedShear={_shearFactor:F4} " +
-                $"appliedScale={_appliedScale} bake={_bakeFormula}",
+                $"shear={_shearFactor:F4} appliedScale={_appliedScale} bake={_bakeFormula}",
                 this);
             return;
         }
@@ -152,10 +149,9 @@ public sealed class StatelDebugInfo : MonoBehaviour
         if (!_sheared || !_drawShearSlant)
             return;
 
-        // Mesh-space bake is z' = z + shear * x, then root rotation/scale.
-        // Show unsheared +X edge (cyan) vs sheared edge (magenta) in local space.
+        // Stock CreateShear(s,0): y' = y + shear * x.
         Vector3 localX = new Vector3(extent, 0f, 0f);
-        Vector3 localSheared = new Vector3(extent, 0f, _shearFactor * extent);
+        Vector3 localSheared = new Vector3(extent, _shearFactor * extent, 0f);
 
         Vector3 worldX = t.TransformPoint(localX);
         Vector3 worldSheared = t.TransformPoint(localSheared);

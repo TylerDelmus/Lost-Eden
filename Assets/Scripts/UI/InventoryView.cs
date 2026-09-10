@@ -4,11 +4,10 @@ using UnityEngine.UIElements;
 
 /// <summary>
 /// Inventory window: AO chrome shell + <see cref="ItemContainerGridView"/>.
-/// Opens when the local player's inventory is applied from FullCharacter.
 /// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(UIDocument))]
-public class AoWindowDemoView : MonoBehaviour
+public class InventoryView : MonoBehaviour
 {
     const string ContentResourcePath = "UI/ItemContainerGrid";
     const int SortOrder = 90;
@@ -53,6 +52,14 @@ public class AoWindowDemoView : MonoBehaviour
         _window?.Hide();
     }
 
+    public void Toggle()
+    {
+        if (IsVisible)
+            Hide();
+        else
+            Show();
+    }
+
     public void RefreshFromInventory()
     {
         if (_grid == null)
@@ -95,7 +102,8 @@ public class AoWindowDemoView : MonoBehaviour
 
     void OnInventoryReady()
     {
-        Show();
+        EnsureLoaded();
+        RefreshFromInventory();
     }
 
     void EnsureLoaded()
@@ -109,7 +117,7 @@ public class AoWindowDemoView : MonoBehaviour
             contentUxmlResourcePath: ContentResourcePath,
             sortOrder: SortOrder,
             startVisible: false,
-            logName: "AoWindowDemo");
+            logName: "Inventory");
 
         if (_window == null)
             return;

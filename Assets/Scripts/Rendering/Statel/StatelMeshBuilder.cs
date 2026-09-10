@@ -4,8 +4,9 @@ using UnityEngine;
 public static class StatelMeshBuilder
 {
     /// <summary>
-    /// When sheared, applies AO mesh-space slant: z' = z + shearFactor * x.
-    /// Non-uniform scale for the shear path stays on the root transform (X only).
+    /// Direct-quat arm: stock FUN_10026d5c(mat, shear, 0) → y' = y + shear * x.
+    /// PostScale(1, 1/var, 1/var) is applied on the root as
+    /// localScale (FinalScale, BaseScale, BaseScale), not in this bake.
     /// Non-sheared path delegates to <see cref="AbiffMeshFactory.Bake"/>.
     /// </summary>
     public static AbiffMeshData Build(AbiffSubmeshSource source, bool applyShear, float shearFactor)
@@ -32,7 +33,7 @@ public static class StatelMeshBuilder
         for (int i = 0; i < count; i++)
         {
             Vector3 pos = source.Positions[i];
-            pos.z += shearFactor * pos.x;
+            pos.y += shearFactor * pos.x;
 
             vertices[i] = pos;
             normals[i] = source.Normals[i];

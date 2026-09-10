@@ -4,6 +4,13 @@
     "bsp_"
   ],
   "contains": [
-    "grass"
+    "spikey_green_grass",
+    "soft_green_grass",
+    "dry_grass",
+    "tall_grass",
+    "grass_or_reed",
+    "grass_largecluster",
+    "grass_mediumcluster",
+    "grass_tust"
   ]
 }
