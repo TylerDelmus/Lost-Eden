@@ -144,10 +144,70 @@ public sealed class RenderConfig : ScriptableObject
              "at bake time. Author them with GrassExclusionAuthoring. Leave empty to disable.")]
     [SerializeField] GrassExclusionVolumes _grassExclusionVolumes;
 
+    [Header("Grass - shading")]
+    [Tooltip("How far each blade's normal leans toward world up. A grass card is a flat " +
+             "quad, so one horizontal normal lights the whole card uniformly - that is what " +
+             "makes an unbent field read as flat cut-outs, and dark, since a sideways " +
+             "surface catches far less sky than the ground beside it. 0.5-0.8 usually reads " +
+             "best. REQUIRES Double-Sided Normal Mode = None on the material.")]
+    [Range(0f, 1f)]
+    [SerializeField] float _grassNormalUpBlend = 0.65f;
+
+    [Header("Grass - ground tint")]
+    // Shifts the coloured grass art toward the hue of the ground beneath it, keeping all the
+    // painted detail. Applied in the shader, so this dial is live - no reload needed.
+
+    [Tooltip("How far each blade shifts toward the colour of the ground beneath it. " +
+             "0 = the texture's own colours untouched, 1 = fully re-hued to the ground. " +
+             "0.3-0.6 usually reads as 'this grass belongs here' without losing the art.")]
+    [Range(0f, 1f)]
+    [SerializeField] float _grassGroundTintStrength = 0.45f;
+
+    [Tooltip("Amplifies how far each blade's colour departs from the playfield's own mean " +
+             "grass colour. A zone's ground art is usually all fairly similar green, so a " +
+             "faithful tint gives a faithfully uniform field - the drier patches are there " +
+             "but too subtle to read. Raise this to make them show. 1 = faithful, 2-3 = " +
+             "clearly patchy. Rebake (reload the zone) to see changes.")]
+    [Range(1f, 4f)]
+    [SerializeField] float _grassGroundTintContrast = 1.8f;
+
+    [Tooltip("Used only where there is no ground colour to sample. Pick a believable " +
+             "mid-green for the zone.")]
+    [SerializeField] Color _grassFallbackColour = new Color(0.36f, 0.45f, 0.20f, 1f);
+
+    [Tooltip("Saturation multiplier on the sampled ground colour. Growing grass reads " +
+             "richer than the dirt-and-grass average of the texture under it, so passing " +
+             "the sample through unchanged gives a washed-out, muddy field.")]
+    [Range(0.5f, 3f)]
+    [SerializeField] float _grassGroundTintSaturation = 1.35f;
+
+    [Tooltip("Brightness multiplier on the sampled ground colour.")]
+    [Range(0.5f, 2f)]
+    [SerializeField] float _grassGroundTintBrightness = 1.15f;
+
+    [Tooltip("Floor on brightness, so grass over a very dark texture does not read as black " +
+             "silhouettes.")]
+    [Range(0f, 1f)]
+    [SerializeField] float _grassGroundTintMinValue = 0.22f;
+
     [Header("Grass - wind")]
     [SerializeField] float _grassWindStrength = 0.3f;
     [SerializeField] float _grassWindFrequency = 1.6f;
 
+    // -----------------------------------------------------------------------
+    // Baked grass tuning
+    //
+    // These settled during bring-up and are the same for every zone, so they are
+    // compile-time constants rather than inspector fields - the grass section was
+    // crowding out everything else in RenderConfig. They are still read through the
+    // properties below, so nothing else in the system had to change.
+    //
+    // To make one tunable again without putting it back in the inspector, swap the
+    // constant for a [HideInInspector] [SerializeField] field: it stays hidden in the
+    // normal view, shows up in the Inspector's Debug mode, and can be assigned from
+    // script. Worth doing for cull distance and the LOD settings if you end up
+    // profiling them.
+    // -----------------------------------------------------------------------
 
     /// <summary>0 = blades stand straight up, 1 = blades lie along the terrain normal.</summary>
     const float BakedGrassNormalAlignment = 0f;
@@ -223,6 +283,13 @@ public sealed class RenderConfig : ScriptableObject
     public float GrassMinHeight => _grassMinHeight;
     public float GrassMaxHeight => _grassMaxHeight;
     public int GrassMaxInstancesPerChunk => _grassMaxInstancesPerChunk;
+    public float GrassNormalUpBlend => _grassNormalUpBlend;
+    public float GrassGroundTintStrength => _grassGroundTintStrength;
+    public float GrassGroundTintContrast => _grassGroundTintContrast;
+    public Color GrassFallbackColour => _grassFallbackColour;
+    public float GrassGroundTintSaturation => _grassGroundTintSaturation;
+    public float GrassGroundTintBrightness => _grassGroundTintBrightness;
+    public float GrassGroundTintMinValue => _grassGroundTintMinValue;
     public float GrassWindStrength => _grassWindStrength;
     public float GrassWindFrequency => _grassWindFrequency;
     public GrassExclusionVolumes GrassExclusionVolumes => _grassExclusionVolumes;
@@ -243,6 +310,7 @@ public sealed class RenderConfig : ScriptableObject
     public float GrassWindGustScale => BakedGrassWindGustScale;
     public float GrassWindPhaseJitter => BakedGrassWindPhaseJitter;
     public float GrassOccluderPadding => BakedGrassOccluderPadding;
+
 
     #endregion
 

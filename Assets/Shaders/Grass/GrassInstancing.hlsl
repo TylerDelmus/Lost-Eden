@@ -31,6 +31,11 @@
 // One float4x4 per blade/clump, baked by PlayfieldGrassBuilder and bound with
 // Material.SetBuffer.
 StructuredBuffer<float4x4> _GrassInstances;
+
+// Per-instance ground tint, RGBA8 packed into one word: bits 0-7 red, 8-15 green,
+// 16-23 blue. Baked by PlayfieldGrassBuilder from the colour of the ground texture each
+// blade stands on, so pale or dead-looking patches of terrain grow pale grass.
+StructuredBuffer<uint> _GrassTints;
 #endif
 
 // Globals, set once per playfield with Shader.SetGlobalVector - identical for
@@ -39,7 +44,15 @@ StructuredBuffer<float4x4> _GrassInstances;
 float4 _GrassWindParams; // xy = wind direction (world XZ, normalised), z = strength (metres), w = frequency
 float4 _GrassFadeParams; // x = cull distance, y = fade band width, z = blade height in mesh units
 float4 _GrassWindParams2; // x = world phase scale, y = gust amplitude, z = per-instance phase jitter, w = unused
-float4 _GrassVariantParams; // x = number of slices in the grass Texture2DArray
+float4 _GrassVariantParams; // x = slices in the array, y = normal up-blend, z = ground tint blend
+
+// Deliberately not HDRP's SRGBToLinear: this file is included into a Shader Graph pass and
+// should not depend on which HDRP headers happen to be in scope. The gamma 2.2 approximation
+// is well within 8-bit tint precision.
+float3 GrassSRGBToLinear(float3 c)
+{
+    return pow(max(c, 0.0f), 2.2f);
+}
 
 // Dave Hoskins' hash13 - a stable 0..1 value from a world position, with no
 // trig. sin-based hashes band badly once world coordinates get into the
@@ -63,14 +76,28 @@ void GrassInstance_float(
     out float3 PositionOut,
     out float3 NormalOut,
     out float Variation,
-    out float SliceIndex)
+    out float SliceIndex,
+    out float3 GroundTint)
 {
 #ifdef SHADERGRAPH_PREVIEW
     PositionOut = positionOS;
     NormalOut = normalOS;
     Variation = 0.5f;
     SliceIndex = 0.0f;
+    GroundTint = 1.0f.xxx;
 #else
+    uint packedTint = _GrassTints[(uint) instanceID];
+
+    // Stored sRGB-encoded, like a texture. The Base Color block wants linear, and the
+    // texture sampler is already converting the greyscale art for us, so this has to make
+    // the same trip or the tint comes out noticeably washed out.
+    float3 tintSRGB = float3(
+        (packedTint & 0xFFu) / 255.0f,
+        ((packedTint >> 8) & 0xFFu) / 255.0f,
+        ((packedTint >> 16) & 0xFFu) / 255.0f);
+
+    GroundTint = GrassSRGBToLinear(tintSRGB);
+
     float4x4 m = _GrassInstances[(uint) instanceID];
 
     // Basis vectors of the instance transform. Their lengths are the per-axis
@@ -122,6 +149,19 @@ void GrassInstance_float(
         normalize(axisZ));
     float3 normalAWS = normalize(mul(transpose(rotation), normalOS));
 
+    // Bend the normal toward world up.
+    //
+    // A grass card is a flat quad, so every one of its pixels shares one horizontal normal
+    // and the whole card lights uniformly - which is what makes an unbent field read as
+    // flat cut-outs, and dark, since a sideways-facing surface catches far less sky and sun
+    // than the ground beside it. Leaning the normal upward makes a field of cards shade
+    // like a soft mass instead, and picks up the same light the terrain does.
+    //
+    // Requires Double-Sided Normal Mode = None on the material. Mirror and Flip negate the
+    // normal on back faces, which would point these downward and render half the blades
+    // black.
+    normalAWS = normalize(lerp(normalAWS, float3(0.0f, 1.0f, 0.0f), saturate(_GrassVariantParams.y)));
+
     // Round-trip back through the pipeline's own matrices instead of assuming the
     // draw's object-to-world is identity.
     //
@@ -139,6 +179,37 @@ void GrassInstance_float(
 }
 
 // --- Fragment stage -------------------------------------------------------
+
+// Shifts the grass texture's colour toward the ground it stands on, without flattening it.
+//
+// A MULTIPLY cannot do this job. Multiplying painted green art by a yellow ground colour
+// only darkens the green - it desaturates toward grey rather than actually arriving at
+// yellow, because multiply can never add a hue the texture does not already contain. That
+// is why the earlier ratio tint never really conformed to the terrain.
+//
+// Instead: every painted detail in the art - blade separation, darker roots, lighter tips,
+// the differences between clumps - is carried by LUMINANCE. Re-expressing that same
+// luminance in the ground's hue moves the colour wherever the ground is, while leaving
+// every one of those details exactly intact. Then blend by taste.
+void GrassTintAlbedo_float(float3 albedo, float3 groundTint, out float3 Out)
+{
+    Out = albedo;
+
+#ifndef SHADERGRAPH_PREVIEW
+    float strength = saturate(_GrassVariantParams.z);
+    if (strength <= 0.0f)
+        return;
+
+    const float3 lumWeights = float3(0.2126f, 0.7152f, 0.0722f);
+
+    float albedoLum = dot(albedo, lumWeights);
+    float tintLum = max(dot(groundTint, lumWeights), 1e-4f);
+
+    float3 recoloured = groundTint * (albedoLum / tintLum);
+    Out = lerp(albedo, recoloured, strength);
+#endif
+}
+
 // 1 up close, ramping to 0 across the band that ends at the cull distance, so
 // blades thin out instead of popping when the chunk stops being drawn. Feed it
 // Position (Absolute World) and the Camera node's Position - HDRP's plain

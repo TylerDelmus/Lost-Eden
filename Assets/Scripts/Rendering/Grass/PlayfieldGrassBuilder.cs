@@ -109,6 +109,7 @@ public sealed class PlayfieldGrassBuilder
         }
 
         var settings = PlacementSettings.From(_renderConfig, tilemap.MapScale);
+        settings.MeanColour = GrassMaskLibrary.MeanGrassColour(classified);
         var results = new ChunkResult[chunks.Count];
 
         Task work = Task.Run(() =>
@@ -150,6 +151,7 @@ public sealed class PlayfieldGrassBuilder
                 _renderConfig.GrassMesh,
                 _renderConfig.GrassMaterial,
                 result.Instances,
+                result.Tints,
                 result.Bounds,
                 _renderConfig.GrassCullDistance,
                 _renderConfig.GrassRenderingLayerMask == 0 ? 1u : _renderConfig.GrassRenderingLayerMask,
@@ -208,7 +210,11 @@ public sealed class PlayfieldGrassBuilder
             Mathf.Max(0.0001f, _renderConfig.GrassBladeHeight),
             0f));
 
-        Shader.SetGlobalVector(VariantParamsId, new Vector4(ResolveVariantCount(), 0f, 0f, 0f));
+        Shader.SetGlobalVector(VariantParamsId, new Vector4(
+            ResolveVariantCount(),
+            Mathf.Clamp01(_renderConfig.GrassNormalUpBlend),
+            Mathf.Clamp01(_renderConfig.GrassGroundTintStrength),
+            0f));
     }
 
     /// <summary>
@@ -432,6 +438,7 @@ public sealed class PlayfieldGrassBuilder
         float cellStep = 1f / perAxis;
 
         var instances = new List<Matrix4x4>(1024);
+        var tints = new List<uint>(1024);
         Vector3 min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
         Vector3 max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
         bool truncated = false;
@@ -456,6 +463,7 @@ public sealed class PlayfieldGrassBuilder
 
                 // Null for Full tiles - nothing to reject against, scatter over the lot.
                 GrassMask mask = info.Mask;
+                GrassPalette palette = info.Palette;
 
                 byte rotation = NormalizeTileRotation(tile.Rotation);
 
@@ -481,12 +489,12 @@ public sealed class PlayfieldGrassBuilder
                         if (Rand01(ref seed) > s.Coverage)
                             continue;
 
-                        if (mask != null)
-                        {
-                            RotateTileUv(fx, fy, rotation, out float ms, out float mt);
-                            if (!mask.Sample(ms, mt))
-                                continue;
-                        }
+                        // Tile-local position in the texture's own un-rotated space, needed
+                        // for both the mask and the ground colour.
+                        RotateTileUv(fx, fy, rotation, out float ms, out float mt);
+
+                        if (mask != null && !mask.Sample(ms, mt))
+                            continue;
 
                         // Bilinear over the same four corner heights TerrainChunkBuilder
                         // uses for this quad's vertices.
@@ -535,6 +543,8 @@ public sealed class PlayfieldGrassBuilder
                             align * Quaternion.Euler(0f, yaw, 0f),
                             new Vector3(bladeWidth, bladeHeight, bladeWidth)));
 
+                        tints.Add(PackTint(palette, ms, mt, s));
+
                         min = Vector3.Min(min, position);
                         max = Vector3.Max(max, position);
 
@@ -550,21 +560,34 @@ public sealed class PlayfieldGrassBuilder
 
     done:
         if (instances.Count == 0)
-            return new ChunkResult { Instances = Array.Empty<Matrix4x4>(), Bounds = new Bounds() };
+        {
+            return new ChunkResult
+            {
+                Instances = Array.Empty<Matrix4x4>(),
+                Tints = Array.Empty<uint>(),
+                Bounds = new Bounds()
+            };
+        }
 
         Matrix4x4[] baked = instances.ToArray();
+        uint[] bakedTints = tints.ToArray();
 
         // Shuffle so that ANY prefix of the array is a uniform random sample of the
         // whole chunk. That is what makes distance LOD work: the renderer thins a chunk
         // purely by shrinking instanceCount in the indirect args, with no per-frame
         // filtering and no extra buffers - the blades that drop out are scattered
         // evenly rather than being one contiguous patch that visibly vanishes.
+        //
+        // Both arrays get the SAME permutation: the shader indexes them with one instance
+        // id, so letting them drift apart would tint every blade with some other blade's
+        // ground colour.
         uint shuffleSeed = Hash((uint)c.ChunkIndex * 2654435761u + 0x5bd1e995u);
         for (int i = baked.Length - 1; i > 0; i--)
         {
             int j = (int)(Rand01(ref shuffleSeed) * (i + 1));
             j = j > i ? i : j;
             (baked[i], baked[j]) = (baked[j], baked[i]);
+            (bakedTints[i], bakedTints[j]) = (bakedTints[j], bakedTints[i]);
         }
 
         // Pad so the chunk is not culled while a blade at its edge is still on screen:
@@ -574,7 +597,75 @@ public sealed class PlayfieldGrassBuilder
         var bounds = new Bounds();
         bounds.SetMinMax(min - new Vector3(padXZ, 0f, padXZ), max + new Vector3(padXZ, padY, padXZ));
 
-        return new ChunkResult { Instances = baked, Bounds = bounds, Truncated = truncated };
+        return new ChunkResult { Instances = baked, Tints = bakedTints, Bounds = bounds, Truncated = truncated };
+    }
+
+    /// <summary>
+    /// The colour of the ground each blade stands on, packed to 8 bits per channel.
+    ///
+    /// This is the ground's colour, full strength - a TARGET for the shader to shift the
+    /// grass texture toward, not a multiplier. How far the blade actually moves toward it is
+    /// GrassGroundTintStrength, applied in the shader, so the dial can be tuned live rather
+    /// than requiring a rebake.
+    ///
+    /// The colour is boosted first: growing grass reads richer and slightly brighter than
+    /// the dirt-and-grass average of the texture beneath it, so an unboosted target pulls
+    /// the field toward mud.
+    ///
+    /// Stored sRGB-encoded, like a texture would be: 8 bits go further perceptually that way,
+    /// and the shader converts to linear on read.
+    /// </summary>
+    static uint PackTint(GrassPalette palette, float s, float t, PlacementSettings settings)
+    {
+        Color colour = palette != null
+            ? Boost(Exaggerate(palette.Sample(s, t), settings), settings)
+            : settings.FallbackColour;
+
+        return (uint)Mathf.RoundToInt(Mathf.Clamp01(colour.r) * 255f)
+             | ((uint)Mathf.RoundToInt(Mathf.Clamp01(colour.g) * 255f) << 8)
+             | ((uint)Mathf.RoundToInt(Mathf.Clamp01(colour.b) * 255f) << 16);
+    }
+
+    /// <summary>
+    /// Pushes the sampled colour away from the playfield's own mean grass colour.
+    ///
+    /// A zone's ground art is usually all fairly similar green, so faithfully reproducing it
+    /// gives a field that is faithfully uniform - the drier patches are there but too subtle
+    /// to read. Scaling each blade's departure from the zone mean amplifies whatever
+    /// variation the art does contain, which is the difference between "technically correct"
+    /// and "you can see the dying patches".
+    ///
+    /// At contrast 1 this is a no-op, so the effect can be dialled out entirely.
+    /// </summary>
+    static Color Exaggerate(Color sampled, PlacementSettings settings)
+    {
+        if (Mathf.Approximately(settings.GroundTintContrast, 1f))
+            return sampled;
+
+        Color mean = settings.MeanColour;
+        float k = settings.GroundTintContrast;
+
+        return new Color(
+            Mathf.Clamp01(mean.r + (sampled.r - mean.r) * k),
+            Mathf.Clamp01(mean.g + (sampled.g - mean.g) * k),
+            Mathf.Clamp01(mean.b + (sampled.b - mean.b) * k),
+            1f);
+    }
+
+    /// <summary>
+    /// Pushes the sampled ground colour toward how grass growing on it should look: more
+    /// saturated, a little brighter, and never so dark it reads as black silhouettes.
+    /// Done in HSV so hue - the part that actually carries "this patch is yellowed and
+    /// dead" - is left exactly as sampled.
+    /// </summary>
+    static Color Boost(Color ground, PlacementSettings settings)
+    {
+        Color.RGBToHSV(ground, out float h, out float sat, out float val);
+
+        sat = Mathf.Clamp01(sat * settings.GroundTintSaturation);
+        val = Mathf.Clamp01(Mathf.Max(val * settings.GroundTintBrightness, settings.GroundTintMinValue));
+
+        return Color.HSVToRGB(h, sat, val);
     }
 
     static bool IsOccluded(GrassOccluder[] occluders, Vector3 basePosition, float height)
@@ -771,6 +862,12 @@ public sealed class PlayfieldGrassBuilder
         public float BladeHeight;
         public float WindStrength;
         public int MaxInstancesPerChunk;
+        public Color FallbackColour;
+        public Color MeanColour;
+        public float GroundTintContrast;
+        public float GroundTintSaturation;
+        public float GroundTintBrightness;
+        public float GroundTintMinValue;
 
         /// <summary>
         /// Grid resolution per tile. Worked out once on the main thread rather than per
@@ -810,7 +907,13 @@ public sealed class PlayfieldGrassBuilder
             HeightOffset = cfg.GrassHeightOffset,
             BladeHeight = Mathf.Max(0.0001f, cfg.GrassBladeHeight),
             WindStrength = Mathf.Max(0f, cfg.GrassWindStrength),
-            MaxInstancesPerChunk = Mathf.Max(1, cfg.GrassMaxInstancesPerChunk)
+            MaxInstancesPerChunk = Mathf.Max(1, cfg.GrassMaxInstancesPerChunk),
+            FallbackColour = cfg.GrassFallbackColour,
+            MeanColour = Color.grey,
+            GroundTintContrast = Mathf.Max(1f, cfg.GrassGroundTintContrast),
+            GroundTintSaturation = Mathf.Max(0f, cfg.GrassGroundTintSaturation),
+            GroundTintBrightness = Mathf.Max(0f, cfg.GrassGroundTintBrightness),
+            GroundTintMinValue = Mathf.Clamp01(cfg.GrassGroundTintMinValue)
         };
     }
 
@@ -844,6 +947,7 @@ public sealed class PlayfieldGrassBuilder
     struct ChunkResult
     {
         public Matrix4x4[] Instances;
+        public uint[] Tints;
         public Bounds Bounds;
         public bool Truncated;
     }

@@ -65,6 +65,7 @@ public sealed class GrassChunkRenderer : MonoBehaviour
     Material _material;          // per-chunk instance; owns the buffer binding
     Material _fallbackMaterial;  // plain instanced material, InstancedFallback mode only
     GraphicsBuffer _instanceBuffer;
+    GraphicsBuffer _tintBuffer;
     GraphicsBuffer _argsBuffer;
     Bounds _bounds;
     float _cullDistance;
@@ -82,6 +83,7 @@ public sealed class GrassChunkRenderer : MonoBehaviour
     List<Vector3> _gizmoPositions;
 
     static readonly int InstanceBufferId = Shader.PropertyToID("_GrassInstances");
+    static readonly int TintBufferId = Shader.PropertyToID("_GrassTints");
 
     static bool _loggedMissingCamera;
     bool _loggedCullState;
@@ -99,6 +101,7 @@ public sealed class GrassChunkRenderer : MonoBehaviour
         Mesh mesh,
         Material sharedMaterial,
         Matrix4x4[] instances,
+        uint[] tints,
         Bounds chunkBounds,
         float cullDistance,
         uint renderingLayerMask,
@@ -150,6 +153,23 @@ public sealed class GrassChunkRenderer : MonoBehaviour
             GraphicsBuffer.Target.Structured, _instanceCount, sizeof(float) * 16);
         _instanceBuffer.SetData(instances);
         _material.SetBuffer(InstanceBufferId, _instanceBuffer);
+
+        // Per-instance ground tint, one packed RGBA8 word each. Kept in its own buffer
+        // rather than stuffed into the spare bottom row of the transform matrix: that would
+        // be free, but it makes the matrix silently non-standard and the next person to
+        // touch it would have no reason to expect colour in there.
+        if (tints != null && tints.Length == _instanceCount)
+        {
+            _tintBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, _instanceCount, sizeof(uint));
+            _tintBuffer.SetData(tints);
+            _material.SetBuffer(TintBufferId, _tintBuffer);
+        }
+        else if (tints != null)
+        {
+            Debug.LogWarning(
+                $"GrassChunkRenderer on '{name}': tint count {tints.Length} does not match " +
+                $"instance count {_instanceCount} - ground tinting disabled for this chunk.");
+        }
 
         // Index start and base vertex must come from the submesh, not be hard-coded to
         // zero: a mesh imported as part of a larger asset can have a non-zero base
@@ -347,6 +367,8 @@ public sealed class GrassChunkRenderer : MonoBehaviour
     {
         _instanceBuffer?.Release();
         _instanceBuffer = null;
+        _tintBuffer?.Release();
+        _tintBuffer = null;
         _argsBuffer?.Release();
         _argsBuffer = null;
 

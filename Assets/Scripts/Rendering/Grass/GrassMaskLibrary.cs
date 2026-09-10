@@ -22,12 +22,16 @@ public sealed class GrassTextureInfo
     /// <summary>Null for Full and NotGrass - only Partial tiles need per-point rejection.</summary>
     public readonly GrassMask Mask;
 
+    /// <summary>Local ground colour, for tinting blades to match what they stand on.</summary>
+    public readonly GrassPalette Palette;
+
     public readonly float Coverage;
 
-    public GrassTextureInfo(GrassClassification classification, GrassMask mask, float coverage)
+    public GrassTextureInfo(GrassClassification classification, GrassMask mask, GrassPalette palette, float coverage)
     {
         Classification = classification;
         Mask = mask;
+        Palette = palette;
         Coverage = coverage;
     }
 }
@@ -87,6 +91,57 @@ public sealed class GrassMask
     }
 }
 
+/// <summary>
+/// Block-average colour of a ground texture, at the same resolution as its mask.
+///
+/// Deliberately low resolution and averaged: the goal is the local *tint* of the ground -
+/// paler here, richer there - not its per-texel detail. Sampling the texture directly would
+/// make each blade inherit whatever pebble or shadow it happened to land on, which reads as
+/// noise rather than as the ground colour showing through.
+///
+/// Where a cell contains any grass-coloured pixels, only those are averaged. On a
+/// transition tile the blades should take the colour of the grass in that tile, not of the
+/// dirt beside it.
+/// </summary>
+public sealed class GrassPalette
+{
+    public readonly int Resolution;
+    public readonly Color Average;
+    readonly Color[] _cells;
+
+    public GrassPalette(int resolution, Color[] cells, Color average)
+    {
+        Resolution = resolution;
+        _cells = cells;
+        Average = average;
+    }
+
+    /// <summary>Bilinear, so tint varies smoothly across a tile instead of in visible blocks.</summary>
+    public Color Sample(float s, float t)
+    {
+        if (_cells == null || _cells.Length == 0)
+            return Average;
+
+        float x = Mathf.Clamp(s * Resolution - 0.5f, 0f, Resolution - 1f);
+        float y = Mathf.Clamp(t * Resolution - 0.5f, 0f, Resolution - 1f);
+
+        int x0 = Mathf.FloorToInt(x);
+        int y0 = Mathf.FloorToInt(y);
+        int x1 = Mathf.Min(x0 + 1, Resolution - 1);
+        int y1 = Mathf.Min(y0 + 1, Resolution - 1);
+
+        float fx = x - x0;
+        float fy = y - y0;
+
+        Color c00 = _cells[x0 + y0 * Resolution];
+        Color c10 = _cells[x1 + y0 * Resolution];
+        Color c01 = _cells[x0 + y1 * Resolution];
+        Color c11 = _cells[x1 + y1 * Resolution];
+
+        return Color.Lerp(Color.Lerp(c00, c10, fx), Color.Lerp(c01, c11, fx), fy);
+    }
+}
+
 public struct GrassClassifySettings
 {
     public int MaskResolution;
@@ -123,6 +178,7 @@ public static class GrassMaskLibrary
     struct Decoded
     {
         public GrassMask Mask;
+        public GrassPalette Palette;
         public float Coverage;
     }
 
@@ -139,10 +195,10 @@ public static class GrassMaskLibrary
     }
 
     /// <summary>
-    /// Decides, from the pixels alone, which of a playfield's ground textures are grass and
-    /// how much of each tile they cover. Replaces hand-maintained id lists: AO has far too
-    /// many ground textures to enumerate by hand, and the ids are not consistent between
-    /// playfields anyway.
+    /// Decides, from the pixels alone, which of a playfield's ground textures are grass, how
+    /// much of each tile they cover, and what colour they are. Replaces hand-maintained id
+    /// lists: AO has far too many ground textures to enumerate by hand, and the ids are not
+    /// consistent between playfields anyway.
     ///
     /// Must run on the main thread (Texture2D decode). The returned dictionary is immutable
     /// afterwards, so the placement pass can read it concurrently from worker threads.
@@ -176,25 +232,28 @@ public static class GrassMaskLibrary
 
             if (settings.Exclude != null && settings.Exclude.Contains(id))
             {
-                result[id] = new GrassTextureInfo(GrassClassification.NotGrass, null, 0f);
+                result[id] = new GrassTextureInfo(GrassClassification.NotGrass, null, null, 0f);
                 log?.AppendLine($"  {id,6}      -    excluded (override)");
                 continue;
             }
 
-            if (settings.ForceGrass != null && settings.ForceGrass.Contains(id))
-            {
-                result[id] = new GrassTextureInfo(GrassClassification.Full, null, 1f);
-                log?.AppendLine($"  {id,6}      -    FULL (override)");
-                continue;
-            }
+            bool forced = settings.ForceGrass != null && settings.ForceGrass.Contains(id);
 
             if (!TryDecode(database, id, settings, out Decoded decoded))
+            {
+                if (forced)
+                {
+                    result[id] = new GrassTextureInfo(GrassClassification.Full, null, null, 1f);
+                    log?.AppendLine($"  {id,6}      -    FULL (override, no pixels)");
+                }
+
                 continue;
+            }
 
             GrassClassification classification;
             GrassMask mask = null;
 
-            if (decoded.Coverage >= settings.FullCoverage)
+            if (forced || decoded.Coverage >= settings.FullCoverage)
             {
                 // Near-total coverage: drop the mask so the odd stray non-green cell (a
                 // pebble, a dark patch) does not punch holes in an otherwise solid lawn.
@@ -210,14 +269,42 @@ public static class GrassMaskLibrary
                 classification = GrassClassification.NotGrass;
             }
 
-            result[id] = new GrassTextureInfo(classification, mask, decoded.Coverage);
-            log?.AppendLine($"  {id,6}  {decoded.Coverage * 100f,5:F1}%   {classification}");
+            result[id] = new GrassTextureInfo(classification, mask, decoded.Palette, decoded.Coverage);
+            log?.AppendLine($"  {id,6}  {decoded.Coverage * 100f,5:F1}%   {classification}{(forced ? " (override)" : string.Empty)}");
         }
 
         if (log != null)
             Debug.Log(log.ToString());
 
         return result;
+    }
+
+    /// <summary>
+    /// Mean vegetation colour across everything classified as grass in this playfield. Used
+    /// as the pivot for the tint contrast dial: pushing each blade's colour away from the
+    /// zone's own average is what makes a slightly-drier patch actually read as drier,
+    /// rather than being lost in a field that is all much the same green.
+    /// </summary>
+    public static Color MeanGrassColour(Dictionary<int, GrassTextureInfo> classified)
+    {
+        Color sum = Color.clear;
+        int count = 0;
+
+        foreach (GrassTextureInfo info in classified.Values)
+        {
+            if (info.Classification == GrassClassification.NotGrass || info.Palette == null)
+                continue;
+
+            sum += info.Palette.Average;
+            count++;
+        }
+
+        if (count == 0)
+            return Color.white;
+
+        Color mean = sum / count;
+        mean.a = 1f;
+        return mean;
     }
 
     static bool TryDecode(ResourceDatabase database, int id, GrassClassifySettings settings, out Decoded decoded)
@@ -240,8 +327,8 @@ public static class GrassMaskLibrary
                 return false;
             }
 
-            GrassMask mask = BuildMask(tex, settings);
-            decoded = new Decoded { Mask = mask, Coverage = mask.Coverage };
+            Build(tex, settings, out GrassMask mask, out GrassPalette palette);
+            decoded = new Decoded { Mask = mask, Palette = palette, Coverage = mask.Coverage };
             Cache[id] = decoded;
             return true;
         }
@@ -251,13 +338,22 @@ public static class GrassMaskLibrary
         }
     }
 
-    static GrassMask BuildMask(Texture2D tex, GrassClassifySettings settings)
+    /// <summary>
+    /// One pass over the pixels produces both the mask and the palette - the block loop has
+    /// to visit every texel either way, so the colour comes free.
+    /// </summary>
+    static void Build(Texture2D tex, GrassClassifySettings settings, out GrassMask mask, out GrassPalette palette)
     {
         Color32[] pixels = tex.GetPixels32();
         int w = tex.width;
         int h = tex.height;
         int resolution = settings.MaskResolution;
+
         var cells = new bool[resolution * resolution];
+        var colours = new Color[resolution * resolution];
+
+        Color grassSum = Color.clear;
+        int grassCells = 0;
 
         for (int cy = 0; cy < resolution; cy++)
         {
@@ -271,22 +367,68 @@ public static class GrassMaskLibrary
 
                 int total = 0;
                 int green = 0;
+                int plant = 0;
+                float rAll = 0f, gAll = 0f, bAll = 0f;
+                float rPlant = 0f, gPlant = 0f, bPlant = 0f;
+
                 for (int y = y0; y < y1; y++)
                 {
                     int row = y * w;
                     for (int x = x0; x < x1; x++)
                     {
+                        Color32 p = pixels[row + x];
+                        float r = p.r / 255f;
+                        float g = p.g / 255f;
+                        float b = p.b / 255f;
+
                         total++;
-                        if (IsGrassColour(pixels[row + x], settings.MinSaturation, settings.MinGreenDominance))
+                        rAll += r; gAll += g; bAll += b;
+
+                        // Strict test, for the MASK: decides where blades may be placed.
+                        if (IsGrassColour(p, settings.MinSaturation, settings.MinGreenDominance))
                             green++;
+
+                        // Wide test, for the PALETTE: decides what colour they take on.
+                        //
+                        // These have to be different tests. Dead and drying grass is
+                        // yellow-brown - hue well below the green band, with green barely
+                        // ahead of red - so the strict test rejects exactly the pixels that
+                        // carry "this patch is dying". Averaging only the pixels that pass
+                        // it threw that signal away and left every blade the colour of the
+                        // healthy grass beside it.
+                        if (IsPlantColour(p, settings.MinSaturation))
+                        {
+                            plant++;
+                            rPlant += r; gPlant += g; bPlant += b;
+                        }
                     }
                 }
 
-                cells[cx + cy * resolution] = total > 0 && green / (float)total >= settings.CellGrassFraction;
+                int index = cx + cy * resolution;
+                cells[index] = total > 0 && green / (float)total >= settings.CellGrassFraction;
+
+                // Prefer vegetation pixels over the whole-cell average. On a transition tile
+                // the blades should take the colour of the plant matter there - green or
+                // dry - rather than of the bare dirt beside it.
+                Color cellColour = plant > 0
+                    ? new Color(rPlant / plant, gPlant / plant, bPlant / plant, 1f)
+                    : (total > 0 ? new Color(rAll / total, gAll / total, bAll / total, 1f) : Color.white);
+
+                colours[index] = cellColour;
+
+                if (plant > 0)
+                {
+                    grassSum += cellColour;
+                    grassCells++;
+                }
             }
         }
 
-        return new GrassMask(resolution, cells);
+        Color average = grassCells > 0 ? grassSum / grassCells : Color.white;
+        average.a = 1f;
+
+        mask = new GrassMask(resolution, cells);
+        palette = new GrassPalette(resolution, colours, average);
     }
 
     /// <summary>
@@ -295,6 +437,22 @@ public static class GrassMaskLibrary
     /// sneaking in: a desaturated surface can land inside the hue band by accident, but it
     /// cannot have green meaningfully ahead of both red and blue.
     /// </summary>
+    /// <summary>
+    /// Wide "is this plant matter" test used only for the colour palette. Runs from
+    /// straw-yellow through to blue-green so drying and dead grass is included, and drops
+    /// the green-dominance requirement entirely - dead grass has none. Bare dirt and rock
+    /// still fall outside it, which is what stops a transition tile pulling brown into the
+    /// blades standing on its grassy half.
+    /// </summary>
+    static bool IsPlantColour(Color32 c, float minSaturation)
+    {
+        Color.RGBToHSV(new Color(c.r / 255f, c.g / 255f, c.b / 255f),
+            out float hue, out float sat, out float val);
+
+        float degrees = hue * 360f;
+        return degrees >= 32f && degrees <= 190f && sat >= minSaturation * 0.6f && val >= 0.06f;
+    }
+
     static bool IsGrassColour(Color32 c, float minSaturation, float minGreenDominance)
     {
         float r = c.r / 255f;
