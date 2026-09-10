@@ -163,6 +163,14 @@ public sealed class RenderConfig : ScriptableObject
     [Range(0f, 1f)]
     [SerializeField] float _grassGroundTintStrength = 0.45f;
 
+    [Tooltip("Amplifies how far each blade's colour departs from the playfield's own mean " +
+             "grass colour. A zone's ground art is usually all fairly similar green, so a " +
+             "faithful tint gives a faithfully uniform field - the drier patches are there " +
+             "but too subtle to read. Raise this to make them show. 1 = faithful, 2-3 = " +
+             "clearly patchy. Rebake (reload the zone) to see changes.")]
+    [Range(1f, 4f)]
+    [SerializeField] float _grassGroundTintContrast = 1.8f;
+
     [Tooltip("Used only where there is no ground colour to sample. Pick a believable " +
              "mid-green for the zone.")]
     [SerializeField] Color _grassFallbackColour = new Color(0.36f, 0.45f, 0.20f, 1f);
@@ -277,6 +285,7 @@ public sealed class RenderConfig : ScriptableObject
     public int GrassMaxInstancesPerChunk => _grassMaxInstancesPerChunk;
     public float GrassNormalUpBlend => _grassNormalUpBlend;
     public float GrassGroundTintStrength => _grassGroundTintStrength;
+    public float GrassGroundTintContrast => _grassGroundTintContrast;
     public Color GrassFallbackColour => _grassFallbackColour;
     public float GrassGroundTintSaturation => _grassGroundTintSaturation;
     public float GrassGroundTintBrightness => _grassGroundTintBrightness;
@@ -301,6 +310,7 @@ public sealed class RenderConfig : ScriptableObject
     public float GrassWindGustScale => BakedGrassWindGustScale;
     public float GrassWindPhaseJitter => BakedGrassWindPhaseJitter;
     public float GrassOccluderPadding => BakedGrassOccluderPadding;
+
 
     #endregion
 

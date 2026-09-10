@@ -109,6 +109,7 @@ public sealed class PlayfieldGrassBuilder
         }
 
         var settings = PlacementSettings.From(_renderConfig, tilemap.MapScale);
+        settings.MeanColour = GrassMaskLibrary.MeanGrassColour(classified);
         var results = new ChunkResult[chunks.Count];
 
         Task work = Task.Run(() =>
@@ -617,12 +618,38 @@ public sealed class PlayfieldGrassBuilder
     static uint PackTint(GrassPalette palette, float s, float t, PlacementSettings settings)
     {
         Color colour = palette != null
-            ? Boost(palette.Sample(s, t), settings)
+            ? Boost(Exaggerate(palette.Sample(s, t), settings), settings)
             : settings.FallbackColour;
 
         return (uint)Mathf.RoundToInt(Mathf.Clamp01(colour.r) * 255f)
              | ((uint)Mathf.RoundToInt(Mathf.Clamp01(colour.g) * 255f) << 8)
              | ((uint)Mathf.RoundToInt(Mathf.Clamp01(colour.b) * 255f) << 16);
+    }
+
+    /// <summary>
+    /// Pushes the sampled colour away from the playfield's own mean grass colour.
+    ///
+    /// A zone's ground art is usually all fairly similar green, so faithfully reproducing it
+    /// gives a field that is faithfully uniform - the drier patches are there but too subtle
+    /// to read. Scaling each blade's departure from the zone mean amplifies whatever
+    /// variation the art does contain, which is the difference between "technically correct"
+    /// and "you can see the dying patches".
+    ///
+    /// At contrast 1 this is a no-op, so the effect can be dialled out entirely.
+    /// </summary>
+    static Color Exaggerate(Color sampled, PlacementSettings settings)
+    {
+        if (Mathf.Approximately(settings.GroundTintContrast, 1f))
+            return sampled;
+
+        Color mean = settings.MeanColour;
+        float k = settings.GroundTintContrast;
+
+        return new Color(
+            Mathf.Clamp01(mean.r + (sampled.r - mean.r) * k),
+            Mathf.Clamp01(mean.g + (sampled.g - mean.g) * k),
+            Mathf.Clamp01(mean.b + (sampled.b - mean.b) * k),
+            1f);
     }
 
     /// <summary>
@@ -836,6 +863,8 @@ public sealed class PlayfieldGrassBuilder
         public float WindStrength;
         public int MaxInstancesPerChunk;
         public Color FallbackColour;
+        public Color MeanColour;
+        public float GroundTintContrast;
         public float GroundTintSaturation;
         public float GroundTintBrightness;
         public float GroundTintMinValue;
@@ -880,6 +909,8 @@ public sealed class PlayfieldGrassBuilder
             WindStrength = Mathf.Max(0f, cfg.GrassWindStrength),
             MaxInstancesPerChunk = Mathf.Max(1, cfg.GrassMaxInstancesPerChunk),
             FallbackColour = cfg.GrassFallbackColour,
+            MeanColour = Color.grey,
+            GroundTintContrast = Mathf.Max(1f, cfg.GrassGroundTintContrast),
             GroundTintSaturation = Mathf.Max(0f, cfg.GrassGroundTintSaturation),
             GroundTintBrightness = Mathf.Max(0f, cfg.GrassGroundTintBrightness),
             GroundTintMinValue = Mathf.Clamp01(cfg.GrassGroundTintMinValue)

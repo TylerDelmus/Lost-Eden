@@ -279,6 +279,34 @@ public static class GrassMaskLibrary
         return result;
     }
 
+    /// <summary>
+    /// Mean vegetation colour across everything classified as grass in this playfield. Used
+    /// as the pivot for the tint contrast dial: pushing each blade's colour away from the
+    /// zone's own average is what makes a slightly-drier patch actually read as drier,
+    /// rather than being lost in a field that is all much the same green.
+    /// </summary>
+    public static Color MeanGrassColour(Dictionary<int, GrassTextureInfo> classified)
+    {
+        Color sum = Color.clear;
+        int count = 0;
+
+        foreach (GrassTextureInfo info in classified.Values)
+        {
+            if (info.Classification == GrassClassification.NotGrass || info.Palette == null)
+                continue;
+
+            sum += info.Palette.Average;
+            count++;
+        }
+
+        if (count == 0)
+            return Color.white;
+
+        Color mean = sum / count;
+        mean.a = 1f;
+        return mean;
+    }
+
     static bool TryDecode(ResourceDatabase database, int id, GrassClassifySettings settings, out Decoded decoded)
     {
         if (Cache.TryGetValue(id, out decoded))
@@ -339,8 +367,9 @@ public static class GrassMaskLibrary
 
                 int total = 0;
                 int green = 0;
+                int plant = 0;
                 float rAll = 0f, gAll = 0f, bAll = 0f;
-                float rGreen = 0f, gGreen = 0f, bGreen = 0f;
+                float rPlant = 0f, gPlant = 0f, bPlant = 0f;
 
                 for (int y = y0; y < y1; y++)
                 {
@@ -355,10 +384,22 @@ public static class GrassMaskLibrary
                         total++;
                         rAll += r; gAll += g; bAll += b;
 
+                        // Strict test, for the MASK: decides where blades may be placed.
                         if (IsGrassColour(p, settings.MinSaturation, settings.MinGreenDominance))
-                        {
                             green++;
-                            rGreen += r; gGreen += g; bGreen += b;
+
+                        // Wide test, for the PALETTE: decides what colour they take on.
+                        //
+                        // These have to be different tests. Dead and drying grass is
+                        // yellow-brown - hue well below the green band, with green barely
+                        // ahead of red - so the strict test rejects exactly the pixels that
+                        // carry "this patch is dying". Averaging only the pixels that pass
+                        // it threw that signal away and left every blade the colour of the
+                        // healthy grass beside it.
+                        if (IsPlantColour(p, settings.MinSaturation))
+                        {
+                            plant++;
+                            rPlant += r; gPlant += g; bPlant += b;
                         }
                     }
                 }
@@ -366,15 +407,16 @@ public static class GrassMaskLibrary
                 int index = cx + cy * resolution;
                 cells[index] = total > 0 && green / (float)total >= settings.CellGrassFraction;
 
-                // Prefer the grass pixels in the cell. On a transition tile the blades
-                // should take the colour of the grass there, not of the dirt beside it.
-                Color cellColour = green > 0
-                    ? new Color(rGreen / green, gGreen / green, bGreen / green, 1f)
+                // Prefer vegetation pixels over the whole-cell average. On a transition tile
+                // the blades should take the colour of the plant matter there - green or
+                // dry - rather than of the bare dirt beside it.
+                Color cellColour = plant > 0
+                    ? new Color(rPlant / plant, gPlant / plant, bPlant / plant, 1f)
                     : (total > 0 ? new Color(rAll / total, gAll / total, bAll / total, 1f) : Color.white);
 
                 colours[index] = cellColour;
 
-                if (green > 0)
+                if (plant > 0)
                 {
                     grassSum += cellColour;
                     grassCells++;
@@ -395,6 +437,22 @@ public static class GrassMaskLibrary
     /// sneaking in: a desaturated surface can land inside the hue band by accident, but it
     /// cannot have green meaningfully ahead of both red and blue.
     /// </summary>
+    /// <summary>
+    /// Wide "is this plant matter" test used only for the colour palette. Runs from
+    /// straw-yellow through to blue-green so drying and dead grass is included, and drops
+    /// the green-dominance requirement entirely - dead grass has none. Bare dirt and rock
+    /// still fall outside it, which is what stops a transition tile pulling brown into the
+    /// blades standing on its grassy half.
+    /// </summary>
+    static bool IsPlantColour(Color32 c, float minSaturation)
+    {
+        Color.RGBToHSV(new Color(c.r / 255f, c.g / 255f, c.b / 255f),
+            out float hue, out float sat, out float val);
+
+        float degrees = hue * 360f;
+        return degrees >= 32f && degrees <= 190f && sat >= minSaturation * 0.6f && val >= 0.06f;
+    }
+
     static bool IsGrassColour(Color32 c, float minSaturation, float minGreenDominance)
     {
         float r = c.r / 255f;
