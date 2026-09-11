@@ -60,6 +60,7 @@ public class CharacterMotor : MonoBehaviour
     bool _jumpArmed = true;
     PlayfieldLocality _locality;
     bool _localityResolved;
+    bool _holdForSpawnCollision = true;
 
     MovementFlags _flags;
     MovementState _state = MovementState.Run;
@@ -115,6 +116,7 @@ public class CharacterMotor : MonoBehaviour
 
     /// <summary>
     /// Logical animation name for current locomotion (idle, run/walk, run-back/walk-back, walk-left, walk-right).
+    /// Forward/back wins over strafe; use <see cref="GetStrafeOverlayLogicalName"/> for the sidestep layer.
     /// </summary>
     public string GetLocomotionLogicalName()
     {
@@ -136,6 +138,21 @@ public class CharacterMotor : MonoBehaviour
             return "walk-right";
 
         return walking ? "walk" : "run";
+    }
+
+    /// <summary>
+    /// Sidestep clip to play with forward/back locomotion, or null when not combining.
+    /// </summary>
+    public string GetStrafeOverlayLogicalName()
+    {
+        if ((_flags & (MovementFlags.Forward | MovementFlags.Backward)) == 0)
+            return null;
+
+        if ((_flags & MovementFlags.StrafeLeft) != 0)
+            return "walk-left";
+        if ((_flags & MovementFlags.StrafeRight) != 0)
+            return "walk-right";
+        return null;
     }
 
     public string GetIdleLogicalName()
@@ -369,7 +386,18 @@ public class CharacterMotor : MonoBehaviour
     void Awake()
     {
         _controller = GetComponent<CharacterController>();
+        FitControllerToRadius();
         _runLimits = ComputeRunLimits(0, 1, 1);
+    }
+
+    void FitControllerToRadius()
+    {
+        float radius = _controller.radius;
+        float height = radius * 2f;
+        _controller.height = height;
+        _controller.center = new Vector3(0f, radius, 0f);
+        if (_controller.stepOffset > height)
+            _controller.stepOffset = height;
     }
 
     public void Warp(Vector3 position, Quaternion rotation, bool resetVelocity = true)
@@ -386,6 +414,7 @@ public class CharacterMotor : MonoBehaviour
             MovementConfig config = Config;
             _verticalVelocity = config != null ? config.GroundStickVelocity : -2f;
             _jumpArmed = true;
+            _holdForSpawnCollision = true;
             Halt();
         }
         else if (!Mathf.Approximately(yawDelta, 0f))
@@ -627,16 +656,29 @@ public class CharacterMotor : MonoBehaviour
 
     bool ShouldHoldForSurfaceCollision()
     {
+        // Only block locomotion while waiting for the standing cell after spawn/zone-in.
+        // Streamed neighbors going Pending must not freeze a character already in the world —
+        // that cancelled jumps (vertical velocity reset) and left the capsule overlapping
+        // a MeshCollider that appeared under a held pose.
+        if (!_holdForSpawnCollision)
+            return false;
+
         PlayfieldLocality locality = ResolveLocality();
         if (locality == null || !locality.IsReady)
             return false;
 
         SurfaceCollisionState state = locality.GetCollisionState(transform.position);
-        if (state != SurfaceCollisionState.Pending)
-            return false;
+        if (state == SurfaceCollisionState.Pending)
+        {
+            locality.PrioritizeAround(transform.position);
+            state = locality.GetCollisionState(transform.position);
+        }
 
-        // Keep requesting priority while we wait so burst budget refreshes if needed.
-        locality.PrioritizeAround(transform.position);
+        if (state != SurfaceCollisionState.Pending)
+        {
+            _holdForSpawnCollision = false;
+            return false;
+        }
 
         MovementConfig config = Config;
         _verticalVelocity = config != null ? config.GroundStickVelocity : -2f;
@@ -644,7 +686,10 @@ public class CharacterMotor : MonoBehaviour
     }
 
     public void RequestSurfacePriorityForSpawn(Vector3 worldPosition)
-        => RequestSurfacePriority(worldPosition);
+    {
+        _holdForSpawnCollision = true;
+        RequestSurfacePriority(worldPosition);
+    }
 
     void RequestSurfacePriority(Vector3 worldPosition)
     {

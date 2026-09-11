@@ -33,6 +33,7 @@ public class Character : Dynel
     CharacterMotor _motor;
     VisualDynel _visual;
     string _locomotionLogicalName;
+    string _strafeOverlayLogicalName;
     bool _appearanceStale;
     MovementState _lastMotorState;
     SitTransitionPhase _sitPhase = SitTransitionPhase.None;
@@ -43,6 +44,24 @@ public class Character : Dynel
     public VisualDynel Visual => _visual;
     public Action CombatStarted;
     public Action CombatEnded;
+
+    public bool CanAttack(Character target)
+    {
+        if (target == null || target == this)
+            return false;
+
+        // AO Side: Neutral=0, Clan=1, Omni=2, Monster=3
+        const int clan = 1;
+        const int omni = 2;
+        const int monster = 3;
+
+        int targetSide = target.Stats.Get(Stat.Side);
+        if (targetSide == monster)
+            return true;
+
+        int mySide = Stats.Get(Stat.Side);
+        return (mySide == clan && targetSide == omni) || (mySide == omni && targetSide == clan);
+    }
 
     internal void SetFightingTarget(Character target)
     {
@@ -271,6 +290,7 @@ public class Character : Dynel
         // (that races with SyncSitStateFromMotor and sticks seated chars in idle).
         _visual.RequestUpdateAppearance(playIdle: false);
         _locomotionLogicalName = null;
+        _strafeOverlayLogicalName = null;
     }
 
     void RefreshMovementSpeed()
@@ -329,6 +349,7 @@ public class Character : Dynel
                     _locomotionLogicalName = desired;
             }
 
+            SyncStrafeOverlay(player);
             UpdateLocomotionPlaybackRate();
             return;
         }
@@ -353,7 +374,37 @@ public class Character : Dynel
                 _locomotionLogicalName = desired;
         }
 
+        SyncStrafeOverlay(player);
         UpdateLocomotionPlaybackRate();
+    }
+
+    void SyncStrafeOverlay(CatAnimPlayer player)
+    {
+        string strafe = _sitPhase == SitTransitionPhase.None
+            && _jumpPhase != JumpAnimPhase.Airborne
+            ? _motor.GetStrafeOverlayLogicalName()
+            : null;
+
+        if (string.Equals(_strafeOverlayLogicalName, strafe, StringComparison.Ordinal))
+            return;
+
+        if (string.IsNullOrEmpty(strafe))
+        {
+            player.CancelStrafe(LocomotionAnimBlendSeconds);
+            _strafeOverlayLogicalName = null;
+            return;
+        }
+
+        if (!player.PlayStrafe(strafe, LocomotionAnimBlendSeconds))
+            return;
+
+        _strafeOverlayLogicalName = strafe;
+    }
+
+    void ClearStrafeOverlay(CatAnimPlayer player, float blendSeconds = 0f)
+    {
+        _strafeOverlayLogicalName = null;
+        player?.CancelStrafe(blendSeconds);
     }
 
     void HandleMotorStateChange()
@@ -382,7 +433,10 @@ public class Character : Dynel
 
         CancelStandUpTransition();
         if (_visual.TryGetAnimPlayer(out CatAnimPlayer existing))
+        {
             existing.CancelOverlay();
+            ClearStrafeOverlay(existing);
+        }
 
         _jumpPhase = JumpAnimPhase.Airborne;
         _jumpLandLogicalName = null;
@@ -415,6 +469,8 @@ public class Character : Dynel
         string loco = _motor.GetLocomotionLogicalName();
         _visual.Play(loco, LocomotionAnimBlendSeconds);
         _locomotionLogicalName = loco;
+        if (_visual.TryGetAnimPlayer(out CatAnimPlayer landPlayer))
+            SyncStrafeOverlay(landPlayer);
 
         string landLogical = _motor.GetJumpLandLogicalName();
         _jumpPhase = JumpAnimPhase.Landing;
@@ -425,7 +481,7 @@ public class Character : Dynel
 
     void OnJumpLandComplete()
     {
-        // Overlay is already fading out in the player — just leave the landing phase.
+        // Overlay is already removed. Play again so arbitration writes a fresh mask.
         FinishJumpLand(_motor.GetLocomotionLogicalName(), cancelOverlay: false);
     }
 
@@ -443,16 +499,10 @@ public class Character : Dynel
         if (string.IsNullOrEmpty(desired))
             desired = _motor.GetIdleLogicalName();
 
-        if (!string.Equals(_locomotionLogicalName, desired, StringComparison.Ordinal)
-            || !string.Equals(player.CurrentLogicalName, desired, StringComparison.Ordinal))
-        {
-            if (player.Play(desired, LocomotionAnimBlendSeconds))
-                _locomotionLogicalName = desired;
-        }
-        else
-        {
-            _locomotionLogicalName = desired;
-        }
+        // Ending a higher-priority clip does not restore bits. A new Play writes the mask.
+        player.Play(desired, LocomotionAnimBlendSeconds);
+        _locomotionLogicalName = desired;
+        SyncStrafeOverlay(player);
     }
 
     void CancelJumpTransition()
@@ -467,6 +517,7 @@ public class Character : Dynel
         {
             player.CancelOneShot();
             player.CancelOverlay();
+            ClearStrafeOverlay(player);
         }
     }
 
@@ -496,6 +547,8 @@ public class Character : Dynel
     void BeginSitDown()
     {
         CancelJumpTransition();
+        if (_visual.TryGetAnimPlayer(out CatAnimPlayer player))
+            ClearStrafeOverlay(player);
         _sitPhase = SitTransitionPhase.Entering;
         _locomotionLogicalName = "sit-start";
         if (!_visual.PlayOnce("sit-start", LocomotionAnimBlendSeconds, OnSitDownComplete))
