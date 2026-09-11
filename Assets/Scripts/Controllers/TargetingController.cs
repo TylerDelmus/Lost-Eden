@@ -1,5 +1,5 @@
 using System;
-using System.Linq;
+using Reflex.Attributes;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -28,6 +28,8 @@ public class TargetingController : MonoBehaviour
 
     public event Action<Dynel, TargetType> TargetChanged;
     public event Action<Dynel> HoverChanged;
+
+    [Inject] CursorController _cursorController;
 
     private bool _isInCombat;
     private Dynel _previousFightingTarget;
@@ -72,20 +74,20 @@ public class TargetingController : MonoBehaviour
             return;
 
         HoverTarget = newHover;
-
-        if (HoverTarget == null)
-        {
-            CursorController.Instance.SetCursor(CursorState.Default);
-        }
-        else
-        {
-            //if (newHover is Character hoverChar && LocalPlayer.CanAttack(hoverChar))
-            //    CursorController.Instance.SetCursor(CursorState.Combat);
-            //else if (HoverTarget is PickupItem)
-            //    CursorController.Instance.SetCursor(CursorState.Pickup);
-        }
-
+        ApplyHoverCursor();
         HoverChanged?.Invoke(HoverTarget);
+    }
+
+    void ApplyHoverCursor()
+    {
+        if (_cursorController == null)
+            return;
+
+        bool enemy = HoverTarget is Character hover
+            && LocalPlayer != null
+            && LocalPlayer.CanAttack(hover);
+
+        _cursorController.SetCursor(enemy ? CursorState.Combat : CursorState.Default);
     }
 
     // --------------------------------------------------

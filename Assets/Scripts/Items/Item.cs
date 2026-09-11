@@ -1,3 +1,4 @@
+using AODB.Common.Enums;
 using AODB.Common.RDBObjects;
 
 /// <summary>
@@ -16,5 +17,18 @@ public sealed class Item
         HighId = highId;
         Quality = quality;
         Template = template;
+    }
+
+    public bool TryGetStat(int statId, out int value)
+    {
+        value = 0;
+        if (Template?.Stats == null)
+            return false;
+
+        if (!Template.Stats.TryGetValue((StatId)statId, out uint raw))
+            return false;
+
+        value = (int)raw;
+        return true;
     }
 }

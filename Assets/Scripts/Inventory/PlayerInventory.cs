@@ -18,7 +18,7 @@ public sealed class PlayerInventory
     public PlayerInventory(int localPlayerId)
     {
         AddPage(IdentityType.Inventory, localPlayerId, 0x40, 30);
-        AddPage(IdentityType.WeaponPage, localPlayerId, 0x01, 15);
+        AddPage(IdentityType.WeaponPage, localPlayerId, 0x00, 16);
         AddPage(IdentityType.ArmorPage, localPlayerId, 0x11, 15);
         AddPage(IdentityType.ImplantPage, localPlayerId, 0x21, 15);
         AddPage(IdentityType.SocialPage, localPlayerId, 0x31, 15);
@@ -44,6 +44,24 @@ public sealed class PlayerInventory
         for (int i = 0; i < container.Items.Count; i++)
         {
             if (container.Items[i].Slot == slot)
+            {
+                item = container.Items[i];
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public bool TryGetByPlacement(int placement, out InventoryItem item)
+    {
+        item = null;
+        if (!TryFindContainer(placement, out ItemContainer container))
+            return false;
+
+        for (int i = 0; i < container.Items.Count; i++)
+        {
+            if (container.Items[i].Slot.Instance == placement)
             {
                 item = container.Items[i];
                 return true;

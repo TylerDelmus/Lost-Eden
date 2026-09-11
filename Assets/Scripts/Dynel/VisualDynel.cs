@@ -27,6 +27,7 @@ public class VisualDynel : MonoBehaviour
     [Inject] ResourceDatabase _resourceDatabase;
     [Inject] SkinTextureResolver _skinTextures;
     [Inject] AoImageTextureCache _imageTextures;
+    AnimKindResolver _kindResolver;
 
     Dynel _dynel;
     StatCollection _ownedStats;
@@ -1198,6 +1199,78 @@ public class VisualDynel : MonoBehaviour
 
         return player.PlayOverlayOnce(logicalName, blendSeconds, onComplete);
     }
+
+    public bool TryResolveKind(int kindId, out int animId)
+    {
+        animId = 0;
+        if (kindId <= 0 || _resourceDatabase == null)
+            return false;
+
+        _kindResolver ??= new AnimKindResolver(_resourceDatabase);
+        int monsterData = Stats.Get(Stat.MonsterData);
+        int breed = Stats.Get(Stat.Breed);
+        int sex = Stats.Get(Stat.Sex);
+        // Players can have a body MonsterData id for mesh lookup; clip resolve is still CIR-stem.
+        // NPCs (and standalone previews) use the MonsterData kind table even when Breed is set.
+        bool useMonsterDataTable = monsterData != 0 && (_dynel == null || _dynel.IsNpc);
+        return _kindResolver.TryResolve(useMonsterDataTable ? monsterData : 0, breed, sex, kindId, out animId);
+    }
+
+    public bool TryResolveKindName(string kindName, out int animId)
+    {
+        animId = 0;
+        if (string.IsNullOrEmpty(kindName) || _resourceDatabase == null)
+            return false;
+
+        _kindResolver ??= new AnimKindResolver(_resourceDatabase);
+        return _kindResolver.TryResolveByKindName(Stats.Get(Stat.Breed), Stats.Get(Stat.Sex), kindName, out animId);
+    }
+
+    public bool PlayKind(int kindId, float blendSeconds = CatAnimPlayer.DefaultBlendSeconds, float speedScale = 1f)
+    {
+        if (!TryResolveKind(kindId, out int animId) || !TryGetAnimPlayer(out CatAnimPlayer player))
+            return false;
+
+        return player.PlayKind(kindId, animId, blendSeconds, speedScale);
+    }
+
+    public bool PlayKindOnce(
+        int kindId,
+        float blendSeconds,
+        Action onComplete,
+        bool overlay,
+        float speedScale = 1f,
+        int loopKey = 0)
+    {
+        if (!TryResolveKind(kindId, out int animId))
+        {
+            onComplete?.Invoke();
+            return false;
+        }
+
+        if (!TryGetAnimPlayer(out CatAnimPlayer player))
+        {
+            onComplete?.Invoke();
+            return false;
+        }
+
+        return player.PlayKindOnce(kindId, animId, blendSeconds, onComplete, overlay, speedScale, loopKey);
+    }
+
+    public void PlayKindDelayed(int kindId, float delaySeconds, float blendSeconds, float speedScale = 1f)
+    {
+        if (!TryResolveKind(kindId, out int animId) || !TryGetAnimPlayer(out CatAnimPlayer player))
+            return;
+
+        player.PlayKindDelayed(kindId, animId, delaySeconds, blendSeconds, speedScale);
+    }
+
+    public bool HasWeaponAttractorBones()
+        => TryGetAttractor(AttractorPlace.RightHand, out _)
+            || TryGetAttractor(AttractorPlace.LeftHand, out _);
+
+    public bool HasCurrentAnim
+        => TryGetAnimPlayer(out CatAnimPlayer player) && player.HasCurrentClip;
 
     bool ShouldShowMesh(int position, int meshId, int headMeshStat, int visualFlags)
     {

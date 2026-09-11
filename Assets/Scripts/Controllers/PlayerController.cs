@@ -252,6 +252,7 @@ public class PlayerController : MonoBehaviour
             localPlayer.Apply(msg);
             SetLocalPlayer(localPlayer);
             Inventory?.Apply(msg.InventorySlots, _itemTemplates);
+            localPlayer.RefreshEquippedHands(Inventory);
             _networkClient.EnterPlay();
             _playfieldFactory.PrioritizeLocalityAround(localPlayer.transform.position);
 

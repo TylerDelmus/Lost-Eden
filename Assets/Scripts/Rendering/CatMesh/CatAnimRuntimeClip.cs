@@ -13,11 +13,16 @@ public sealed class CatAnimRuntimeClip
     public readonly float LoopEnd;
     public readonly float Duration;
     public readonly bool HasLoopTiming;
+    public readonly float NoteTimeMs;
     public readonly BoneTrack[] Tracks;
+    public readonly int BoneCount;
+
+    public const uint AlwaysOnFlags = 0xFFFFFFFFu;
 
     public struct BoneTrack
     {
         public int BoneIndex;
+        public uint Flags;
         public Vector3Key[] Positions;
         public QuaternionKey[] Rotations;
     }
@@ -41,7 +46,9 @@ public sealed class CatAnimRuntimeClip
         float loopStart,
         float loopEnd,
         bool hasLoopTiming,
-        BoneTrack[] tracks)
+        float noteTimeMs,
+        BoneTrack[] tracks,
+        int boneCount)
     {
         AnimId = animId;
         Name = name;
@@ -49,8 +56,67 @@ public sealed class CatAnimRuntimeClip
         LoopStart = loopStart;
         LoopEnd = loopEnd;
         HasLoopTiming = hasLoopTiming;
+        NoteTimeMs = noteTimeMs;
         Duration = Mathf.Max(loopEnd - loopStart, 0.001f);
         Tracks = tracks;
+        BoneCount = boneCount;
+        IndexTracksByBone();
+    }
+
+    BoneTrack[] _tracksByBone;
+
+    void IndexTracksByBone()
+    {
+        _tracksByBone = new BoneTrack[BoneCount];
+        for (int i = 0; i < BoneCount; i++)
+            _tracksByBone[i].BoneIndex = -1;
+
+        for (int i = 0; i < Tracks.Length; i++)
+        {
+            BoneTrack track = Tracks[i];
+            if (track.BoneIndex < 0 || track.BoneIndex >= BoneCount)
+                continue;
+            _tracksByBone[track.BoneIndex] = track;
+        }
+    }
+
+    public bool TryGetTrack(int boneIndex, out BoneTrack track)
+    {
+        if (_tracksByBone == null || boneIndex < 0 || boneIndex >= _tracksByBone.Length)
+        {
+            track = default;
+            return false;
+        }
+
+        track = _tracksByBone[boneIndex];
+        return track.BoneIndex == boneIndex;
+    }
+
+    public bool IsTrackEnabled(int boneIndex, int activeMask)
+    {
+        if (!TryGetTrack(boneIndex, out BoneTrack track))
+            return false;
+        return ((uint)activeMask & track.Flags) != 0;
+    }
+
+    public void CountTrackFlags(out int alwaysOn, out int flag1, out int flag2, out int other)
+    {
+        alwaysOn = 0;
+        flag1 = 0;
+        flag2 = 0;
+        other = 0;
+        for (int i = 0; i < Tracks.Length; i++)
+        {
+            uint flags = Tracks[i].Flags;
+            if (flags == AlwaysOnFlags)
+                alwaysOn++;
+            else if (flags == 1)
+                flag1++;
+            else if (flags == 2)
+                flag2++;
+            else
+                other++;
+        }
     }
 
     /// <summary>
@@ -92,6 +158,7 @@ public sealed class CatAnimRuntimeClip
             tracks.Add(new BoneTrack
             {
                 BoneIndex = boneIndex,
+                Flags = ReadTrackFlags(boneData),
                 Positions = positions,
                 Rotations = rotations
             });
@@ -116,6 +183,7 @@ public sealed class CatAnimRuntimeClip
         ClampLoop(sourceDuration, ref loopStart, ref loopEnd);
 
         string name = BuildName(catAnim.Name, animId);
+        float noteTimeMs = hasLoopTiming ? loopStart * 1000f : sourceDuration * 1000f;
         return new CatAnimRuntimeClip(
             animId,
             name,
@@ -123,7 +191,17 @@ public sealed class CatAnimRuntimeClip
             loopStart,
             loopEnd,
             hasLoopTiming,
-            tracks.ToArray());
+            noteTimeMs,
+            tracks.ToArray(),
+            boneCount);
+    }
+
+    static uint ReadTrackFlags(BoneData boneData)
+    {
+        int raw = boneData.Unknown2;
+        if (raw == 0)
+            return AlwaysOnFlags;
+        return unchecked((uint)raw);
     }
 
     public void Evaluate(int boneIndex, float time, out Vector3? localPosition, out Quaternion? localRotation)
@@ -139,22 +217,16 @@ public sealed class CatAnimRuntimeClip
         localPosition = null;
         localRotation = null;
 
+        if (!TryGetTrack(boneIndex, out BoneTrack track))
+            return;
+
         float sourceTime = absoluteSourceTime ? time : LoopStart + time;
 
-        for (int i = 0; i < Tracks.Length; i++)
-        {
-            BoneTrack track = Tracks[i];
-            if (track.BoneIndex != boneIndex)
-                continue;
+        if (track.Positions != null && track.Positions.Length > 0)
+            localPosition = SamplePosition(track.Positions, sourceTime);
 
-            if (track.Positions != null && track.Positions.Length > 0)
-                localPosition = SamplePosition(track.Positions, sourceTime);
-
-            if (track.Rotations != null && track.Rotations.Length > 0)
-                localRotation = SampleRotation(track.Rotations, sourceTime);
-
-            return;
-        }
+        if (track.Rotations != null && track.Rotations.Length > 0)
+            localRotation = SampleRotation(track.Rotations, sourceTime);
     }
 
     static void ClampLoop(float sourceDuration, ref float loopStart, ref float loopEnd)

@@ -163,6 +163,117 @@ public class CharacterMotor : MonoBehaviour
         return "idle";
     }
 
+    public bool SuppressLocomotionPlay
+    {
+        get
+        {
+            int mode = (int)_state;
+            return mode == 8 || mode == 9;
+        }
+    }
+
+    public int GetJumpTakeoffKind()
+        => IsTranslating || HasPath || CurrentSpeed > SpeedStopEpsilon
+            ? AnimKindIds.JumpForward
+            : AnimKindIds.JumpStand;
+
+    public int GetJumpLandKind()
+    {
+        bool forward = HasPath || (_flags & MovementFlags.Forward) != 0;
+        if (!forward)
+            return 0;
+
+        return _state == MovementState.Walk ? AnimKindIds.JumpLandWalk : AnimKindIds.JumpLandRun;
+    }
+
+    public int GetStrafeOverlayKind()
+    {
+        if ((_flags & (MovementFlags.Forward | MovementFlags.Backward)) == 0)
+            return 0;
+
+        if ((_flags & MovementFlags.StrafeLeft) != 0)
+            return AnimKindIds.WalkLeft;
+        if ((_flags & MovementFlags.StrafeRight) != 0)
+            return AnimKindIds.WalkRight;
+        return 0;
+    }
+
+    public bool TryGetLocomotionKind(AnimHolder holder, out int kind)
+    {
+        kind = 0;
+        if (holder == null || _state == MovementState.Sit)
+            return false;
+
+        int mode = (int)_state;
+        if (mode == 8 || mode == 9)
+            return false;
+
+        bool translating = IsTranslating || HasPath;
+
+        switch (_state)
+        {
+            case MovementState.Swim:
+                kind = translating ? AnimKindIds.Swim : AnimKindIds.IdleSwim;
+                return true;
+            case MovementState.Crawl:
+                kind = translating ? AnimKindIds.Crawl : holder.CrawlIdle;
+                return true;
+            case MovementState.Sneak:
+                kind = holder.Sneak;
+                return true;
+            case MovementState.Fly:
+                kind = holder.Hover;
+                return true;
+        }
+
+        if (!translating)
+        {
+            if ((_flags & MovementFlags.TurnLeft) != 0 && _state == MovementState.Walk)
+            {
+                kind = AnimKindIds.TurnLeft;
+                return true;
+            }
+
+            if ((_flags & MovementFlags.TurnRight) != 0 && _state == MovementState.Walk)
+            {
+                kind = AnimKindIds.TurnRight;
+                return true;
+            }
+
+            kind = holder.Idle;
+            return kind != 0;
+        }
+
+        if (HasPath || (_flags & MovementFlags.Forward) != 0)
+        {
+            kind = _state == MovementState.Walk ? holder.WalkForward : holder.RunForward;
+            return kind != 0;
+        }
+
+        if ((_flags & MovementFlags.Backward) != 0)
+        {
+            kind = _state == MovementState.Walk ? AnimKindIds.WalkBack : AnimKindIds.RunBack;
+            return true;
+        }
+
+        if ((_flags & MovementFlags.StrafeLeft) != 0)
+        {
+            kind = AnimKindIds.WalkLeft;
+            return true;
+        }
+
+        if ((_flags & MovementFlags.StrafeRight) != 0)
+        {
+            kind = AnimKindIds.WalkRight;
+            return true;
+        }
+
+        kind = _state == MovementState.Walk ? holder.WalkForward : holder.RunForward;
+        return kind != 0;
+    }
+
+    bool IsTranslating => (_flags & TranslationFlags) != 0;
+
     /// <summary>
     /// Takeoff clip from planar intent at launch.
     /// </summary>

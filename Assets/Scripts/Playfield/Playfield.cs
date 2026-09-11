@@ -103,8 +103,53 @@ public class Playfield : MonoBehaviour
         if (!_dynels.TryGetValue(msg.Identity, out Dynel dynel))
             return;
 
-        if (dynel is Character character)
-            character.Apply(msg);
+        if (dynel is not Character character)
+            return;
+
+        int action = (int)msg.Action;
+        if (action == AnimKindIds.FightEnterAction)
+        {
+            Character target = null;
+            if (msg.Target.Instance != 0)
+                TryGetCharacter(msg.Target, out target);
+            character.ApplyFightEnter(target);
+            return;
+        }
+
+        if (action == AnimKindIds.FightLeaveAction)
+        {
+            character.ApplyFightLeave();
+            return;
+        }
+
+        character.Apply(msg);
+    }
+
+    public void ApplyAttackInfo(AttackInfoMessage msg)
+    {
+        if (msg == null || !_dynels.TryGetValue(msg.Identity, out Dynel dynel) || dynel is not Character attacker)
+            return;
+
+        attacker.PlayAttackerSwingAnim((int)msg.WeaponSlot);
+    }
+
+    public void ApplyAttack(AttackMessage msg)
+    {
+        if (msg == null || !_dynels.TryGetValue(msg.Identity, out Dynel dynel) || dynel is not Character attacker)
+            return;
+
+        Character target = null;
+        if (msg.Target.Instance != 0)
+            TryGetCharacter(msg.Target, out target);
+        attacker.ApplyFightEnter(target);
+    }
+
+    public void ApplyStopFight(StopFightMessage msg)
+    {
+        if (msg == null || !_dynels.TryGetValue(msg.Identity, out Dynel dynel) || dynel is not Character character)
+            return;
+
+        character.ApplyFightLeave();
     }
 
     public void ApplyFollowTarget(FollowTargetMessage msg)

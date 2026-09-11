@@ -77,6 +77,26 @@ public static class MonsterDataResolver
         return true;
     }
 
+    /// <summary>
+    /// Loop A: exact kind → anim ids. No union-all fallback.
+    /// </summary>
+    public static bool TryGetAnimIdsByKind(ResourceDatabase db, int monsterDataId, int kindId, out List<int> animIds)
+    {
+        animIds = null;
+        if (monsterDataId <= 0 || kindId <= 0 || db?.Rdb == null)
+            return false;
+
+        MonsterData monsterData = db.Get<MonsterData>(ResourceTypeId.MonsterData, monsterDataId);
+        if (monsterData?.Anims == null)
+            return false;
+
+        if (!monsterData.Anims.TryGetValue(kindId, out List<int> ids) || ids == null || ids.Count == 0)
+            return false;
+
+        animIds = ids;
+        return true;
+    }
+
     public static bool TryGetAnimEntries(
         ResourceDatabase db,
         int monsterDataId,

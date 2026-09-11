@@ -74,6 +74,8 @@ public class NetworkClient
     public event Action<AppearanceUpdateMessage> AppearanceUpdateReceived;
     public event Action<HealthDamageMessage> HealthDamageReceived;
     public event Action<AttackInfoMessage> AttackInfoReceived;
+    public event Action<AttackMessage> AttackReceived;
+    public event Action<StopFightMessage> StopFightReceived;
 
     public NetworkClient(NetworkConfig config = null)
     {
@@ -295,6 +297,16 @@ public class NetworkClient
     internal void OnAttackInfo(AttackInfoMessage msg)
     {
         AttackInfoReceived?.Invoke(msg);
+    }
+
+    internal void OnAttack(AttackMessage msg)
+    {
+        AttackReceived?.Invoke(msg);
+    }
+
+    internal void OnStopFight(StopFightMessage msg)
+    {
+        StopFightReceived?.Invoke(msg);
     }
 
     internal void RaiseMessageReceived(Message message) => MessageReceived?.Invoke(message);

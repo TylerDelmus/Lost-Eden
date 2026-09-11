@@ -1,5 +1,6 @@
 using UnityEngine;
 
+[DefaultExecutionOrder(-50)]
 public sealed class PlayfieldLocality : MonoBehaviour
 {
     static readonly Color ActiveSurfaceGizmoColor = new(0.15f, 0.95f, 0.55f, 0.9f);

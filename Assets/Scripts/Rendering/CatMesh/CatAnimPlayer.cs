@@ -26,7 +26,7 @@ public sealed class CatAnimPlayer : MonoBehaviour
     float _loopSmoothSeconds = DefaultLoopSmoothSeconds;
 
     readonly Dictionary<int, CatAnimRuntimeClip> _clipCache = new Dictionary<int, CatAnimRuntimeClip>();
-    const int ClipCacheVersion = 2;
+    const int ClipCacheVersion = 3;
     static readonly Dictionary<(int animId, int boneCount, int version), CatAnimRuntimeClip> SharedClipCache =
         new Dictionary<(int animId, int boneCount, int version), CatAnimRuntimeClip>();
     static readonly object SharedClipGate = new object();
@@ -55,11 +55,16 @@ public sealed class CatAnimPlayer : MonoBehaviour
         public bool FadingOut;
         public bool OutgoingCrossFade;
         public bool UseUnscaledTime;
+        public float SpeedScale = 1f;
+        public int LoopKey;
+        public int KindId;
+        public float StartDelay;
     }
 
     public int MonsterDataId => _monsterDataId;
     public int AnimSet => _animSet;
     public string CurrentLogicalName => _currentLogicalName;
+    public int CurrentKindId => GetCurrentBase()?.KindId ?? 0;
     public CatAnimRuntimeClip CurrentClip => GetCurrentBase()?.Clip;
     public int CurrentAnimId
     {
@@ -196,7 +201,11 @@ public sealed class CatAnimPlayer : MonoBehaviour
             Mathf.Clamp01(targetWeight),
             oneShot: false,
             null,
-            unscaledTime: false))
+            unscaledTime: false,
+            1f,
+            0,
+            0,
+            0f))
             return false;
 
         if (priority == DefaultPriority)
@@ -206,6 +215,33 @@ public sealed class CatAnimPlayer : MonoBehaviour
 
     public bool PlayStrafe(string logicalName, float blendSeconds = DefaultBlendSeconds)
         => Play(logicalName, blendSeconds, StrafePriority, 0, DefaultStrafeBlendWeight);
+
+    public bool PlayStrafeKind(int kindId, int animId, float blendSeconds = DefaultBlendSeconds)
+    {
+        if (animId <= 0)
+            return false;
+
+        if (IsStableAnimAt(StrafePriority, animId))
+        {
+            Arbitrate();
+            return true;
+        }
+
+        return PlayResolved(
+            animId,
+            $"kind:{kindId}",
+            blendSeconds,
+            StrafePriority,
+            0,
+            DefaultStrafeBlendWeight,
+            oneShot: false,
+            null,
+            unscaledTime: false,
+            1f,
+            0,
+            kindId,
+            0f);
+    }
 
     public void CancelStrafe(float blendSeconds = DefaultBlendSeconds)
         => FadeOutPriority(StrafePriority, blendSeconds);
@@ -319,6 +355,133 @@ public sealed class CatAnimPlayer : MonoBehaviour
         if (priority == DefaultPriority)
             _currentLogicalName = null;
         return PlayResolved(animId, null, blendSeconds, priority, claimBits, 1f, oneShot: false, null, unscaledTime: false);
+    }
+
+    public bool PlayKind(int kindId, int animId, float blendSeconds = DefaultBlendSeconds, float speedScale = 1f)
+    {
+        if (animId <= 0)
+            return false;
+
+        if (IsStableAnimAt(DefaultPriority, animId))
+        {
+            AnimInstance current = GetCurrentBase();
+            if (current != null)
+                current.SpeedScale = speedScale <= 0f ? 1f : speedScale;
+            Arbitrate();
+            return true;
+        }
+
+        if (!PlayResolved(
+            animId,
+            null,
+            blendSeconds,
+            DefaultPriority,
+            LayerBits,
+            1f,
+            oneShot: false,
+            null,
+            unscaledTime: false,
+            speedScale,
+            loopKey: 0,
+            kindId,
+            startDelay: 0f))
+            return false;
+
+        _currentLogicalName = $"kind:{kindId}";
+        return true;
+    }
+
+    public bool PlayKindOnce(
+        int kindId,
+        int animId,
+        float blendSeconds,
+        Action onComplete,
+        bool overlay,
+        float speedScale = 1f,
+        int loopKey = 0)
+    {
+        if (animId <= 0)
+        {
+            onComplete?.Invoke();
+            return false;
+        }
+
+        int priority = overlay ? OverlayPriority : DefaultPriority;
+        if (loopKey != 0 && HasLoopKeyPlaying(loopKey))
+        {
+            onComplete?.Invoke();
+            return false;
+        }
+
+        if (!PlayResolved(
+            animId,
+            null,
+            blendSeconds,
+            priority,
+            LayerBits,
+            1f,
+            oneShot: true,
+            onComplete,
+            unscaledTime: overlay,
+            speedScale <= 0f ? 1f : speedScale,
+            loopKey,
+            kindId,
+            startDelay: 0f))
+        {
+            onComplete?.Invoke();
+            return false;
+        }
+
+        if (priority == DefaultPriority)
+            _currentLogicalName = $"kind:{kindId}";
+        return true;
+    }
+
+    public void PlayKindDelayed(int kindId, int animId, float delaySeconds, float blendSeconds, float speedScale = 1f)
+    {
+        if (animId <= 0)
+            return;
+
+        if (delaySeconds <= 0f || !isActiveAndEnabled)
+        {
+            PlayKind(kindId, animId, blendSeconds, speedScale);
+            return;
+        }
+
+        StartCoroutine(PlayKindDelayedRoutine(kindId, animId, delaySeconds, blendSeconds, speedScale));
+    }
+
+    IEnumerator PlayKindDelayedRoutine(int kindId, int animId, float delaySeconds, float blendSeconds, float speedScale)
+    {
+        yield return new WaitForSeconds(delaySeconds);
+        PlayKind(kindId, animId, blendSeconds, speedScale);
+    }
+
+    public bool HasLoopKeyPlaying(int loopKey)
+    {
+        if (loopKey == 0)
+            return false;
+
+        for (int i = 0; i < _instances.Count; i++)
+        {
+            AnimInstance instance = _instances[i];
+            if (instance.LoopKey == loopKey && !instance.FadingOut && !instance.OutgoingCrossFade)
+                return true;
+        }
+
+        return false;
+    }
+
+    public bool HasCurrentClip
+        => GetCurrentBase()?.Clip != null;
+
+    public bool BaseLayerHasMask
+    {
+        get
+        {
+            AnimInstance current = GetCurrentBase();
+            return current != null && current.ActiveMask != 0 && current.Weight > 0f;
+        }
     }
 
     public bool CrossFadeAnimId(int animId, float blendSeconds = DefaultBlendSeconds)
@@ -447,7 +610,11 @@ public sealed class CatAnimPlayer : MonoBehaviour
         float targetWeight,
         bool oneShot,
         Action onComplete,
-        bool unscaledTime)
+        bool unscaledTime,
+        float speedScale = 1f,
+        int loopKey = 0,
+        int kindId = 0,
+        float startDelay = 0f)
     {
         CatAnimRuntimeClip clip = EnsureClip(animId);
         if (clip == null)
@@ -477,6 +644,10 @@ public sealed class CatAnimPlayer : MonoBehaviour
         incoming.FadeFromWeight = 0f;
         incoming.FadeDuration = Mathf.Max(0.01f, blendSeconds);
         incoming.FadeElapsed = 0f;
+        incoming.SpeedScale = speedScale <= 0f ? 1f : speedScale;
+        incoming.LoopKey = loopKey;
+        incoming.KindId = kindId;
+        incoming.StartDelay = Mathf.Max(0f, startDelay);
         _instances.Add(incoming);
         RebuildApplyOrder();
 
@@ -559,6 +730,16 @@ public sealed class CatAnimPlayer : MonoBehaviour
             {
                 AnimInstance instance = _instances[i];
                 float dt = instance.UseUnscaledTime ? unscaledDt : scaledDt;
+                dt *= instance.SpeedScale <= 0f ? 1f : instance.SpeedScale;
+                if (instance.StartDelay > 0f)
+                {
+                    instance.StartDelay -= dt;
+                    if (instance.StartDelay > 0f)
+                        continue;
+                    dt = -instance.StartDelay;
+                    instance.StartDelay = 0f;
+                }
+
                 AdvanceInstance(instance, dt);
                 AdvanceFade(instance, dt);
             }
@@ -773,6 +954,15 @@ public sealed class CatAnimPlayer : MonoBehaviour
             && string.Equals(instance.LogicalName, logicalName, StringComparison.Ordinal);
     }
 
+    bool IsStableAnimAt(int priority, int animId)
+    {
+        if (animId <= 0 || IsFadingAt(priority))
+            return false;
+
+        AnimInstance instance = FindByPriority(priority);
+        return instance?.Clip != null && instance.Clip.AnimId == animId && !instance.OneShot;
+    }
+
     void FadeOutPriority(int priority, float blendSeconds)
     {
         if (blendSeconds <= 0f)
@@ -879,6 +1069,7 @@ public sealed class CatAnimPlayer : MonoBehaviour
         }
 
         RebuildApplyOrder();
+        Arbitrate();
     }
 
     void ClearBaseOneShot()
@@ -902,6 +1093,7 @@ public sealed class CatAnimPlayer : MonoBehaviour
             _instances.Remove(_removeBuffer[i]);
         _removeBuffer.Clear();
         RebuildApplyOrder();
+        Arbitrate();
     }
 
     void InvokeCompletedCallbacks()

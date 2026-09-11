@@ -34,6 +34,11 @@ public class Character : Dynel
     VisualDynel _visual;
     string _locomotionLogicalName;
     string _strafeOverlayLogicalName;
+    readonly EquippedWeaponHands _hands = new EquippedWeaponHands();
+    readonly AnimHolder _animHolder = new AnimHolder();
+    bool _fightStance;
+    int _locomotionKind;
+    int _strafeOverlayKind;
     bool _appearanceStale;
     MovementState _lastMotorState;
     SitTransitionPhase _sitPhase = SitTransitionPhase.None;
@@ -75,7 +80,200 @@ public class Character : Dynel
             CombatStarted?.Invoke();
         else if (wasFighting)
             CombatEnded?.Invoke();
+
+        RefreshAnimHolder();
     }
+
+    public bool IsFighting => _fightStance || FightingTarget != null;
+
+    public void RefreshEquippedHands(PlayerInventory inventory)
+    {
+        if (inventory == null)
+        {
+            _hands.Clear();
+            RefreshAnimHolder();
+            _locomotionKind = 0;
+            return;
+        }
+
+        inventory.TryGetByPlacement(AnimKindIds.EquipRight, out InventoryItem right);
+        inventory.TryGetByPlacement(AnimKindIds.EquipLeft, out InventoryItem left);
+        inventory.TryGetByPlacement(AnimKindIds.EquipUtil, out InventoryItem util);
+        _hands.Set(right?.Item, left?.Item, util?.Item);
+        RefreshAnimHolder();
+        _locomotionKind = 0;
+    }
+
+    void RefreshAnimHolder()
+    {
+        int animSet = _hands.StanceAnimSet;
+        if (animSet < 0)
+            _animHolder.ApplyUnarmedDefaults(IsFighting);
+        else
+            _animHolder.ApplyStance(animSet, IsFighting);
+    }
+
+    void RefreshMoveSlots()
+        => _animHolder.ApplyMoveSlots(_hands.StanceAnimSet);
+
+    public void ApplyFightEnter(Character target)
+    {
+        bool already = IsFighting;
+        _fightStance = true;
+        if (target != null)
+            SetFightingTarget(target);
+        else
+            RefreshAnimHolder();
+
+        if (!already)
+            PlayFightEnter();
+    }
+
+    public void ApplyFightLeave()
+    {
+        if (!IsFighting)
+            return;
+
+        _fightStance = false;
+        SetFightingTarget(null);
+        PlayFightLeave();
+    }
+
+    public void PlayAttackerSwingAnim(int weaponSlot)
+    {
+        if (TryGetAnimPlayer(out CatAnimPlayer player)
+            && player.HasLoopKeyPlaying(AnimKindIds.MapAttack))
+            return;
+
+        int kind = ResolveSwingKind(weaponSlot);
+        if (kind == 0)
+            kind = FallbackSwingKind();
+
+        if (kind == 0)
+            return;
+
+        Item weapon = _hands.ItemInSlot(weaponSlot);
+        float speed = ResolveSwingSpeed(weapon, kind);
+        if (!_visual.PlayKindOnce(
+            kind,
+            0f,
+            null,
+            overlay: true,
+            speed,
+            AnimKindIds.MapAttack))
+        {
+            PlaySwingFallback();
+        }
+    }
+
+    int ResolveSwingKind(int weaponSlot)
+    {
+        if (Stats.Get(Stat.MonsterData) != 0 && !_visual.HasWeaponAttractorBones())
+            return AnimKindIds.UnarmedRSwing;
+
+        WeaponAnimListMap map = _hands.MapForSlot(weaponSlot) ?? _hands.StanceMap;
+        if (map == null || map.IsEmpty)
+            return 0;
+
+        return map.PickRandomKindId(AnimKindIds.MapAttack);
+    }
+
+    int FallbackSwingKind()
+    {
+        if (Stats.Get(Stat.MonsterData) != 0 && !_visual.HasWeaponAttractorBones())
+            return AnimKindIds.UnarmedRSwing;
+        return 0;
+    }
+
+    float ResolveSwingSpeed(Item weapon, int kind)
+    {
+        if (weapon == null || !weapon.TryGetStat(AnimKindIds.ItemAttackDelay, out int delay) || delay <= 0)
+            return 1f;
+
+        if (!_visual.TryResolveKind(kind, out int animId) || !_visual.TryGetAnimPlayer(out CatAnimPlayer player))
+            return 1f;
+
+        CatAnimRuntimeClip clip = player.EnsureClip(animId);
+        if (clip == null || clip.NoteTimeMs <= 0f)
+            return 1f;
+
+        return UnityEngine.Mathf.Clamp(clip.NoteTimeMs / (delay * 10f), 1f, 2f);
+    }
+
+    void PlaySwingFallback()
+    {
+        if (_visual.HasCurrentAnim)
+            return;
+
+        _visual.PlayKindOnce(AnimKindIds.Wave, LocomotionAnimBlendSeconds, null, overlay: true);
+    }
+
+    void PlayFightEnter()
+    {
+        int startKind = ResolveFightStartKind(out string startName);
+        if (startKind != 0)
+            _visual.PlayKindOnce(startKind, LocomotionAnimBlendSeconds, null, overlay: true);
+        else if (!string.IsNullOrEmpty(startName) && _visual.TryResolveKindName(startName, out int startId)
+            && _visual.TryGetAnimPlayer(out CatAnimPlayer player))
+        {
+            player.PlayKindOnce(0, startId, LocomotionAnimBlendSeconds, null, overlay: true);
+        }
+
+        int idleKind = _animHolder.Idle;
+        float delay = 0f;
+        if (startKind != AnimKindIds.UnarmedStart
+            && startKind != 0
+            && _visual.TryResolveKind(startKind, out int startAnimId)
+            && _visual.TryGetAnimPlayer(out CatAnimPlayer startPlayer))
+        {
+            CatAnimRuntimeClip startClip = startPlayer.EnsureClip(startAnimId);
+            if (startClip != null)
+                delay = UnityEngine.Mathf.Max(0f, startClip.GetOneShotDuration() - 0.3f);
+        }
+
+        _visual.PlayKindDelayed(idleKind, delay, LocomotionAnimBlendSeconds);
+        _locomotionKind = 0;
+    }
+
+    void PlayFightLeave()
+    {
+        int stopKind = _hands.StanceItem == null ? AnimKindIds.UnarmedStop : 0;
+        if (stopKind != 0)
+            _visual.PlayKindOnce(stopKind, LocomotionAnimBlendSeconds, null, overlay: true);
+        else
+        {
+            string stopName = AnimKindCatalog.StopNameForAnimSet(_hands.StanceAnimSet);
+            if (!string.IsNullOrEmpty(stopName)
+                && _visual.TryResolveKindName(stopName, out int stopId)
+                && _visual.TryGetAnimPlayer(out CatAnimPlayer player))
+            {
+                player.PlayKindOnce(0, stopId, LocomotionAnimBlendSeconds, null, overlay: true);
+            }
+        }
+
+        _locomotionKind = 0;
+    }
+
+    int ResolveFightStartKind(out string startName)
+    {
+        startName = null;
+        if (_hands.StanceItem == null)
+            return AnimKindIds.UnarmedStart;
+
+        int animSet = _hands.StanceAnimSet;
+        if (animSet == 3)
+        {
+            WeaponAnimListMap map = _hands.StanceMap;
+            int draw = map != null ? map.PickRandomKindId(AnimKindIds.MapDraw) : 0;
+            return draw != 0 ? draw : AnimKindIds.RifleStart;
+        }
+
+        startName = AnimKindCatalog.StartNameForAnimSet(animSet);
+        return 0;
+    }
+
+    bool TryGetAnimPlayer(out CatAnimPlayer player)
+        => _visual.TryGetAnimPlayer(out player);
 
     MovementConfig Config
     {
@@ -237,11 +435,23 @@ public class Character : Dynel
         if (msg == null)
             return;
 
-        switch (msg.Action)
+        switch ((int)msg.Action)
         {
-            case CharacterActionType.StandUp:
-                _motor.ApplyAction(MovementAction.LeaveSit);
-                HandleMotorStateChange();
+            case AnimKindIds.FightEnterAction:
+                ApplyFightEnter(null);
+                break;
+            case AnimKindIds.FightLeaveAction:
+                ApplyFightLeave();
+                break;
+            case AnimKindIds.AttackSwingAction:
+                // TODO: play muzzle FX. Do not play the swing overlay or re-pick idle (AttackInfo owns that).
+                break;
+            default:
+                if (msg.Action == CharacterActionType.StandUp)
+                {
+                    _motor.ApplyAction(MovementAction.LeaveSit);
+                    HandleMotorStateChange();
+                }
                 break;
         }
     }
@@ -291,6 +501,8 @@ public class Character : Dynel
         _visual.RequestUpdateAppearance(playIdle: false);
         _locomotionLogicalName = null;
         _strafeOverlayLogicalName = null;
+        _locomotionKind = 0;
+        _strafeOverlayKind = 0;
     }
 
     void RefreshMovementSpeed()
@@ -325,30 +537,41 @@ public class Character : Dynel
             return;
         }
 
-        string desired = _motor.GetLocomotionLogicalName();
+        if (_motor.SuppressLocomotionPlay)
+        {
+            UpdateLocomotionPlaybackRate();
+            return;
+        }
+
+        RefreshMoveSlots();
+        if (!_motor.TryGetLocomotionKind(_animHolder, out int desiredKind)
+            && _sitPhase == SitTransitionPhase.None)
+        {
+            UpdateLocomotionPlaybackRate();
+            return;
+        }
+
+        // Shot is overlay-only. idle-rifle stays on the base channel; do not re-pick or re-Play it.
+        if (player.HasLoopKeyPlaying(AnimKindIds.MapAttack) && desiredKind == _animHolder.Idle)
+        {
+            UpdateLocomotionPlaybackRate();
+            return;
+        }
 
         // Land is an overlay — keep base locomotion updating underneath.
         if (_jumpPhase == JumpAnimPhase.Landing)
         {
-            // Standing idle-land only: cut out when the player starts moving.
-            // Back/strafe also use land-idle overlaid on directional loco — don't cancel those.
             if (_jumpLandLogicalName == "jump-land-idle"
-                && (_locomotionLogicalName == "idle" || _locomotionLogicalName == "idle-sit")
-                && desired != "idle"
-                && desired != "idle-sit")
+                && _locomotionKind == _animHolder.Idle
+                && desiredKind != 0
+                && desiredKind != _animHolder.Idle)
             {
-                FinishJumpLand(desired, cancelOverlay: true);
+                FinishJumpLandKind(desiredKind, cancelOverlay: true);
                 UpdateLocomotionPlaybackRate();
                 return;
             }
 
-            if (!string.Equals(_locomotionLogicalName, desired, StringComparison.Ordinal)
-                || !string.Equals(player.CurrentLogicalName, desired, StringComparison.Ordinal))
-            {
-                if (player.Play(desired, LocomotionAnimBlendSeconds))
-                    _locomotionLogicalName = desired;
-            }
-
+            PlayLocomotionKind(player, desiredKind);
             SyncStrafeOverlay(player);
             UpdateLocomotionPlaybackRate();
             return;
@@ -356,7 +579,7 @@ public class Character : Dynel
 
         if (_sitPhase == SitTransitionPhase.Exiting)
         {
-            if (desired == "idle")
+            if (desiredKind == _animHolder.Idle)
             {
                 UpdateLocomotionPlaybackRate();
                 return;
@@ -365,45 +588,59 @@ public class Character : Dynel
             CancelStandUpTransition();
         }
 
-        // Prefer the player's actual clip over our cache — appearance rebuild can desync them.
-        string playing = player.CurrentLogicalName;
-        if (!string.Equals(_locomotionLogicalName, desired, StringComparison.Ordinal)
-            || !string.Equals(playing, desired, StringComparison.Ordinal))
-        {
-            if (player.Play(desired, LocomotionAnimBlendSeconds))
-                _locomotionLogicalName = desired;
-        }
-
+        PlayLocomotionKind(player, desiredKind);
         SyncStrafeOverlay(player);
         UpdateLocomotionPlaybackRate();
     }
 
-    void SyncStrafeOverlay(CatAnimPlayer player)
+    void PlayLocomotionKind(CatAnimPlayer player, int kind)
     {
-        string strafe = _sitPhase == SitTransitionPhase.None
-            && _jumpPhase != JumpAnimPhase.Airborne
-            ? _motor.GetStrafeOverlayLogicalName()
-            : null;
-
-        if (string.Equals(_strafeOverlayLogicalName, strafe, StringComparison.Ordinal))
+        if (kind == 0)
             return;
 
-        if (string.IsNullOrEmpty(strafe))
+        if (player == null && !_visual.TryGetAnimPlayer(out player))
+            return;
+
+        if (kind == _locomotionKind && player.CurrentKindId == kind)
+            return;
+
+        if (_visual.PlayKind(kind, LocomotionAnimBlendSeconds))
+        {
+            _locomotionKind = kind;
+            _locomotionLogicalName = $"kind:{kind}";
+        }
+    }
+
+    void SyncStrafeOverlay(CatAnimPlayer player)
+    {
+        int strafeKind = _sitPhase == SitTransitionPhase.None
+            && _jumpPhase != JumpAnimPhase.Airborne
+            ? _motor.GetStrafeOverlayKind()
+            : 0;
+
+        if (_strafeOverlayKind == strafeKind)
+            return;
+
+        if (strafeKind == 0)
         {
             player.CancelStrafe(LocomotionAnimBlendSeconds);
+            _strafeOverlayKind = 0;
             _strafeOverlayLogicalName = null;
             return;
         }
 
-        if (!player.PlayStrafe(strafe, LocomotionAnimBlendSeconds))
+        if (!_visual.TryResolveKind(strafeKind, out int animId)
+            || !player.PlayStrafeKind(strafeKind, animId, LocomotionAnimBlendSeconds))
             return;
 
-        _strafeOverlayLogicalName = strafe;
+        _strafeOverlayKind = strafeKind;
+        _strafeOverlayLogicalName = $"kind:{strafeKind}";
     }
 
     void ClearStrafeOverlay(CatAnimPlayer player, float blendSeconds = 0f)
     {
         _strafeOverlayLogicalName = null;
+        _strafeOverlayKind = 0;
         player?.CancelStrafe(blendSeconds);
     }
 
@@ -440,19 +677,21 @@ public class Character : Dynel
 
         _jumpPhase = JumpAnimPhase.Airborne;
         _jumpLandLogicalName = null;
-        string takeoffLogical = _motor.GetJumpTakeoffLogicalName();
-        _locomotionLogicalName = takeoffLogical;
-        if (!_visual.PlayOnce(takeoffLogical, LocomotionAnimBlendSeconds, null))
+        int takeoffKind = _motor.GetJumpTakeoffKind();
+        _locomotionKind = takeoffKind;
+        _locomotionLogicalName = $"kind:{takeoffKind}";
+        if (!_visual.PlayKindOnce(takeoffKind, LocomotionAnimBlendSeconds, null, overlay: false))
         {
-            // Moving takeoff missing on some creatures — fall back to stand/bare jump.
-            if (takeoffLogical == "jump-forward"
-                && _visual.PlayOnce("jump-stand", LocomotionAnimBlendSeconds, null))
+            if (takeoffKind == AnimKindIds.JumpForward
+                && _visual.PlayKindOnce(AnimKindIds.JumpStand, LocomotionAnimBlendSeconds, null, overlay: false))
             {
-                _locomotionLogicalName = "jump-stand";
+                _locomotionKind = AnimKindIds.JumpStand;
+                _locomotionLogicalName = $"kind:{AnimKindIds.JumpStand}";
                 return;
             }
 
             _locomotionLogicalName = null;
+            _locomotionKind = 0;
         }
     }
 
@@ -465,27 +704,33 @@ public class Character : Dynel
             return;
         }
 
-        // Base locomotion continues; land plays as an overlay on top.
-        string loco = _motor.GetLocomotionLogicalName();
-        _visual.Play(loco, LocomotionAnimBlendSeconds);
-        _locomotionLogicalName = loco;
+        RefreshAnimHolder();
+        if (_motor.TryGetLocomotionKind(_animHolder, out int locoKind)
+            && _visual.TryGetAnimPlayer(out CatAnimPlayer basePlayer))
+            PlayLocomotionKind(basePlayer, locoKind);
+
         if (_visual.TryGetAnimPlayer(out CatAnimPlayer landPlayer))
             SyncStrafeOverlay(landPlayer);
 
-        string landLogical = _motor.GetJumpLandLogicalName();
+        int landKind = _motor.GetJumpLandKind();
         _jumpPhase = JumpAnimPhase.Landing;
-        _jumpLandLogicalName = landLogical;
-        if (!_visual.PlayOverlayOnce(landLogical, LocomotionAnimBlendSeconds, OnJumpLandComplete))
-            OnJumpLandComplete();
+        _jumpLandLogicalName = landKind == 0 ? "jump-land-idle" : $"kind:{landKind}";
+        if (landKind != 0
+            && _visual.PlayKindOnce(landKind, LocomotionAnimBlendSeconds, OnJumpLandComplete, overlay: true))
+            return;
+
+        OnJumpLandComplete();
     }
 
     void OnJumpLandComplete()
     {
         // Overlay is already removed. Play again so arbitration writes a fresh mask.
-        FinishJumpLand(_motor.GetLocomotionLogicalName(), cancelOverlay: false);
+        RefreshAnimHolder();
+        _motor.TryGetLocomotionKind(_animHolder, out int kind);
+        FinishJumpLandKind(kind, cancelOverlay: false);
     }
 
-    void FinishJumpLand(string desired, bool cancelOverlay)
+    void FinishJumpLandKind(int desiredKind, bool cancelOverlay)
     {
         _jumpPhase = JumpAnimPhase.None;
         _jumpLandLogicalName = null;
@@ -496,12 +741,11 @@ public class Character : Dynel
         if (cancelOverlay)
             player.CancelOverlay();
 
-        if (string.IsNullOrEmpty(desired))
-            desired = _motor.GetIdleLogicalName();
+        if (desiredKind == 0)
+            desiredKind = _animHolder.Idle;
 
-        // Ending a higher-priority clip does not restore bits. A new Play writes the mask.
-        player.Play(desired, LocomotionAnimBlendSeconds);
-        _locomotionLogicalName = desired;
+        _locomotionKind = 0;
+        PlayLocomotionKind(player, desiredKind);
         SyncStrafeOverlay(player);
     }
 
@@ -573,8 +817,10 @@ public class Character : Dynel
     void OnStandUpComplete()
     {
         _sitPhase = SitTransitionPhase.None;
-        _locomotionLogicalName = _motor.GetIdleLogicalName();
-        _visual.Play(_locomotionLogicalName, LocomotionAnimBlendSeconds);
+        RefreshAnimHolder();
+        _locomotionKind = 0;
+        if (_visual.TryGetAnimPlayer(out CatAnimPlayer standPlayer))
+            PlayLocomotionKind(standPlayer, _animHolder.Idle);
     }
 
     void CancelStandUpTransition()
@@ -599,7 +845,7 @@ public class Character : Dynel
         if (!_visual.TryGetAnimPlayer(out CatAnimPlayer player))
             return;
 
-        if (!IsIdlePlaybackLogicalName(_locomotionLogicalName))
+        if (_motor.IsMoving && !IsIdlePlaybackLogicalName(_locomotionLogicalName))
         {
             int animSpeed = Stats.Get(Stat.AnimSpeed, StatDetail.Full);
             float calibration = AnimCalibration.GetFactor(player.CurrentAnimId, player.AnimSet);

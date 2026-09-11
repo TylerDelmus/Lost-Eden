@@ -38,6 +38,8 @@ public sealed class CatAnimTest_DEV : MonoBehaviour
     [SerializeField] float _blendSeconds = CatAnimPlayer.DefaultBlendSeconds;
     [SerializeField] float _blendWeight = 0.5f;
     [SerializeField] float _loopSmoothSeconds = CatAnimPlayer.DefaultLoopSmoothSeconds;
+    [SerializeField] int _claimBits = CatAnimPlayer.LayerBits;
+    [SerializeField] int _playPriority = CatAnimPlayer.OverlayPriority;
 
     Breed _breed = Breed.Solitus;
     Gender _gender = Gender.Male;
@@ -208,12 +210,18 @@ public sealed class CatAnimTest_DEV : MonoBehaviour
         GUILayout.EndHorizontal();
 
         DrawLoopTimingInfo();
+        DrawLayerControls();
 
         GUILayout.BeginHorizontal();
         if (GUILayout.Button("Play A"))
             PlaySelected(_selectedA, crossFade: false);
         if (GUILayout.Button("Play B"))
             PlaySelected(_selectedB, crossFade: false);
+        GUILayout.EndHorizontal();
+
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button("Play B overlay"))
+            PlaySelectedOverlay(_selectedB);
         GUILayout.EndHorizontal();
 
         GUILayout.BeginHorizontal();
@@ -458,6 +466,31 @@ public sealed class CatAnimTest_DEV : MonoBehaviour
         {
             GUILayout.Label($"Loop: none (full source {clip.SourceDuration:0.00}s)");
         }
+
+        clip.CountTrackFlags(out int alwaysOn, out int flag1, out int flag2, out int other);
+        GUILayout.Label($"Flags: always={alwaysOn}  lower(1)={flag1}  upper(2)={flag2}  other={other}");
+    }
+
+    void DrawLayerControls()
+    {
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("Claim", GUILayout.Width(70f));
+        DrawClaimToggle(1, "1");
+        DrawClaimToggle(2, "2");
+        DrawClaimToggle(3, "3");
+        GUILayout.EndHorizontal();
+
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("Priority", GUILayout.Width(70f));
+        _playPriority = Mathf.RoundToInt(GUILayout.HorizontalSlider(_playPriority, 0f, 20f));
+        GUILayout.Label(_playPriority.ToString(), GUILayout.Width(40f));
+        GUILayout.EndHorizontal();
+    }
+
+    void DrawClaimToggle(int bits, string label)
+    {
+        if (GUILayout.Toggle(_claimBits == bits, label, GUILayout.Width(36f)) && _claimBits != bits)
+            _claimBits = bits;
     }
 
     void OpenDatabase()
@@ -630,14 +663,33 @@ public sealed class CatAnimTest_DEV : MonoBehaviour
             string loop = clip.HasLoopTiming
                 ? $"loop={clip.LoopStart:0.00}/{clip.LoopEnd:0.00}"
                 : "loop=none";
+            clip.CountTrackFlags(out int alwaysOn, out int flag1, out int flag2, out int other);
             _status = $"{(crossFade ? "CrossFade" : "Play")} {entry.AnimId} ({entry.Name}) "
                 + $"tracks={clip.Tracks.Length} src={clip.SourceDuration:0.00}s "
-                + $"{loop} playable={clip.Duration:0.00}s";
+                + $"{loop} playable={clip.Duration:0.00}s "
+                + $"flags always={alwaysOn} 1={flag1} 2={flag2} other={other}";
         }
         else
         {
             _status = $"{(crossFade ? "CrossFade" : "Play")} {entry.AnimId} ({entry.Name})";
         }
+    }
+
+    void PlaySelectedOverlay(int index)
+    {
+        if (!TryGetPlayer(out CatAnimPlayer player) || !TryGetEntry(index, out AnimEntry entry))
+            return;
+
+        bool ok = player.PlayAnimId(entry.AnimId, _blendSeconds, _playPriority, _claimBits);
+        if (!ok)
+        {
+            _status = $"Failed to play overlay {entry.AnimId}";
+            return;
+        }
+
+        player.Paused = false;
+        player.LoopSmoothSeconds = _loopSmoothSeconds;
+        _status = $"Play {entry.AnimId} ({entry.Name}) priority={_playPriority} claim={_claimBits}";
     }
 
     void CrossFadeSelected()

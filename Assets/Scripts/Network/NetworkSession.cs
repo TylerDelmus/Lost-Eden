@@ -311,6 +311,10 @@ class NetworkSession
             _client.OnHealthDamage((HealthDamageMessage)n3Msg);
         else if (n3Msg.N3MessageType == N3MessageType.AttackInfo)
             _client.OnAttackInfo((AttackInfoMessage)n3Msg);
+        else if (n3Msg.N3MessageType == N3MessageType.Attack)
+            _client.OnAttack((AttackMessage)n3Msg);
+        else if (n3Msg.N3MessageType == N3MessageType.StopFight)
+            _client.OnStopFight((StopFightMessage)n3Msg);
     }
 
     void ScheduleZoneConnect(IPEndPoint endpoint)

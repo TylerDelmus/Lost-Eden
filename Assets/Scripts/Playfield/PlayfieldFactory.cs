@@ -61,6 +61,9 @@ public class PlayfieldFactory : MonoBehaviour
         _networkClient.DynelDespawned += OnDynelDespawn;
         _networkClient.AppearanceUpdateReceived += OnAppearanceUpdate;
         _networkClient.HealthDamageReceived += OnHealthDamage;
+        _networkClient.AttackInfoReceived += OnAttackInfo;
+        _networkClient.AttackReceived += OnAttack;
+        _networkClient.StopFightReceived += OnStopFight;
 
         if (_playerController?.CameraController != null)
             _playerController.CameraController.TargetAttached += OnCameraTargetAttached;
@@ -77,6 +80,9 @@ public class PlayfieldFactory : MonoBehaviour
         _networkClient.DynelDespawned -= OnDynelDespawn;
         _networkClient.AppearanceUpdateReceived -= OnAppearanceUpdate;
         _networkClient.HealthDamageReceived -= OnHealthDamage;
+        _networkClient.AttackInfoReceived -= OnAttackInfo;
+        _networkClient.AttackReceived -= OnAttack;
+        _networkClient.StopFightReceived -= OnStopFight;
 
         if (_playerController?.CameraController != null)
             _playerController.CameraController.TargetAttached -= OnCameraTargetAttached;
@@ -175,10 +181,38 @@ public class PlayfieldFactory : MonoBehaviour
         if (!NetworkDriven || _current == null)
             return;
 
-        if (msg.Identity.Instance == _networkClient.LocalDynelId)
+        int action = (int)msg.Action;
+        bool combat = action == AnimKindIds.FightEnterAction
+            || action == AnimKindIds.FightLeaveAction
+            || action == AnimKindIds.AttackSwingAction;
+        if (msg.Identity.Instance == _networkClient.LocalDynelId && !combat)
             return;
 
         _current.ApplyCharacterAction(msg);
+    }
+
+    void OnAttackInfo(AttackInfoMessage msg)
+    {
+        if (!NetworkDriven || _current == null)
+            return;
+
+        _current.ApplyAttackInfo(msg);
+    }
+
+    void OnAttack(AttackMessage msg)
+    {
+        if (!NetworkDriven || _current == null)
+            return;
+
+        _current.ApplyAttack(msg);
+    }
+
+    void OnStopFight(StopFightMessage msg)
+    {
+        if (!NetworkDriven || _current == null)
+            return;
+
+        _current.ApplyStopFight(msg);
     }
 
     void OnFollowTarget(FollowTargetMessage msg)

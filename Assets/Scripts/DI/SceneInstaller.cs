@@ -8,6 +8,7 @@ public class SceneInstaller : MonoBehaviour, IInstaller
     [SerializeField] LoadingScreenView _loadingScreenView;
     [SerializeField] WorldOverlayController _worldOverlayController;
     [SerializeField] InventoryView _inventoryWindowView;
+    [SerializeField] CursorController _cursorController;
 
     public void InstallBindings(ContainerBuilder containerBuilder)
     {
@@ -41,6 +42,16 @@ public class SceneInstaller : MonoBehaviour, IInstaller
         UvgaTextureSource.BindRuntime(uvgaTextures);
         containerBuilder.RegisterValue(uvgaTextures);
 
+        _cursorController ??= FindCursorController();
+        if (_cursorController == null)
+        {
+            var cursorGo = new GameObject("CursorController");
+            cursorGo.transform.SetParent(transform, false);
+            _cursorController = cursorGo.AddComponent<CursorController>();
+        }
+
+        containerBuilder.RegisterValue(_cursorController);
+
         _worldOverlayController ??= GetComponentInChildren<WorldOverlayController>(true);
         if (_worldOverlayController == null)
         {
@@ -61,5 +72,21 @@ public class SceneInstaller : MonoBehaviour, IInstaller
 
         containerBuilder.RegisterValue(new GameHud(_inventoryWindowView), new System.Type[] { typeof(IGameHud) });
         containerBuilder.RegisterValue(new UIInteractionManager(), new System.Type[] { typeof(IUINotifyService) });
+    }
+
+    CursorController FindCursorController()
+    {
+        if (_playerController == null)
+            return GetComponentInChildren<CursorController>(true);
+
+        Transform root = _playerController.transform.parent;
+        if (root != null)
+        {
+            CursorController fromControllers = root.GetComponentInChildren<CursorController>(true);
+            if (fromControllers != null)
+                return fromControllers;
+        }
+
+        return _playerController.GetComponentInChildren<CursorController>(true);
     }
 }
