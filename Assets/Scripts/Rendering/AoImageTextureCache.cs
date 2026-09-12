@@ -54,8 +54,9 @@ public sealed class AoImageTextureCache
         }
 
         tex.name = name;
-        tex.wrapMode = TextureWrapMode.Repeat;
+        tex.wrapMode = TextureWrapMode.Clamp;
         tex.filterMode = FilterMode.Bilinear;
+        // Keep CPU-readable so atlas crops can fall back to GetPixels if needed.
         return tex;
     }
 }

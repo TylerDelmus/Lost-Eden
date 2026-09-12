@@ -43,6 +43,44 @@ public static class HdrpUnlitMaterialFactory
         return material;
     }
 
+    /// <summary>
+    /// Transparent additive Unlit (SrcAlpha + One). Used for AO combat / nano FX quads.
+    /// </summary>
+    public static Material CreateSrcAlphaAdditive(string name = "HdrpUnlitSrcAlphaAdditive")
+    {
+        Material material = Create(name);
+        HDMaterial.SetSurfaceType(material, transparent: true);
+        if (material.HasProperty("_BlendMode"))
+            material.SetFloat("_BlendMode", 1f);
+        if (material.HasProperty("_SrcBlend"))
+            material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        if (material.HasProperty("_DstBlend"))
+            material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.One);
+        if (material.HasProperty("_ZWrite"))
+            material.SetFloat("_ZWrite", 0f);
+        HDMaterial.ValidateMaterial(material);
+        return material;
+    }
+
+    /// <summary>
+    /// Transparent alpha Unlit (SrcAlpha + InvSrcAlpha). Used for non-additive FX quads.
+    /// </summary>
+    public static Material CreateAlphaBlend(string name = "HdrpUnlitAlphaBlend")
+    {
+        Material material = Create(name);
+        HDMaterial.SetSurfaceType(material, transparent: true);
+        if (material.HasProperty("_BlendMode"))
+            material.SetFloat("_BlendMode", 0f);
+        if (material.HasProperty("_SrcBlend"))
+            material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        if (material.HasProperty("_DstBlend"))
+            material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        if (material.HasProperty("_ZWrite"))
+            material.SetFloat("_ZWrite", 0f);
+        HDMaterial.ValidateMaterial(material);
+        return material;
+    }
+
     static void EnsureLoaded()
     {
         if (_unlitShader != null)

@@ -11,6 +11,13 @@ using MovementState = AOSharp.Common.GameData.MovementState;
 public class Character : Dynel
 {
     const string MovementConfigResourcePath = "MovementConfig";
+    const float SpellCastStopBlendSeconds = 0.15f;
+
+    /// <summary>
+    /// The cast loop normally ends on FinishNanoCasting / InterruptNanoCasting. If neither arrives
+    /// the overlay would mask locomotion forever, so drop it after the longest plausible cast.
+    /// </summary>
+    const float SpellCastLoopMaxSeconds = 30f;
 
     enum SitTransitionPhase
     {
@@ -44,9 +51,16 @@ public class Character : Dynel
     SitTransitionPhase _sitPhase = SitTransitionPhase.None;
     JumpAnimPhase _jumpPhase = JumpAnimPhase.None;
     string _jumpLandLogicalName;
+    float _spellCastLoopDeadline;
 
     public CharacterMotor Motor => _motor;
     public VisualDynel Visual => _visual;
+
+    /// <summary>
+    /// Whether the cast in progress targets this character. FinishNanoCasting often omits the
+    /// target, so the release anim falls back to what CastNanoSpell told us.
+    /// </summary>
+    public bool SpellCastOnSelf { get; private set; }
     public Action CombatStarted;
     public Action CombatEnded;
 
@@ -164,6 +178,46 @@ public class Character : Dynel
         {
             PlaySwingFallback();
         }
+    }
+
+    /// <summary>Cast anim (spell-sys). Loops until the cast finishes or is interrupted.</summary>
+    public void PlaySpellCastAnim(bool selfCast)
+    {
+        SpellCastOnSelf = selfCast;
+        if (_visual == null)
+            return;
+
+        _visual.PlayKindOnce(
+            AnimKindIds.SpellSys,
+            0f,
+            null,
+            overlay: true,
+            1f,
+            AnimKindIds.SpellSys,
+            sustain: true);
+
+        _spellCastLoopDeadline = Time.time + SpellCastLoopMaxSeconds;
+    }
+
+    /// <summary>
+    /// Release anim played when cast time completes: spell-self on a self cast, spell-dir otherwise.
+    /// </summary>
+    public void PlaySpellCastReleaseAnim(bool selfCast)
+    {
+        if (_visual == null)
+            return;
+
+        // Drop the cast loop first: the release anim may not resolve, and it must not keep looping then.
+        StopSpellCastAnim(0f);
+        _visual.PlayKindNameOnce(selfCast ? "spell-self" : "spell-dir", 0f, null, overlay: true);
+    }
+
+    /// <summary>Ends the looping cast anim (cast finished, interrupted, or timed out).</summary>
+    public void StopSpellCastAnim(float blendSeconds = SpellCastStopBlendSeconds)
+    {
+        _spellCastLoopDeadline = 0f;
+        if (_visual != null)
+            _visual.StopAnimLoop(AnimKindIds.SpellSys, blendSeconds);
     }
 
     int ResolveSwingKind(int weaponSlot)
@@ -323,6 +377,9 @@ public class Character : Dynel
             _appearanceStale = false;
             UpdateAppearance();
         }
+
+        if (_spellCastLoopDeadline > 0f && Time.time >= _spellCastLoopDeadline)
+            StopSpellCastAnim();
 
         UpdateLocomotionAnim();
     }

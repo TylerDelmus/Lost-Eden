@@ -1158,6 +1158,267 @@ public class VisualDynel : MonoBehaviour
         return collection.TryGet(place, out attractor);
     }
 
+    public bool TryGetBones(out Transform[] bones)
+    {
+        bones = null;
+        if (_visualRoot == null)
+            return false;
+        if (!_visualRoot.TryGetComponent(out CatMeshVisualHolder holder) || holder.Bones == null || holder.Bones.Length == 0)
+            return false;
+        bones = holder.Bones;
+        return true;
+    }
+
+    public bool TryGetAttachMatrix(int attachId, out UnityEngine.Matrix4x4 matrix)
+    {
+        matrix = default;
+
+        // Stock FUN_10106368 / FUN_10105c44: attach 0 keeps the CAT mesh RRefFrame world
+        // matrix (body frame). Our dynel transform sits at the feet — do not use it here.
+        if (attachId == 0)
+            return TryGetMeshFrameMatrix(out matrix);
+
+        if (TryResolveAttachTransform(attachId, out Transform bone) && bone != null)
+        {
+            matrix = bone.localToWorldMatrix;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Unity stand-in for stock CAT mesh RRefFrame (attach 0): pelvis / body / mesh mid-height.
+    /// </summary>
+    bool TryGetMeshFrameMatrix(out UnityEngine.Matrix4x4 matrix)
+    {
+        matrix = default;
+
+        if (TryGetBones(out Transform[] bones))
+        {
+            if (TryFindBoneByAttachId(bones, EffectAttachIds.BonePelvis, out Transform pelvis) && pelvis != null)
+            {
+                matrix = pelvis.localToWorldMatrix;
+                return true;
+            }
+
+            if (TryFindBoneByAttachId(bones, EffectAttachIds.BoneSpine, out Transform spine) && spine != null)
+            {
+                matrix = spine.localToWorldMatrix;
+                return true;
+            }
+        }
+
+        if (TryGetAttractor(AttractorPlace.Hip, out Attractor hip) && hip != null)
+        {
+            matrix = hip.transform.localToWorldMatrix;
+            return true;
+        }
+
+        if (_visualRoot != null)
+        {
+            Transform t = _visualRoot.transform;
+            float midY = GetCachedMeshHeight() * 0.5f;
+            UnityEngine.Vector3 pos = t.TransformPoint(new UnityEngine.Vector3(0f, midY, 0f));
+            matrix = UnityEngine.Matrix4x4.TRS(pos, t.rotation, UnityEngine.Vector3.one);
+            return true;
+        }
+
+        if (transform != null)
+        {
+            matrix = transform.localToWorldMatrix;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>Resolve attach without Hip/Head fallback (Spell1 AND-chain).</summary>
+    public bool TryGetAttachMatrixStrict(int attachId, out UnityEngine.Matrix4x4 matrix)
+    {
+        matrix = default;
+        if (EffectAttachIds.IsMuzzle(attachId))
+        {
+            if (TryGetAttractor(AttractorPlace.RightHand, out Attractor muzzle) && muzzle != null)
+            {
+                matrix = muzzle.transform.localToWorldMatrix;
+                return true;
+            }
+            return false;
+        }
+
+        if (EffectAttachIds.IsAttractor(attachId))
+        {
+            if (EffectAttachIds.TryGetAttractorPlace(attachId, out AttractorPlace place)
+                && TryGetAttractor(place, out Attractor attractor)
+                && attractor != null)
+            {
+                matrix = attractor.transform.localToWorldMatrix;
+                return true;
+            }
+
+            if (EffectAttachIds.TryGetAttractorName(attachId, out string attractorName)
+                && TryFindAttractorByName(attractorName, out Transform named)
+                && named != null)
+            {
+                matrix = named.localToWorldMatrix;
+                return true;
+            }
+
+            return false;
+        }
+
+        if (EffectAttachIds.IsBone(attachId))
+        {
+            if (!TryGetBones(out Transform[] bones))
+                return false;
+            if (TryFindBoneByAttachId(bones, attachId, out Transform bone) && bone != null)
+            {
+                matrix = bone.localToWorldMatrix;
+                return true;
+            }
+
+            if (EffectAttachIds.TryGetBoneName(attachId, out string boneName)
+                && TryFindBoneByExactName(bones, boneName, out Transform namedBone)
+                && namedBone != null)
+            {
+                matrix = namedBone.localToWorldMatrix;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool TryResolveAttachTransform(int attachId, out Transform bone)
+    {
+        bone = null;
+        if (EffectAttachIds.IsMuzzle(attachId))
+            return TryGetAttractor(AttractorPlace.RightHand, out Attractor muzzle) && Assign(muzzle, out bone);
+
+        if (EffectAttachIds.IsAttractor(attachId))
+        {
+            if (EffectAttachIds.TryGetAttractorPlace(attachId, out AttractorPlace place)
+                && TryGetAttractor(place, out Attractor attractor)
+                && Assign(attractor, out bone))
+                return true;
+
+            if (EffectAttachIds.TryGetAttractorName(attachId, out string attractorName)
+                && TryFindAttractorByName(attractorName, out bone))
+                return true;
+
+            return TryGetAttractor(AttractorPlace.Hip, out Attractor hip) && Assign(hip, out bone)
+                || TryGetAttractor(AttractorPlace.Head, out Attractor head) && Assign(head, out bone);
+        }
+
+        if (EffectAttachIds.IsBone(attachId))
+        {
+            Transform[] bones;
+            if (TryGetBones(out bones))
+            {
+                if (TryFindBoneByAttachId(bones, attachId, out bone))
+                    return true;
+                if (EffectAttachIds.TryGetBoneName(attachId, out string boneName)
+                    && TryFindBoneByExactName(bones, boneName, out bone))
+                    return true;
+            }
+        }
+
+        return TryGetAttractor(AttractorPlace.Hip, out Attractor body) && Assign(body, out bone);
+    }
+
+    bool TryFindAttractorByName(string stockName, out Transform bone)
+    {
+        bone = null;
+        if (string.IsNullOrEmpty(stockName) || _visualRoot == null)
+            return false;
+        if (!_visualRoot.TryGetComponent(out AttractorCollection collection))
+            return false;
+
+        foreach (KeyValuePair<AttractorPlace, Attractor> pair in collection.ByPlace)
+        {
+            Attractor a = pair.Value;
+            if (a == null || a.transform == null)
+                continue;
+            string n = a.transform.name;
+            if (string.IsNullOrEmpty(n))
+                continue;
+            if (string.Equals(n, stockName, System.StringComparison.OrdinalIgnoreCase)
+                || n.IndexOf(stockName, System.StringComparison.OrdinalIgnoreCase) >= 0
+                || stockName.IndexOf(n, System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                bone = a.transform;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static bool TryFindBoneByExactName(Transform[] bones, string stockName, out Transform bone)
+    {
+        bone = null;
+        if (bones == null || string.IsNullOrEmpty(stockName))
+            return false;
+
+        for (int i = 0; i < bones.Length; i++)
+        {
+            Transform candidate = bones[i];
+            if (candidate == null)
+                continue;
+            string name = candidate.name;
+            if (string.IsNullOrEmpty(name))
+                continue;
+            if (string.Equals(name, stockName, System.StringComparison.OrdinalIgnoreCase)
+                || name.IndexOf(stockName, System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                bone = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static bool Assign(Attractor attractor, out Transform bone)
+    {
+        bone = attractor != null ? attractor.transform : null;
+        return bone != null;
+    }
+
+    static bool TryFindBoneByAttachId(Transform[] bones, int attachId, out Transform bone)
+    {
+        bone = null;
+        if (bones == null)
+            return false;
+
+        string[] tokens = EffectAttachIds.BoneTokens(attachId);
+        if (tokens == null)
+            return false;
+
+        for (int i = 0; i < bones.Length; i++)
+        {
+            Transform candidate = bones[i];
+            if (candidate == null)
+                continue;
+
+            string name = candidate.name;
+            if (string.IsNullOrEmpty(name))
+                continue;
+
+            for (int t = 0; t < tokens.Length; t++)
+            {
+                if (name.IndexOf(tokens[t], System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    bone = candidate;
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     public bool TryGetAnimPlayer(out CatAnimPlayer player)
     {
         player = null;
@@ -1240,7 +1501,8 @@ public class VisualDynel : MonoBehaviour
         Action onComplete,
         bool overlay,
         float speedScale = 1f,
-        int loopKey = 0)
+        int loopKey = 0,
+        bool sustain = false)
     {
         if (!TryResolveKind(kindId, out int animId))
         {
@@ -1254,7 +1516,37 @@ public class VisualDynel : MonoBehaviour
             return false;
         }
 
-        return player.PlayKindOnce(kindId, animId, blendSeconds, onComplete, overlay, speedScale, loopKey);
+        return player.PlayKindOnce(kindId, animId, blendSeconds, onComplete, overlay, speedScale, loopKey, sustain);
+    }
+
+    /// <summary>Ends a sustained loop started with <c>PlayKindOnce(..., sustain: true)</c>.</summary>
+    public void StopAnimLoop(int loopKey, float blendSeconds)
+    {
+        if (TryGetAnimPlayer(out CatAnimPlayer player))
+            player.StopLoopKey(loopKey, blendSeconds);
+    }
+
+    /// <summary>One-shot overlay resolved by anim kind stem (e.g. "spell-sys", "spell-dir").</summary>
+    public bool PlayKindNameOnce(
+        string kindName,
+        float blendSeconds,
+        Action onComplete,
+        bool overlay,
+        float speedScale = 1f)
+    {
+        if (!TryResolveKindName(kindName, out int animId))
+        {
+            onComplete?.Invoke();
+            return false;
+        }
+
+        if (!TryGetAnimPlayer(out CatAnimPlayer player))
+        {
+            onComplete?.Invoke();
+            return false;
+        }
+
+        return player.PlayKindOnce(0, animId, blendSeconds, onComplete, overlay, speedScale, loopKey: 0);
     }
 
     public void PlayKindDelayed(int kindId, float delaySeconds, float blendSeconds, float speedScale = 1f)

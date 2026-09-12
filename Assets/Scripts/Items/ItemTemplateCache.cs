@@ -35,13 +35,32 @@ public sealed class ItemTemplateCache
 
     public NanoSpell GetNano(int id)
     {
-        if (_nanos.TryGetValue(id, out NanoSpell cached))
-            return cached;
+        return TryGetNano(id, out NanoSpell nano) ? nano : null;
+    }
 
-        NanoObject template = _database.Get<NanoObject>(id);
-        var nano = new NanoSpell(id, template);
-        _nanos[id] = nano;
-        return nano;
+    public bool TryGetNano(int id, out NanoSpell nano)
+    {
+        if (_nanos.TryGetValue(id, out nano))
+            return nano != null;
+
+        nano = null;
+        if (id <= 0 || _database?.Rdb == null)
+            return false;
+
+        try
+        {
+            NanoObject template = _database.Get<NanoObject>(id);
+            if (template == null)
+                return false;
+
+            nano = new NanoSpell(id, template);
+            _nanos[id] = nano;
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     ItemObject GetRawItem(int id)

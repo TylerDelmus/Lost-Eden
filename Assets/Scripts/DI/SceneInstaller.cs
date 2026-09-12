@@ -24,12 +24,16 @@ public class SceneInstaller : MonoBehaviour, IInstaller
         var iconTextures = new IconTextureCache(resourceDatabase);
         var skinTextures = new SkinTextureResolver(resourceDatabase);
         var itemTemplates = new ItemTemplateCache(resourceDatabase);
+        var effectTextures = new EffectTextureNames(resourceDatabase);
+        var effectCatalog = new GfxTweakCatalog(resourceDatabase);
+        var effectHandler = new EffectHandler(effectCatalog, imageTextures, effectTextures);
         containerBuilder.RegisterValue(resourceDatabase);
         containerBuilder.RegisterValue(abiffMaterials);
         containerBuilder.RegisterValue(imageTextures);
         containerBuilder.RegisterValue(iconTextures);
         containerBuilder.RegisterValue(skinTextures);
         containerBuilder.RegisterValue(itemTemplates);
+        containerBuilder.RegisterValue(effectHandler);
         containerBuilder.RegisterValue(new AbiffLoader(resourceDatabase, abiffMaterials, imageTextures));
         containerBuilder.RegisterValue(new CatMeshLoader(resourceDatabase, catMeshMaterials));
         containerBuilder.RegisterValue(_playfieldFactory);
@@ -72,6 +76,17 @@ public class SceneInstaller : MonoBehaviour, IInstaller
 
         containerBuilder.RegisterValue(new GameHud(_inventoryWindowView), new System.Type[] { typeof(IGameHud) });
         containerBuilder.RegisterValue(new UIInteractionManager(), new System.Type[] { typeof(IUINotifyService) });
+
+        EffectRuntimeHost fxHost = GetComponentInChildren<EffectRuntimeHost>(true);
+        if (fxHost == null)
+        {
+            var fxGo = new GameObject("EffectRuntime");
+            fxGo.transform.SetParent(transform, false);
+            fxHost = fxGo.AddComponent<EffectRuntimeHost>();
+        }
+
+        fxHost.Init(effectHandler, _playerController);
+        effectHandler.SetLightParent(fxHost.transform);
     }
 
     CursorController FindCursorController()

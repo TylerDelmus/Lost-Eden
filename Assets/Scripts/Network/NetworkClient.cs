@@ -5,6 +5,8 @@ using SmokeLounge.AOtomation.Messaging.Messages;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using SmokeLounge.AOtomation.Messaging.Messages.SystemMessages;
 using UnityEngine;
+// Lives under an AOSharp.Common.* namespace in the AOtomation assembly; alias keeps the N3 usings clean.
+using BuffMessage = AOSharp.Common.SmokeLounge.AOtomation.Messaging.Messages.N3Messages.BuffMessage;
 
 public enum SessionPhase
 {
@@ -76,6 +78,8 @@ public class NetworkClient
     public event Action<AttackInfoMessage> AttackInfoReceived;
     public event Action<AttackMessage> AttackReceived;
     public event Action<StopFightMessage> StopFightReceived;
+    public event Action<CastNanoSpellMessage> CastNanoSpellReceived;
+    public event Action<BuffMessage> BuffReceived;
 
     public NetworkClient(NetworkConfig config = null)
     {
@@ -307,6 +311,16 @@ public class NetworkClient
     internal void OnStopFight(StopFightMessage msg)
     {
         StopFightReceived?.Invoke(msg);
+    }
+
+    internal void OnCastNanoSpell(CastNanoSpellMessage msg)
+    {
+        CastNanoSpellReceived?.Invoke(msg);
+    }
+
+    internal void OnBuff(BuffMessage msg)
+    {
+        BuffReceived?.Invoke(msg);
     }
 
     internal void RaiseMessageReceived(Message message) => MessageReceived?.Invoke(message);

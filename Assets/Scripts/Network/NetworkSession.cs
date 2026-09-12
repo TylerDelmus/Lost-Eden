@@ -8,6 +8,7 @@ using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using SmokeLounge.AOtomation.Messaging.Messages.SystemMessages;
 using SmokeLounge.AOtomation.Messaging.Serialization;
 using UnityEngine;
+using BuffMessage = AOSharp.Common.SmokeLounge.AOtomation.Messaging.Messages.N3Messages.BuffMessage;
 
 class SessionCookie
 {
@@ -315,6 +316,10 @@ class NetworkSession
             _client.OnAttack((AttackMessage)n3Msg);
         else if (n3Msg.N3MessageType == N3MessageType.StopFight)
             _client.OnStopFight((StopFightMessage)n3Msg);
+        else if (n3Msg.N3MessageType == N3MessageType.CastNanoSpell)
+            _client.OnCastNanoSpell((CastNanoSpellMessage)n3Msg);
+        else if (n3Msg.N3MessageType == N3MessageType.Buff)
+            _client.OnBuff((BuffMessage)n3Msg);
     }
 
     void ScheduleZoneConnect(IPEndPoint endpoint)

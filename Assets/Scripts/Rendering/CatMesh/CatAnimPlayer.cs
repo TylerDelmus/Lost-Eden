@@ -48,6 +48,7 @@ public sealed class CatAnimPlayer : MonoBehaviour
         public int ClaimBits = LayerBits;
         public int ActiveMask = LayerBits;
         public bool OneShot;
+        public bool Sustain;
         public Action OnComplete;
         public float FadeDuration;
         public float FadeElapsed;
@@ -391,6 +392,11 @@ public sealed class CatAnimPlayer : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// One-shot by anim kind. With <paramref name="sustain"/> the clip does not end on its own:
+    /// after the authored prefix it keeps looping (the loop region when the clip has loop markers)
+    /// until <see cref="StopLoopKey"/> or another clip takes the channel.
+    /// </summary>
     public bool PlayKindOnce(
         int kindId,
         int animId,
@@ -398,7 +404,8 @@ public sealed class CatAnimPlayer : MonoBehaviour
         Action onComplete,
         bool overlay,
         float speedScale = 1f,
-        int loopKey = 0)
+        int loopKey = 0,
+        bool sustain = false)
     {
         if (animId <= 0)
         {
@@ -426,7 +433,8 @@ public sealed class CatAnimPlayer : MonoBehaviour
             speedScale <= 0f ? 1f : speedScale,
             loopKey,
             kindId,
-            startDelay: 0f))
+            startDelay: 0f,
+            sustain))
         {
             onComplete?.Invoke();
             return false;
@@ -455,6 +463,45 @@ public sealed class CatAnimPlayer : MonoBehaviour
     {
         yield return new WaitForSeconds(delaySeconds);
         PlayKind(kindId, animId, blendSeconds, speedScale);
+    }
+
+    /// <summary>Ends clips tagged with <paramref name="loopKey"/>, including sustained loops.</summary>
+    public void StopLoopKey(int loopKey, float blendSeconds = DefaultBlendSeconds)
+    {
+        if (loopKey == 0)
+            return;
+
+        bool removed = false;
+        for (int i = _instances.Count - 1; i >= 0; i--)
+        {
+            AnimInstance instance = _instances[i];
+            if (instance.LoopKey != loopKey)
+                continue;
+
+            instance.Sustain = false;
+            if (blendSeconds <= 0f)
+            {
+                _instances.RemoveAt(i);
+                removed = true;
+                continue;
+            }
+
+            instance.FadingOut = true;
+            instance.FadingIn = false;
+            instance.OutgoingCrossFade = false;
+            instance.OneShot = false;
+            instance.OnComplete = null;
+            instance.FadeFromWeight = instance.Weight;
+            instance.TargetWeight = 0f;
+            instance.FadeDuration = Mathf.Max(0.01f, blendSeconds);
+            instance.FadeElapsed = 0f;
+        }
+
+        if (!removed)
+            return;
+
+        RebuildApplyOrder();
+        Arbitrate();
     }
 
     public bool HasLoopKeyPlaying(int loopKey)
@@ -614,7 +661,8 @@ public sealed class CatAnimPlayer : MonoBehaviour
         float speedScale = 1f,
         int loopKey = 0,
         int kindId = 0,
-        float startDelay = 0f)
+        float startDelay = 0f,
+        bool sustain = false)
     {
         CatAnimRuntimeClip clip = EnsureClip(animId);
         if (clip == null)
@@ -648,6 +696,7 @@ public sealed class CatAnimPlayer : MonoBehaviour
         incoming.LoopKey = loopKey;
         incoming.KindId = kindId;
         incoming.StartDelay = Mathf.Max(0f, startDelay);
+        incoming.Sustain = sustain && oneShot;
         _instances.Add(incoming);
         RebuildApplyOrder();
 
@@ -783,12 +832,13 @@ public sealed class CatAnimPlayer : MonoBehaviour
 
             instance.Time = clipDuration;
             instance.OneShot = false;
-            if (instance.Clip.HasLoopTiming && instance.Clip.LoopStart > 0.001f && instance.Priority == DefaultPriority)
+            bool loopsAfterPrefix = instance.Clip.HasLoopTiming && instance.Clip.LoopStart > 0.001f;
+            if (instance.Sustain || (loopsAfterPrefix && instance.Priority == DefaultPriority))
                 instance.Time = 0f;
 
             Action callback = instance.OnComplete;
             instance.OnComplete = null;
-            if (instance.Priority != DefaultPriority)
+            if (instance.Priority != DefaultPriority && !instance.Sustain)
                 _removeBuffer.Add(instance);
             if (callback != null)
                 _completedCallbacks.Add(callback);

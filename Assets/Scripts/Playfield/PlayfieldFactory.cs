@@ -9,6 +9,7 @@ using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using UnityEngine;
 using UnityEngine.Rendering.HighDefinition;
 using UnityEngine.Serialization;
+using BuffMessage = AOSharp.Common.SmokeLounge.AOtomation.Messaging.Messages.N3Messages.BuffMessage;
 using Vector3 = UnityEngine.Vector3;
 
 public class PlayfieldFactory : MonoBehaviour
@@ -22,6 +23,8 @@ public class PlayfieldFactory : MonoBehaviour
     [Inject] NetworkClient _networkClient;
     [Inject] PlayerController _playerController;
     [Inject] LoadingScreen _loadingScreen;
+    [Inject] EffectHandler _effectHandler;
+    [Inject] ItemTemplateCache _itemTemplates;
 
     readonly Dictionary<Identity, SimpleCharFullUpdateMessage> _pendingCharacters = new();
 
@@ -64,6 +67,8 @@ public class PlayfieldFactory : MonoBehaviour
         _networkClient.AttackInfoReceived += OnAttackInfo;
         _networkClient.AttackReceived += OnAttack;
         _networkClient.StopFightReceived += OnStopFight;
+        _networkClient.CastNanoSpellReceived += OnCastNanoSpell;
+        _networkClient.BuffReceived += OnBuff;
 
         if (_playerController?.CameraController != null)
             _playerController.CameraController.TargetAttached += OnCameraTargetAttached;
@@ -83,6 +88,8 @@ public class PlayfieldFactory : MonoBehaviour
         _networkClient.AttackInfoReceived -= OnAttackInfo;
         _networkClient.AttackReceived -= OnAttack;
         _networkClient.StopFightReceived -= OnStopFight;
+        _networkClient.CastNanoSpellReceived -= OnCastNanoSpell;
+        _networkClient.BuffReceived -= OnBuff;
 
         if (_playerController?.CameraController != null)
             _playerController.CameraController.TargetAttached -= OnCameraTargetAttached;
@@ -178,17 +185,135 @@ public class PlayfieldFactory : MonoBehaviour
 
     void OnCharacterAction(CharacterActionMessage msg)
     {
-        if (!NetworkDriven || _current == null)
+        if (!NetworkDriven || _current == null || msg == null)
             return;
 
         int action = (int)msg.Action;
         bool combat = action == AnimKindIds.FightEnterAction
             || action == AnimKindIds.FightLeaveAction
             || action == AnimKindIds.AttackSwingAction;
-        if (msg.Identity.Instance == _networkClient.LocalDynelId && !combat)
+        bool nanoFx = msg.Action == CharacterActionType.FinishNanoCasting
+            || msg.Action == CharacterActionType.InterruptNanoCasting;
+
+        // Local non-combat CharacterActions are usually client-predicted; still need FinishNanoCasting for hit FX.
+        if (msg.Identity.Instance == _networkClient.LocalDynelId && !combat && !nanoFx)
             return;
 
+        if (msg.Action == CharacterActionType.FinishNanoCasting)
+        {
+            OnFinishNanoCasting(msg);
+            return;
+        }
+
+        if (msg.Action == CharacterActionType.InterruptNanoCasting)
+        {
+            OnInterruptNanoCasting(msg);
+            return;
+        }
+
         _current.ApplyCharacterAction(msg);
+    }
+
+    void OnInterruptNanoCasting(CharacterActionMessage msg)
+    {
+        if (!_current.TryGetCharacter(msg.Identity, out Character caster))
+            return;
+
+        caster.StopSpellCastAnim();
+        _effectHandler?.CancelPendingTrace(caster.Identity.Instance);
+        _current.ApplyCharacterAction(msg);
+    }
+
+    void OnFinishNanoCasting(CharacterActionMessage msg)
+    {
+        if (!_current.TryGetCharacter(msg.Identity, out Character caster))
+        {
+            Debug.LogWarning($"[Effects] FinishNanoCasting: caster not found {msg.Identity}");
+            return;
+        }
+
+        // Often absent here; EffectHandler falls back to the target CastNanoSpell gave us.
+        Character target = null;
+        if (msg.Target.Instance != 0 && !_current.TryGetCharacter(msg.Target, out target))
+            Debug.LogWarning($"[Effects] FinishNanoCasting: target {msg.Target} not in playfield.");
+
+        int nanoId = msg.Parameter2;
+        bool isLocal = caster.Identity.Instance == _networkClient.LocalDynelId;
+        NanoSpell nano = nanoId != 0 && _itemTemplates != null ? _itemTemplates.GetNano(nanoId) : null;
+        if (nano == null && nanoId != 0)
+            Debug.LogWarning($"[Effects] FinishNanoCasting: nano template {nanoId} failed to load.");
+
+        bool selfCast = msg.Target.Instance != 0
+            ? msg.Target.Instance == caster.Identity.Instance
+            : caster.SpellCastOnSelf;
+
+        caster.PlaySpellCastReleaseAnim(selfCast);
+        _effectHandler?.PlayNanoHit(caster, target, nanoId, isLocal, nano);
+    }
+
+    void OnCastNanoSpell(CastNanoSpellMessage msg)
+    {
+        if (!NetworkDriven || _current == null || msg == null)
+            return;
+
+        // Identity is the caster on stock CastNanoSpell; Caster is a secondary field when present.
+        Identity casterId = msg.Identity.Instance != 0
+            ? msg.Identity
+            : msg.Caster;
+        if (!_current.TryGetCharacter(casterId, out Character caster)
+            && msg.Caster.Instance != 0
+            && msg.Caster.Instance != casterId.Instance)
+        {
+            _current.TryGetCharacter(msg.Caster, out caster);
+            casterId = msg.Caster;
+        }
+
+        if (caster == null)
+        {
+            Debug.LogWarning(
+                $"[Effects] CastNanoSpell: caster not found identity={msg.Identity} caster={msg.Caster} nano={msg.NanoId}");
+            return;
+        }
+
+        Character target = null;
+        if (msg.Target.Instance != 0)
+            _current.TryGetCharacter(msg.Target, out target);
+
+        // No target means a self cast, as does a target that is the caster.
+        caster.PlaySpellCastAnim(
+            msg.Target.Instance == 0 || msg.Target.Instance == caster.Identity.Instance);
+
+        int nanoId = msg.NanoId;
+        bool isLocal = caster.Identity.Instance == _networkClient.LocalDynelId;
+        NanoSpell nano = nanoId != 0 && _itemTemplates != null ? _itemTemplates.GetNano(nanoId) : null;
+        if (nano == null && nanoId != 0)
+            Debug.LogWarning($"[Effects] CastNanoSpell: nano template {nanoId} failed to load.");
+
+        _effectHandler?.PlayNanoCast(caster, target, nanoId, isLocal, nano);
+    }
+
+    /// <summary>Buff landed: identity is the recipient, Buff is the nano that was applied.</summary>
+    void OnBuff(BuffMessage msg)
+    {
+        if (!NetworkDriven || _current == null || msg == null)
+            return;
+
+        if (!_current.TryGetCharacter(msg.Identity, out Character target))
+            return;
+
+        int nanoId = msg.Buff.Instance;
+        if (nanoId == 0)
+            return;
+
+        NanoSpell nano = _itemTemplates != null ? _itemTemplates.GetNano(nanoId) : null;
+        if (nano == null)
+        {
+            Debug.LogWarning($"[Effects] Buff: nano template {msg.Buff.Type}:{nanoId} failed to load.");
+            return;
+        }
+
+        bool isLocal = target.Identity.Instance == _networkClient.LocalDynelId;
+        _effectHandler?.PlayNanoBuff(target, nanoId, isLocal, nano);
     }
 
     void OnAttackInfo(AttackInfoMessage msg)
