@@ -22,7 +22,8 @@ public static class EffectTypeTags
     // Composites / sequencing
     public const int Meta = 0x7d7;       // 2007 — _GfxControlMeta_t
     public const int Sequencer = 0xbbc;  // 3004 — _GfxControlSequencer_t
-    public const int Delay = 0xbc5;      // 3013 — _GfxControlDelay_t
+    public const int Delay = 0xbc5;      // 3013
+    public const int Scatter = 0xbd5;    // 3029 — GfxControlScatter_t, N timed child spawns — _GfxControlDelay_t
 
     // Point cloud / particles
     public const int Stars = 0x7d4;      // 2004 — _GfxControlStars_t
@@ -58,7 +59,7 @@ public static class EffectTypeTags
     public static bool IsBillboard(int typeCode) => IsSpriteFamily(typeCode);
 
     public static bool IsComposite(int typeCode)
-        => typeCode == Meta || typeCode == Sequencer || typeCode == Delay;
+        => typeCode == Meta || typeCode == Sequencer || typeCode == Delay || typeCode == Scatter;
 
     public static bool IsSpawner(int typeCode) => IsComposite(typeCode);
 

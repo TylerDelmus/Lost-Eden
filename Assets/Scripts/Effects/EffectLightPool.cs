@@ -9,8 +9,8 @@ using UnityEngine.Rendering.HighDefinition;
 public sealed class EffectLightPool
 {
     public const int Capacity = 16;
-    public const float BaseNanoCandela = 156250f;
-    public const float BaseStarsCandela = 250000f;
+    public const float BaseNanoCandela = EffectLightMath.BaseNanoCandela;
+    public const float BaseStarsCandela = EffectLightMath.BaseStarsCandela;
 
     // HDRP volumetric dimmer is 0–16 (same as StatelParser playfield lights).
     const float VolumetricDimmer = 8f;
@@ -134,26 +134,17 @@ public sealed class EffectLightPool
         _slots[index] = slot;
     }
 
-    public static float Luminance(Color c)
-        => Mathf.Clamp01(0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b);
+    public static float Luminance(Color c) => EffectLightMath.Luminance(c.r, c.g, c.b);
 
     public static float NanoIntensity(Color color)
-    {
-        float lum = Mathf.Max(0.5f, Luminance(color));
-        return BaseNanoCandela * lum * Mathf.Clamp01(color.a > 0f ? color.a : 1f);
-    }
+        => EffectLightMath.NanoIntensity(color.r, color.g, color.b, color.a);
 
     public static float StarsIntensity(Color color)
-    {
-        float lum = Mathf.Max(0.5f, Luminance(color));
-        return BaseStarsCandela * lum * Mathf.Clamp01(color.a > 0f ? color.a : 1f);
-    }
+        => EffectLightMath.StarsIntensity(color.r, color.g, color.b, color.a);
 
-    public static float NanoRange(float scale)
-        => Mathf.Clamp(40f * Mathf.Max(0.05f, scale), 24f, 120f);
+    public static float NanoRange(float scale) => EffectLightMath.NanoRange(scale);
 
-    public static float StarsRange(float spawnRadius)
-        => Mathf.Clamp(spawnRadius * 32f, 40f, 140f);
+    public static float StarsRange(float spawnRadius) => EffectLightMath.StarsRange(spawnRadius);
 
     void EnsureInitialized()
     {
@@ -189,7 +180,7 @@ public sealed class EffectLightPool
             light.lightUnit = LightUnit.Candela;
             light.color = Color.white;
             light.intensity = 0f;
-            light.range = 12f;
+            light.range = 120f;
             light.bounceIntensity = 0f;
             light.shadows = LightShadows.None;
             light.cullingMask = ~0;

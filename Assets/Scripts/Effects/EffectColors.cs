@@ -36,14 +36,27 @@ public static class EffectColors
                || Mathf.Abs(tint.b - 1f) > 0.01f;
     }
 
+    /// <summary>
+    /// Replaces a template's own RGB with an overriding one, keeping the template's alpha so its
+    /// fade still runs.
+    ///
+    /// This used to multiply the two, which silently destroys any colour the two do not share. The
+    /// Spell1 hand-cast ladder is the case that exposed it: every Flare rung from 46000 to 46017
+    /// carries the same generic blue-ish 0.5,0.4,1.0, and the per-spell colour lives on the Spell1
+    /// record instead — 46133 (nano 45680) is blue and 46269 (nano 201937) is green. Multiplying the
+    /// green spell into the blue template gave 0,0.2,0.1, effectively black, so 201937's hand spikes
+    /// could not be seen whatever geometry they were given. Since the rungs are shared across the
+    /// whole ladder and the Spell1 block is what differs per spell, the spell's colour is the one
+    /// that has to win.
+    /// </summary>
     public static Color ApplyTint(Color baseColor, Color tint)
     {
         if (!IsOverrideTint(tint))
             return baseColor;
         return new Color(
-            baseColor.r * tint.r,
-            baseColor.g * tint.g,
-            baseColor.b * tint.b,
+            tint.r,
+            tint.g,
+            tint.b,
             baseColor.a * Mathf.Clamp01(tint.a > 0f ? tint.a : 1f));
     }
 }

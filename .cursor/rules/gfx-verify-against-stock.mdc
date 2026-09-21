@@ -1,0 +1,65 @@
+---
+description: >-
+  Verify gfx identity against the stock AO client (class, visual, geometry)
+  before implementing. Do not guess a GfxControl from address adjacency or
+  shared gfxtweak fields. Completeness of Process / fields / children is
+  gfx-re-stock-mechanics.
+globs: Assets/Scripts/Effects/**/*.cs,Assets/Scripts/Rendering/**/*.cs,Tests/Effects/**/*.cs
+alwaysApply: false
+---
+
+# Verify Gfx Against Stock
+
+Effect behaviour is recoverable from the stock client via the `user-ghidra` MCP (`Gamecode.dll`,
+`DisplaySystem.dll`). Read it. Plausible-looking inferences in this subsystem have a poor track
+record, because unrelated control classes share one template layout and one field vocabulary.
+This rule is identity only. Finish the pipeline in `gfx-re-stock-mechanics` before calling a
+control stock-exact.
+
+## Rules
+
+1. **Never identify a control class by address adjacency or by matching field values.** Every
+   sprite-family control reads the same gfxtweak offsets (`field n` is at `0x14 + 4n`), so the
+   numbers lining up proves nothing. Confirm through `_EffectHandler_t::CreateGfxControl`
+   (`Gamecode 100cea5d`), which maps typeCode to constructor, then read the constructor's vftable
+   assignment for the class name.
+2. **Confirm the visual class by xref, not by name.** A control's visual lives at `this + 0x30`.
+   Find which one by taking xrefs to the `??0GfxVisual*` constructor imports. `GfxVisualFlareType0`
+   is not the Flare's by virtue of being called Flare.
+3. **Read the vertex builder before choosing geometry.** `size0`/`size1` do not mean width/height
+   everywhere: `GfxVisualSprite2Type0` draws `P ± A*size0*0.5 ± B*size1*0.5`, while
+   `GfxVisualFlareType0` scales *both* axes by `size0` and uses its two points only to orient the
+   quad. Locate a builder by xref'ing the vertex buffer its `Init` allocates.
+4. **Disassemble when the answer hinges on an operand.** The decompiler folds repeated loads,
+   drops `ECX`, and garbles long argument lists. Anything load-bearing — which offset, which
+   register, which of two size channels — comes from `disassemble_function` or
+   `disassemble_bytes`, not `decompile_function`.
+5. **Treat gfxtweak ints as raw bits.** Integer fields are int32 bit patterns, not floats; read
+   them with `GfxTweakRecord.FieldInt`.
+6. **State what is verified and what is not.** Cite the address a claim came from in the code
+   comment. Mark anything still unconfirmed as such rather than writing it as fact.
+7. **Ask for a breakpoint when static reading cannot settle it.** The user runs the stock client
+   and will break on a function to report which path executes, the live argument values, or a
+   struct's contents. Ask instead of guessing which branch is taken.
+8. **Verify children before blaming a parent.** An effect is a tree; dump it before concluding
+   which child produces a given visual. A cast's look often comes from a sibling that is still a
+   stand-in, not from the one being edited.
+
+## Patterns
+
+```csharp
+// ✅ Cite the evidence, at the address it came from
+// Pool size, from the create at Gamecode 100f187e:
+//   FLD [ESI + 0x3c] ; FMUL 1.5 ; FMUL [ESI + 0xa0] ; CMP EAX, [ESI + 0x90]
+int pool = Math.Max(Round(rate * 1.5f * life35), field31);
+
+// ✅ Flag an unresolved divergence rather than letting it read as intent
+// KNOWN DIVERGENCE: stock draws a 2*size0 square (DisplaySystem FUN_1001364b); we span the two
+// points because the square produced nothing in game. Unresolved - do not "fix" without testing.
+
+// ❌ Inferring a class from where it sits
+// FUN_100dd0c4 is just below the 1005 ctor, so 1005 must use GfxVisualFlareType0.
+
+// ❌ Inferring geometry from a field name
+// Field 14 is "size1", so it is the quad's height.
+```

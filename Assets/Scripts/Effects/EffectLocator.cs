@@ -34,7 +34,7 @@ public sealed class EffectLocator
         };
     }
 
-    /// <summary>Update a <see cref="WorldPoint"/> locator each frame (Spell1 hand children).</summary>
+    /// <summary>Update a <see cref="WorldPoint"/> locator each frame (Spell1's window 3 mid point).</summary>
     public void SetWorldPoint(Vector3 position, Quaternion rotation)
     {
         _kind = Kind.World;
@@ -94,6 +94,30 @@ public sealed class EffectLocator
             _kind = Kind.HitLocation,
             _hitLocation = hitLocation,
         };
+    }
+
+    /// <summary>
+    /// Copy of this locator bound to a different attach id, for kinds that have one. Stock's
+    /// <c>InitDynelTemplate</c> falls back to the template's field 7 when the caller passes attach
+    /// 0, so a record can place itself on a specific bone (hit 2710 asks for Bip01 Spine3_ac).
+    /// Kinds without an attach — world points, hosts and hit locations — are returned unchanged.
+    /// </summary>
+    public EffectLocator WithAttach(int attachId)
+    {
+        if (attachId == _attachId)
+            return this;
+
+        switch (_kind)
+        {
+            case Kind.Dynel:
+                return OnDynel(_source, attachId);
+            case Kind.Visual:
+                return OnVisual(_visual, attachId);
+            case Kind.Beam:
+                return Beam(_source, _target, attachId);
+            default:
+                return this;
+        }
     }
 
     public bool TryGetSourceDynel(out Dynel dynel)

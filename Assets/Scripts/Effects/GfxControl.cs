@@ -6,9 +6,15 @@ using UnityEngine;
 /// </summary>
 public abstract class GfxControl
 {
-    public const float FirstFrameDt = 0.033f;
+    public const float FirstFrameDt = EffectFrameRate.StockFrameDt;
     public const float WatchdogSeconds = 60f;
     public const float InfiniteDuration = -1f;
+
+    /// <summary>
+    /// How many stock frames this delta covers, for scaling stock's per-Process constants. See
+    /// <see cref="EffectFrameRate"/>.
+    /// </summary>
+    protected static float StockFrameSteps(float dt) => EffectFrameRate.FrameSteps(dt);
 
     protected readonly GfxTweakRecord Record;
     protected readonly EffectLocator Locator;

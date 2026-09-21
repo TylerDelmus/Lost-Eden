@@ -1173,8 +1173,7 @@ public class VisualDynel : MonoBehaviour
     {
         matrix = default;
 
-        // Stock FUN_10106368 / FUN_10105c44: attach 0 keeps the CAT mesh RRefFrame world
-        // matrix (body frame). Our dynel transform sits at the feet — do not use it here.
+        // Stock FUN_10106368 / FUN_10105c44: attach 0 keeps the mesh's own RRefFrame world matrix.
         if (attachId == 0)
             return TryGetMeshFrameMatrix(out matrix);
 
@@ -1188,39 +1187,23 @@ public class VisualDynel : MonoBehaviour
     }
 
     /// <summary>
-    /// Unity stand-in for stock CAT mesh RRefFrame (attach 0): pelvis / body / mesh mid-height.
+    /// Attach 0, stock's <c>FUN_10106368</c>: the mesh's own RRefFrame world matrix — either
+    /// <c>GetMesh()-&gt;refFrame</c> or, for characters, the CAT mesh's root frame. That is the
+    /// model's own origin, which for a character model sits on the ground at the feet; it is not a
+    /// bone and not a mid-body point.
+    ///
+    /// This used to return the pelvis, which put the 28608 hit explosion (record 43721, attach 0)
+    /// through the middle of the target instead of at its feet. The give-away is inside that same
+    /// hit tree: sibling record 43719 asks for attach 1000 explicitly, so if attach 0 also meant
+    /// the pelvis there would be no reason for the artist to ever write 1000.
     /// </summary>
     bool TryGetMeshFrameMatrix(out UnityEngine.Matrix4x4 matrix)
     {
         matrix = default;
 
-        if (TryGetBones(out Transform[] bones))
-        {
-            if (TryFindBoneByAttachId(bones, EffectAttachIds.BonePelvis, out Transform pelvis) && pelvis != null)
-            {
-                matrix = pelvis.localToWorldMatrix;
-                return true;
-            }
-
-            if (TryFindBoneByAttachId(bones, EffectAttachIds.BoneSpine, out Transform spine) && spine != null)
-            {
-                matrix = spine.localToWorldMatrix;
-                return true;
-            }
-        }
-
-        if (TryGetAttractor(AttractorPlace.Hip, out Attractor hip) && hip != null)
-        {
-            matrix = hip.transform.localToWorldMatrix;
-            return true;
-        }
-
         if (_visualRoot != null)
         {
-            Transform t = _visualRoot.transform;
-            float midY = GetCachedMeshHeight() * 0.5f;
-            UnityEngine.Vector3 pos = t.TransformPoint(new UnityEngine.Vector3(0f, midY, 0f));
-            matrix = UnityEngine.Matrix4x4.TRS(pos, t.rotation, UnityEngine.Vector3.one);
+            matrix = _visualRoot.transform.localToWorldMatrix;
             return true;
         }
 

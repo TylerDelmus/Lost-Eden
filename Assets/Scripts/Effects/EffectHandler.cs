@@ -711,6 +711,8 @@ public sealed class EffectHandler : IEffectSpawnFactory
         if (!_catalog.TryGet(effectId, out GfxTweakRecord record))
             return CreateBillboard(CreateFallbackRecord(effectId), locator, tint);
 
+        locator = ApplyTemplateAttach(record, locator, attachOverride);
+
         int typeCode = record.TypeCode;
         switch (typeCode)
         {
@@ -720,8 +722,20 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 return new GfxControlSequencer(record, locator, this, tint);
             case EffectTypeTags.Delay:
                 return new GfxControlDelay(record, locator, this, tint);
+            case EffectTypeTags.Scatter:
+                return new GfxControlScatter(record, locator, this, tint);
             case EffectTypeTags.Stars:
                 return CreateStars(record, locator);
+            case EffectTypeTags.Flare:
+            case EffectTypeTags.FlareAlt:
+                return CreateFlare(record, locator, tint);
+            case EffectTypeTags.Cord:
+                return CreateCord(record, locator, tint);
+            case EffectTypeTags.Sparks:
+                return CreateSparks(record, locator, tint);
+            case EffectTypeTags.Nano0:
+            case EffectTypeTags.Nano1:
+                return CreateNano(record, locator, tint);
             case EffectTypeTags.BParticle2:
                 return CreateBParticle2(record, locator, tint);
             case EffectTypeTags.TParticle:
@@ -730,17 +744,20 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 return new GfxControlHighlight(record, locator);
             case EffectTypeTags.Spell1:
                 return CreateSpell1(record, locator, tint, caster, target, attachOverride, casterVisual, targetVisual);
-            case EffectTypeTags.Shield:
-            case EffectTypeTags.Shield2:
-                // Mesh shields not wired yet — avoid white-square billboard misuse of float fields.
-                return new GfxControlUnsupported(record, locator);
             default:
+                // Tracers are strips between two points, so they get the stretched control.
+                // Remaining sprite-family types fall back to the generic billboard stand-in.
+                // Everything else has no control yet; only warn when the stock class actually
+                // draws, so audio, buff bookkeeping and typeCode 0 stay quiet.
+                if (EffectTypeTags.IsBeam(typeCode))
+                    return CreateTracer(record, locator, tint);
                 if (EffectTypeTags.IsSpriteFamily(typeCode))
                     return CreateBillboard(record, locator, tint);
-                if (EffectTypeTags.IsBeam(typeCode))
-                    return CreateBillboard(record, locator, tint);
-                Debug.LogWarning(
-                    $"[Effects] unsupported typeCode={typeCode} (0x{typeCode:X}) id={record.Id}; skipping draw.");
+                if (!EffectTypeCatalog.IsIntentionallyNotRendered(typeCode))
+                {
+                    Debug.LogWarning(
+                        $"[Effects] no control for {EffectTypeCatalog.Describe(typeCode)} id={record.Id}; skipping draw.");
+                }
                 return new GfxControlUnsupported(record, locator);
         }
     }
@@ -790,6 +807,49 @@ public sealed class EffectHandler : IEffectSpawnFactory
             slot.Cols, slot.Rows, slot.FirstFrame, slot.LastFrame, _lights);
     }
 
+    GfxControl CreateFlare(GfxTweakRecord record, EffectLocator locator, Color tint)
+    {
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 9, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        return new GfxControlFlare(
+            record, locator, texture, _atlasFrames,
+            slot.Cols, slot.Rows, slot.FirstFrame, slot.LastFrame, tint, _lights);
+    }
+
+    GfxControl CreateCord(GfxTweakRecord record, EffectLocator locator, Color tint)
+    {
+        // Every Cord template names material 8 (light_halo2) in field 9, same as Flare.
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 8, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        return new GfxControlCord(
+            record, locator, texture, _atlasFrames,
+            slot.Cols, slot.Rows, slot.FirstFrame, slot.LastFrame, tint, _lights);
+    }
+
+    GfxControl CreateNano(GfxTweakRecord record, EffectLocator locator, Color tint)
+    {
+        // 8010 and 8011 both name material 8 (light_halo2) in field 9, and stock reads that same field
+        // in the create at FUN_100e7a0e to pick the material, columns, rows and frame range.
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 8, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        return new GfxControlNano(
+            record, locator, texture, _atlasFrames,
+            slot.Cols, slot.Rows, slot.FirstFrame, slot.LastFrame, tint, _lights);
+    }
+
+    GfxControl CreateSparks(GfxTweakRecord record, EffectLocator locator, Color tint)
+    {
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 33, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        return new GfxControlSparks(
+            record, locator, texture, _atlasFrames,
+            slot.Cols, slot.Rows, slot.FirstFrame, slot.LastFrame, tint, _lights);
+    }
+
     GfxControl CreateBParticle2(GfxTweakRecord record, EffectLocator locator, Color tint)
     {
         int materialIndex = ResolveMaterialIndex(record, defaultIndex: 10, preferredField: 10);
@@ -810,13 +870,66 @@ public sealed class EffectHandler : IEffectSpawnFactory
             slot.Cols, slot.Rows, slot.FirstFrame, slot.LastFrame, tint);
     }
 
+    /// <summary>
+    /// Stock <c>_GfxControl_t::InitDynelTemplate</c> (0x100d2d31) reads the attach id from the
+    /// caller, and when that is 0 falls back to the template's own field 7:
+    /// <c>if (attachId == 0) attachId = record.GetInt(7)</c>. That is how a hit effect places
+    /// itself on a bone — 2710, the blood splat, asks for 1004 (Bip01 Spine3_ac, upper chest)
+    /// rather than the mid-body mesh frame. Applied per record so each child of a Meta or
+    /// Sequencer tree gets its own attach.
+    /// </summary>
+    static EffectLocator ApplyTemplateAttach(
+        GfxTweakRecord record, EffectLocator locator, int attachOverride)
+    {
+        if (attachOverride != 0 || record == null || locator == null || record.FieldCount <= 7)
+            return locator;
+
+        int templateAttach = record.FieldInt(7, 0);
+        if (templateAttach == 0)
+            return locator;
+        if (!EffectAttachIds.IsBone(templateAttach)
+            && !EffectAttachIds.IsAttractor(templateAttach)
+            && !EffectAttachIds.IsMuzzle(templateAttach))
+        {
+            return locator;
+        }
+
+        return locator.WithAttach(templateAttach);
+    }
+
+    GfxControl CreateTracer(GfxTweakRecord record, EffectLocator locator, Color tint)
+    {
+        // Tracer templates keep the material in field 9 like the rest of the sprite family;
+        // s_bullet.png (15) and s_bulletfront.png (16) are the common ones.
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 15, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        bool additive = record == null || SpriteEmitterMath.IsAdditive(record.FieldInt(0, 0));
+        return new GfxControlTracer(
+            record,
+            locator,
+            texture,
+            _atlasFrames,
+            slot.Cols,
+            slot.Rows,
+            slot.FirstFrame,
+            slot.LastFrame,
+            tint,
+            additive);
+    }
+
     GfxControl CreateBillboard(GfxTweakRecord record, EffectLocator locator, Color tint)
     {
-        int materialField = record != null && record.TypeCode == EffectTypeTags.Sprite ? 0 : 9;
+        // typeCode 1012 keeps the material index in field 0, so that layout has no flags word and
+        // cannot be asked about blending; every 1012 template is alpha-blended in stock anyway.
+        bool spriteLayout = record != null && record.TypeCode == EffectTypeTags.Sprite;
+        int materialField = spriteLayout ? 0 : 9;
         int materialIndex = ResolveMaterialIndex(record, defaultIndex: 10, preferredField: materialField);
         EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
         Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
-        bool additive = record == null || record.TypeCode != EffectTypeTags.Sprite;
+        // Flags bit 0x800 picks DESTBLEND=INVSRCALPHA over ONE, i.e. matte instead of glowing.
+        bool additive = !spriteLayout
+            && (record == null || SpriteEmitterMath.IsAdditive(record.FieldInt(0, 0)));
         return new GfxControlBillboard(
             record,
             locator,

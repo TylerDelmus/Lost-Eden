@@ -75,20 +75,60 @@ public sealed class EffectHitLocation
         _age = _travelSeconds;
     }
 
+    /// <summary>
+    /// Fallbacks for a casting hand, in descending order of preference. A missing hand must not drop
+    /// the endpoint to the model root, which sits on the ground — the effect is supposed to leave the
+    /// caster's hands.
+    /// </summary>
+    static readonly int[] SourceFallbacks =
+    {
+        EffectAttachIds.RightHand,
+        EffectAttachIds.BoneRHand,
+        EffectAttachIds.BoneLHand,
+        EffectAttachIds.BoneSpine2,
+        EffectAttachIds.BonePelvis,
+    };
+
+    /// <summary>
+    /// Fallbacks for the impact point. Same reasoning: degrade towards the middle of the body rather
+    /// than to attach 0, which is the mesh's own frame down at the feet.
+    /// </summary>
+    static readonly int[] TargetFallbacks =
+    {
+        EffectAttachIds.Head,
+        EffectAttachIds.BoneNeck,
+        EffectAttachIds.BoneSpine2,
+        EffectAttachIds.BonePelvis,
+    };
+
     public bool TryGetEndpoints(out Vector3 start, out Vector3 end)
     {
-        if (!TryResolvePoint(_sourceDynel, _sourceVisual, _sourceAttachId, out start, out _))
+        if (!TryResolveWithFallbacks(
+                _sourceDynel, _sourceVisual, _sourceAttachId, SourceFallbacks, out start))
         {
             end = default;
             return false;
         }
 
-        if (!TryResolvePoint(_targetDynel, _targetVisual, _targetAttachId, out end, out _)
-            && !TryResolvePoint(_targetDynel, _targetVisual, EffectAttachIds.Head, out end, out _)
-            && !TryResolvePoint(_targetDynel, _targetVisual, 0, out end, out _))
-            return false;
+        return TryResolveWithFallbacks(
+            _targetDynel, _targetVisual, _targetAttachId, TargetFallbacks, out end);
+    }
 
-        return true;
+    static bool TryResolveWithFallbacks(
+        Dynel dynel, VisualDynel visual, int attachId, int[] fallbacks, out Vector3 position)
+    {
+        if (TryResolvePoint(dynel, visual, attachId, out position, out _))
+            return true;
+
+        for (int i = 0; i < fallbacks.Length; i++)
+        {
+            if (fallbacks[i] != attachId
+                && TryResolvePoint(dynel, visual, fallbacks[i], out position, out _))
+                return true;
+        }
+
+        // Last resort: the mesh frame, so the effect still plays somewhere rather than vanishing.
+        return TryResolvePoint(dynel, visual, EffectAttachIds.MeshFrame, out position, out _);
     }
 
     public bool TryGetCurrent(out Vector3 position, out Quaternion rotation)

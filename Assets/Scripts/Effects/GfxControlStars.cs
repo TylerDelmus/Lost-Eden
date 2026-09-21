@@ -34,6 +34,23 @@ public sealed class GfxControlStars : GfxControl
     readonly float _spawnInterval;
     readonly float _particleLifetime;
     readonly float _turbulence;
+    readonly int _field30Int;
+    readonly int _field31Int;
+
+    /// <summary>
+    /// Length of one sawtooth cycle (field 26). Separate from the control's lifetime: field 31 counts
+    /// how many of these fit in a cycle window, and the control has to outlive one to ever repeat.
+    /// </summary>
+    readonly float _cycleSeconds;
+
+    /// <summary>How many cycles a stock-endless sawtooth runs for here. See the ctor.</summary>
+    const int EndlessSawtoothCycles = 8;
+
+    /// <summary>
+    /// Fractional carry for <see cref="TakeSpawnBudget"/>, so a budget of less than one slot per
+    /// frame still opens slots at the right rate rather than rounding away to nothing.
+    /// </summary>
+    float _spawnBudgetCarry;
     readonly Color _startColor;
     readonly Color _endColor;
     readonly Vector3[] _dirs;
@@ -66,22 +83,39 @@ public sealed class GfxControlStars : GfxControl
         _starType = record != null ? record.FieldInt(10, 6) : 6;
         _sizeCurveScale = record != null ? Mathf.Max(0.05f, record.Field(28, 0.35f)) : 0.35f;
         _spawnRadius = record != null ? Mathf.Max(0.05f, record.Field(29, 1f)) : 1f;
-        // Field 30 is particle lifetime in ms (stock: this+0x16cc = field30/1000).
-        float lifeMs = record != null ? record.FieldInt(30, 0) : 0;
+        // Field 30: case 3 life ms (→ /1000); case 8 radius scale int (→ *0.01*sqrt).
+        _field30Int = record != null ? record.FieldInt(30, 0) : 0;
+        float lifeMs = _field30Int;
         _particleLifetime = lifeMs > 0 ? lifeMs / 1000f : 0f;
         // Field 11 is a per-type tune float — only some cases treat it as a respawn interval.
         float interval = record != null ? record.Field(11, 0f) : 0f;
         if (interval < 0.05f || float.IsNaN(interval))
             interval = _particleLifetime > 0.05f ? _particleLifetime : 0.45f;
         _spawnInterval = interval;
-        _turbulence = (record != null ? record.FieldInt(31, 10) : 10) / 100f;
+        // Field 31: continuous turbulence (/100); case 8 cycle count (int as-is).
+        _field31Int = record != null ? record.FieldInt(31, 10) : 10;
+        _turbulence = _field31Int / 100f;
 
         _startColor = EffectColors.ReadArgbBlock(record, 18, Color.white);
         _endColor = EffectColors.ReadArgbBlock(record, 22, _startColor);
         _looping = _starType != 0x19;
 
         float duration = record != null ? record.Field(26, 2f) : 2f;
-        if (duration < 0f)
+        _cycleSeconds = duration > 0.05f ? duration : 0.6f;
+
+        if (IsSawtooth(_starType))
+        {
+            // These types repeat: stock builds the phase as frac(field31 * age / cycle), which only
+            // means anything if the control outlives a cycle. 43719 sets field 8 to -1, so in stock
+            // the shell keeps re-expanding until its parent tears it down, and that repetition is the
+            // flashing. Sizing the lifetime from field 26 instead showed exactly one pass.
+            //
+            // The multiple is ours, not stock's. Field 8 of -1 is endless, but our hit path creates
+            // the effect without a duration, so an endless child would never leave the screen.
+            float lifetime = record != null ? record.Field(8, -1f) : -1f;
+            SetDuration(lifetime > 0.05f ? lifetime : _cycleSeconds * EndlessSawtoothCycles);
+        }
+        else if (duration < 0f)
             SetDuration(InfiniteDuration);
         else if (IsContinuousEmitter(_starType))
             SetDuration(duration > 0.05f ? duration : InfiniteDuration);
@@ -93,6 +127,13 @@ public sealed class GfxControlStars : GfxControl
         if (_lights != null)
             _lights.TryAcquire(out _lightLease);
     }
+
+    /// <summary>
+    /// Types whose motion is a repeating sawtooth over <see cref="_cycleSeconds"/>. Stock shares one
+    /// block between <c>case 7</c> and <c>case 8</c> in FUN_100f826a, so they behave identically —
+    /// that covers 74 records that used to fall through to the generic stub.
+    /// </summary>
+    static bool IsSawtooth(int starType) => starType is 7 or 8;
 
     static bool IsContinuousEmitter(int starType)
     {
@@ -130,21 +171,25 @@ public sealed class GfxControlStars : GfxControl
                 break;
             case 4:
             case 5:
-                ProcessContinuous(sphere: true, stagger: false, turb: 0.1f);
+                ProcessContinuous(dt, sphere: true, stagger: false, turb: 0.1f);
                 break;
             case 6:
             case 11:
             case 9:
             case 10:
-                ProcessContinuous(sphere: false, stagger: true, turb: _turbulence);
+                ProcessContinuous(dt, sphere: false, stagger: true, turb: _turbulence);
+                break;
+            case 7:
+            case 8:
+                ProcessCase8();
                 break;
             case 19:
-                ProcessCase19();
+                ProcessCase19(dt);
                 break;
             default:
                 // Closest-matching stub for unread cases.
                 if (IsContinuousEmitter(_starType))
-                    ProcessContinuous(sphere: false, stagger: true, turb: _turbulence);
+                    ProcessContinuous(dt, sphere: false, stagger: true, turb: _turbulence);
                 else
                     ProcessCase0();
                 break;
@@ -196,6 +241,42 @@ public sealed class GfxControlStars : GfxControl
     }
 
     /// <summary>
+    /// Stock starTypes 7 and 8 — FUN_100f826a, which shares one block between the two cases.
+    /// Sawtooth phase from (field31 * age / cycle); shell radius and size grow with √frac along the
+    /// pre-baked direction template. field30 (int) scales radius; field28/29 size.
+    ///
+    /// The phase divides by the cycle length, never by the control's own lifetime. Using the lifetime
+    /// made the two equal, so frac reached 1 exactly as the control died and the sawtooth could never
+    /// wrap — one slow pass instead of stock's repeated flashing.
+    /// </summary>
+    void ProcessCase8()
+    {
+        StarsMotion.Case8(
+            Age,
+            _cycleSeconds,
+            _field31Int,
+            _field30Int > 0 ? _field30Int : 100,
+            _sizeCurveScale,
+            _spawnRadius,
+            out float radius,
+            out float size,
+            out float lifeFrac);
+
+        float sizeScale = Mathf.Max(0.02f, size);
+        float alpha = Color.Lerp(_startColor, _endColor, lifeFrac).a;
+        Matrix4x4 world = WorldMatrix;
+        for (int i = 0; i < MaxPoints; i++)
+        {
+            Vector3 local = _dirs[i] * radius;
+            _points[i].Position = world.MultiplyPoint3x4(local);
+            _points[i].Size = sizeScale;
+            _points[i].Alpha = alpha;
+            _points[i].LifeFrac = lifeFrac;
+            _points[i].Active = true;
+        }
+    }
+
+    /// <summary>
     /// Stock starType 3 — exact port of FUN_100f826a case 3.
     /// Per particle:
     ///   +0xc48 worldPos, +0x648 tangent (seeded as horizontal perpendicular to spawn offset).
@@ -207,14 +288,10 @@ public sealed class GfxControlStars : GfxControl
     /// </summary>
     void ProcessCase3(float dt)
     {
-        // 0.1 per Process at ~30 FPS (GfxControl.FirstFrameDt). Clamp avoids a hitch spiral.
-        float k = 0.1f * (dt / FirstFrameDt);
-        if (k > 0.35f)
-            k = 0.35f;
-        if (k < 0f)
-            k = 0f;
+        // 0.1 per Process at ~30 FPS (GfxControl.FirstFrameDt).
+        float k = 0.1f * StockFrameSteps(dt);
 
-        int spawnBudget = 2;
+        int spawnBudget = TakeSpawnBudget(2, dt);
         Vector3 origin = WorldMatrix.GetColumn(3);
         bool fading = IsTerminating;
         float life = _particleLifetime > 0.05f ? _particleLifetime : 0.9f;
@@ -226,21 +303,18 @@ public sealed class GfxControlStars : GfxControl
             if (p.SpawnTimer > Age)
             {
                 // Velocity = tangent accumulator (+0x648); Position = world (+0xc48).
-                Vector3 worldPos = p.Position;
-                Vector3 tangent = p.Velocity;
-
-                Vector3 delta = origin - worldPos;
-                tangent += delta * k;
-                worldPos += tangent * k;
-
-                p.Velocity = tangent;
-                p.Position = worldPos;
-                p.Anchor = worldPos;
+                float px = p.Position.x, py = p.Position.y, pz = p.Position.z;
+                float tx = p.Velocity.x, ty = p.Velocity.y, tz = p.Velocity.z;
+                StarsMotion.Case3Step(
+                    ref px, ref py, ref pz, ref tx, ref ty, ref tz,
+                    origin.x, origin.y, origin.z, k);
+                p.Velocity = new Vector3(tx, ty, tz);
+                p.Position = new Vector3(px, py, pz);
+                p.Anchor = p.Position;
 
                 float lifeFrac = (life + Age - p.SpawnTimer) / life;
                 lifeFrac = Mathf.Clamp01(lifeFrac);
-                float size = (lifeFrac + 0.2f) * _sizeCurveScale * (1f - lifeFrac * lifeFrac);
-                p.Size = Mathf.Max(0.05f, size);
+                p.Size = StarsMotion.Case3Size(lifeFrac, _sizeCurveScale);
                 p.Alpha = 1f;
                 p.LifeFrac = lifeFrac;
                 continue;
@@ -267,11 +341,20 @@ public sealed class GfxControlStars : GfxControl
             p.SpawnTimer = Age + life;
             p.LifeFrac = 0f;
             p.Alpha = 1f;
-            p.Size = Mathf.Max(0.05f, 0.2f * _sizeCurveScale);
+            p.Size = StarsMotion.Case3Size(0f, _sizeCurveScale);
             p.Active = true;
             spawnBudget--;
         }
     }
+
+    /// <summary>
+    /// Slots this frame may open, from stock's per-Process allowance. Stock opens at most a fixed
+    /// couple of slots per call, which at ~30 FPS is a rate rather than a per-frame constant — used
+    /// verbatim it let a 240 FPS client fill the cloud eight times faster than the original, so the
+    /// whole thing appeared and burned out early.
+    /// </summary>
+    int TakeSpawnBudget(int stockPerFrame, float dt) =>
+        EffectFrameRate.TakeBudget(ref _spawnBudgetCarry, stockPerFrame, dt);
 
     /// <summary>Stock _GfxControl_t::GetRandomPointInSphere — uniform in the unit ball.</summary>
     static Vector3 RandomPointInUnitBall()
@@ -287,9 +370,10 @@ public sealed class GfxControlStars : GfxControl
         return p;
     }
 
-    void ProcessContinuous(bool sphere, bool stagger, float turb)
+    void ProcessContinuous(float dt, bool sphere, bool stagger, float turb)
     {
-        int spawnBudget = 2;
+        int spawnBudget = TakeSpawnBudget(2, dt);
+        float steps = StockFrameSteps(dt);
         Matrix4x4 world = WorldMatrix;
         Vector3 origin = world.GetColumn(3);
         bool fading = IsTerminating;
@@ -323,9 +407,9 @@ public sealed class GfxControlStars : GfxControl
             }
             else if (p.Active)
             {
-                // Turbulence drift (stock FUN_1008718b-style small offsets).
-                p.Anchor += Random.insideUnitSphere * (turb * 0.02f);
-                p.Anchor += p.Velocity.normalized * (0.01f * _spawnRadius);
+                // Turbulence drift (stock FUN_1008718b-style small offsets), per stock Process call.
+                p.Anchor += Random.insideUnitSphere * (turb * 0.02f * steps);
+                p.Anchor += p.Velocity.normalized * (0.01f * _spawnRadius * steps);
                 p.Position = p.Anchor;
 
                 float lifeFrac = (_spawnInterval + Age - p.SpawnTimer) / Mathf.Max(0.05f, _spawnInterval);
@@ -338,10 +422,10 @@ public sealed class GfxControlStars : GfxControl
         }
     }
 
-    void ProcessCase19()
+    void ProcessCase19(float dt)
     {
         // Hit-location blend: without a hit-loc system, expand from origin then contract toward it.
-        int spawnBudget = 15;
+        int spawnBudget = TakeSpawnBudget(15, dt);
         Matrix4x4 world = WorldMatrix;
         Vector3 origin = world.GetColumn(3);
         float lifeRatio = Duration > 0f ? Mathf.Clamp01(Age / Duration) : Mathf.Clamp01(Age);
@@ -422,7 +506,8 @@ public sealed class GfxControlStars : GfxControl
         int frameCount = _lastFrame - _firstFrame + 1;
         // Continuous emitters color per particle life so start+end hues coexist (stock DiaBill).
         // Burst case 0 keeps a shared lifeFrac so the whole shell shifts together.
-        bool perParticleColor = IsContinuousEmitter(_starType) || _starType == 19;
+        bool perParticleColor =
+            IsContinuousEmitter(_starType) || _starType == 19 || IsSawtooth(_starType);
         bool case3 = _starType == 3;
 
         UpdateLight(perParticleColor);
@@ -509,8 +594,10 @@ public sealed class GfxControlStars : GfxControl
         float t01 = Duration > 0f ? Mathf.Clamp01(Age / Duration) : Mathf.Clamp01(Age / 2f);
         float life = perParticleColor && active > 0 ? lifeSum / active : t01;
         Color lightColor = Color.Lerp(_startColor, _endColor, life);
-        if (active > 0)
-            lightColor.a *= alphaSum / active;
+
+        // An empty cloud emits no light. Leaving alpha at the lerped value here used to hold the
+        // light at full brightness for the rest of the control's duration.
+        lightColor.a = active > 0 ? lightColor.a * (alphaSum / active) : 0f;
 
         // One stable light at the effect center; range tracks the live cloud so the
         // rim stays washed without hopping between particles.

@@ -1,0 +1,62 @@
+---
+description: >-
+  Reverse-engineer stock EffectHandler / GfxControl mechanics with Ghidra MCP.
+  Use when porting a typeCode, reading CreateGfxControl, Process, GfxVisual,
+  gfxtweak fields, Gamecode.dll, or DisplaySystem.dll. Completeness protocol —
+  walk every layer before treating C# as stock-exact.
+globs: Assets/Scripts/Effects/**/*.cs,Assets/Scripts/Rendering/**/*.cs,Tests/Effects/**/*.cs
+alwaysApply: false
+---
+
+# Stock Effect RE Completeness
+
+Identity rules live in `gfx-verify-against-stock`. This rule is the coverage gate:
+do not implement, and do not call a control `Ported`, until the pipeline below is finished.
+
+## MCP
+
+1. `list_instances` → `connect_instance` → `list_open_programs`.
+2. Pass `program` on every call (`Gamecode.dll` or `DisplaySystem.dll`). Omitting it
+   silently targets the wrong binary.
+3. Find with `search_functions_enhanced` / `search_strings`. Bind control ↔ visual
+   with `get_xrefs_to` / `get_xrefs_from`. Shape from `decompile_function`. Any
+   load-bearing offset, register, or size channel from `disassemble_function` /
+   `disassemble_bytes` — never from decompiler text alone.
+
+## Pipeline (in order, no skipped layer)
+
+1. `typeCode` → `_EffectHandler_t::CreateGfxControl` (`Gamecode 100cea5d`) **and**
+   the Tracer / Spell overloads. Tracers are not in the main switch.
+2. Constructor → vftable → class name. This is the only identification that counts.
+3. Constructor field reads → gfxtweak map. Ints are raw bits (`FieldInt`).
+4. `Process()` — every case, not the first match.
+5. Visual at `this + 0x30` via xref to the `??0GfxVisual*` ctor, then `Init` and
+   the vertex builder that fills the buffer `Init` allocated.
+6. Child / spawn calls back into `EffectHandler`, plus lifetime / `ReadyFlag`,
+   attach, and lights.
+
+Dump the gfxtweak tree for the effect under test (AODB + `_tmp_aodb/DumpGfx`)
+before blaming a parent. A Meta's look often comes from a sibling still marked
+`Approximated` or `Missing`.
+
+## Coverage gate (required before C#)
+
+State each item as **read (address)** or **KNOWN GAP**. Missing any of them
+blocks `EffectSupport.Ported`:
+
+- every field stock's ctor / `Process` / visual actually loads
+- every `Process` branch
+- duration / terminate / `ReadyFlag`
+- attach, lights, children
+- `EffectTypeCatalog` `StockClass` / `Support` updated to match recovery
+
+Extract recovered math into a Unity-free helper and lock it with a test
+(`StarsMotion`, `SpriteEmitterMath`, `ScatterSchedule`). Do not invent a close
+curve and call it ported.
+
+```csharp
+// ✅ Layer cited, unread fields named
+// Process case 8, Gamecode 100f826a. Fields 33/36-39 unread — KNOWN GAP.
+
+// ❌ Decompiled Process and implemented. Visual / unused cases / children skipped.
+```

@@ -44,7 +44,7 @@ public sealed class GfxControlSpell1 : GfxControl
     Vector3 _posA;
     Vector3 _posB;
     Vector3 _posC;
-    Quaternion _rotA;
+
     float _scale;
     float _scaleBase = 1f;
     float _scaleMax = float.MaxValue;
@@ -126,7 +126,7 @@ public sealed class GfxControlSpell1 : GfxControl
         _childId32 = record != null ? record.FieldInt(32, 0) : 0;
         _skipLateWindows = record != null && record.FieldCount > 33 && record.FieldInt(33, 0) != 0;
 
-        if (!TryResolveAttach(_casterVisual, _caster, _handAttachA, out _posA, out _rotA)
+        if (!TryResolveAttach(_casterVisual, _caster, _handAttachA, out _posA, out _)
             || !TryResolveAttach(_casterVisual, _caster, _handAttachB, out _posB, out _)
             || !TryResolveLocatorC(out _posC, out _))
         {
@@ -210,7 +210,7 @@ public sealed class GfxControlSpell1 : GfxControl
         if (_broken || !_active)
             return;
 
-        if (!TryResolveAttach(_casterVisual, _caster, _handAttachA, out _posA, out _rotA)
+        if (!TryResolveAttach(_casterVisual, _caster, _handAttachA, out _posA, out _)
             || !TryResolveAttach(_casterVisual, _caster, _handAttachB, out _posB, out _)
             || !TryResolveLocatorC(out _posC, out _))
         {
@@ -245,8 +245,6 @@ public sealed class GfxControlSpell1 : GfxControl
                     _w1MidFired = true;
                     TerminateWindow1ChildrenGracefully();
                 }
-
-                PushWindow1Positions();
             }
 
             return;
@@ -264,10 +262,16 @@ public sealed class GfxControlSpell1 : GfxControl
         if (_factory == null)
             return;
 
-        _loc140 = EffectLocator.WorldPoint(_posA, _rotA);
-        _loc144 = EffectLocator.WorldPoint(_posB, Quaternion.identity);
-        _loc148 = EffectLocator.WorldPoint(_posA, _rotA);
-        _loc14c = EffectLocator.WorldPoint(_posB, Quaternion.identity);
+        // Stock attaches all four of these to the hands through their own templates: Cord 8000/8001
+        // and Flare 46002/46003 each carry field 7 = 2001 or 2000, the left and right hand
+        // attractors. Handing them a live caster locator lets the spawn path apply that field the
+        // way InitDynelTemplate does, so every emitter follows its own hand for as long as it runs.
+        //
+        // These used to get a WorldPoint locator sampled once at spawn. A world point cannot carry
+        // an attach id, so the cluster hung in the air where the cast began, and because the
+        // sprites are emitted into world space a moving hand strung stationary filaments out behind
+        // it as loose lines.
+        _loc140 = _loc144 = _loc148 = _loc14c = CasterLocator();
 
         _child140 = SpawnWorld(_childId29, _loc140, ApplyTint(_colorA));
         _child144 = SpawnWorld(_childId30, _loc144, ApplyTint(_colorA));
@@ -275,19 +279,25 @@ public sealed class GfxControlSpell1 : GfxControl
         _child14c = SpawnWorld(_childId28, _loc14c, ApplyTint(_colorB));
     }
 
+    /// <summary>
+    /// A locator on the caster carrying no attach of its own, so each child's template field 7
+    /// chooses the hand. Attach 0 is the mesh frame, which is what stock starts from before
+    /// <c>FUN_10105c44</c> replaces it with the named attractor.
+    /// </summary>
+    EffectLocator CasterLocator()
+    {
+        if (_casterVisual != null)
+            return EffectLocator.OnVisual(_casterVisual, EffectAttachIds.MeshFrame);
+        if (_caster != null)
+            return EffectLocator.OnDynel(_caster, EffectAttachIds.MeshFrame);
+        return null;
+    }
+
     EffectHandle SpawnWorld(int effectId, EffectLocator locator, Color tint)
     {
         if (effectId <= 0 || locator == null)
             return null;
         return _factory.SpawnChild(effectId, locator, tint);
-    }
-
-    void PushWindow1Positions()
-    {
-        _loc140?.SetWorldPoint(_posA, _rotA);
-        _loc144?.SetWorldPoint(_posB, Quaternion.identity);
-        _loc148?.SetWorldPoint(_posA, _rotA);
-        _loc14c?.SetWorldPoint(_posB, Quaternion.identity);
     }
 
     void TerminateWindow1ChildrenGracefully()

@@ -39,6 +39,7 @@ public static class HdrpUnlitMaterialFactory
             material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.One);
         if (material.HasProperty("_ZWrite"))
             material.SetFloat("_ZWrite", 0f);
+        MakeDoubleSided(material);
         HDMaterial.ValidateMaterial(material);
         return material;
     }
@@ -58,6 +59,7 @@ public static class HdrpUnlitMaterialFactory
             material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.One);
         if (material.HasProperty("_ZWrite"))
             material.SetFloat("_ZWrite", 0f);
+        MakeDoubleSided(material);
         HDMaterial.ValidateMaterial(material);
         return material;
     }
@@ -77,8 +79,29 @@ public static class HdrpUnlitMaterialFactory
             material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
         if (material.HasProperty("_ZWrite"))
             material.SetFloat("_ZWrite", 0f);
+        MakeDoubleSided(material);
         HDMaterial.ValidateMaterial(material);
         return material;
+    }
+
+    /// <summary>
+    /// Turns off backface culling, which every FX quad needs and HDRP Unlit does not do by default.
+    ///
+    /// Stock does the same: the sprite visual's ctor sets D3DRS_CULLMODE to D3DCULL_NONE alongside the
+    /// blend states, because an effect quad is oriented to suit its geometry and nothing keeps a
+    /// consistent facing. Ours has the same problem — a camera-aligned quad and a quad stretched along
+    /// a world axis end up with opposite facings, so with culling on only one of the two ever draws,
+    /// and stretched quads (spikes, cords, tracers) silently vanish.
+    /// </summary>
+    static void MakeDoubleSided(Material material)
+    {
+        if (material.HasProperty("_DoubleSidedEnable"))
+            material.SetFloat("_DoubleSidedEnable", 1f);
+        if (material.HasProperty("_CullMode"))
+            material.SetFloat("_CullMode", (float)UnityEngine.Rendering.CullMode.Off);
+        if (material.HasProperty("_CullModeForward"))
+            material.SetFloat("_CullModeForward", (float)UnityEngine.Rendering.CullMode.Off);
+        material.EnableKeyword("_DOUBLESIDED_ON");
     }
 
     static void EnsureLoaded()
