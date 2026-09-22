@@ -2,13 +2,37 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Stock typeCode 0x3f2 (_GfxControlSpell1_t): caster L/R hands + target chest/head,
-/// window-2 camera-facing sprite chain along hands, age-gated child effects.
+/// typeCode 0x3f2 — stock <c>_GfxControlSpell1_t</c>, the nano cast effect (ctor
+/// <c>Gamecode 100f39ec</c>, vftable <c>1016dbec</c>, Process <c>100f3f59</c>). The only control
+/// <c>CreateEffect2(id, caster, target, attach)</c> will build (<c>100d1705</c>).
+///
+/// Locators: A = caster left hand (2001), B = caster right hand (2000), both replaced by the attach
+/// override when one is given; C = target <c>Bip01 Spine2_ac</c> (1003), else its head attractor
+/// (2002). If any of them cannot be resolved the control is ready at once.
+///
+/// Fields (loader <c>100f2789</c>): 0 flags, 8 duration, 9 material, 10-13 colour A (A,R,G,B),
+/// 14-17 colour B, 18-26 window times, 27-32 child ids, 33 "no late windows".
+///
+/// Everything runs off the control's age in four windows (dispatch <c>100f3f30</c>):
+/// <list type="bullet">
+/// <item>Window 1, [f18, f20]: on entry build children f29 and f27 on hand A and f30 and f28 on hand B
+/// as owned controls, and push colour A / colour B into them as start / stop colour (<c>100f29ea</c>).
+/// Each later frame move them to the hands and run them (<c>100f2bab</c>); from f19 on, terminate them
+/// gracefully once. Past f20 delete them (<c>100f2c66</c>).</item>
+/// <item>Window 2, [f21, f22]: a trail of sprites between the hands, redrawn every frame
+/// (<see cref="Spell1Trail"/>), in colour A.</item>
+/// <item>Windows 3 and 4 only when field 33 is 0. UNVERIFIED: their bodies below are the earlier
+/// port's model and have not been checked against 100f2d63 / 100f3070 / 100f2e49 / 100f31b1.</item>
+/// </list>
+/// Stock SetDuration is a no-op here (slot 8 is a stub), TerminateGracefully readies the control
+/// outright (slot 6, <c>100f2612</c>), and the destructor deletes the window-1 children
+/// (<c>100f3c6c</c>). The cast's result calls <see cref="NextState"/> (slot 10, <c>100f2617</c>).
 /// </summary>
 public sealed class GfxControlSpell1 : GfxControl
 {
-    const float SafetyDuration = 60f;
-    const int MaxTrailSprites = 50;
+    /// <summary>Window-1 child order, stock +0x140..+0x14c: fields 29, 30, 27, 28.</summary>
+    static readonly int[] Window1Field = { 29, 30, 27, 28 };
+    static readonly bool[] Window1OnB = { false, true, false, true };
 
     readonly Dynel _caster;
     readonly Dynel _target;
@@ -16,71 +40,61 @@ public sealed class GfxControlSpell1 : GfxControl
     readonly VisualDynel _targetVisual;
     readonly IEffectSpawnFactory _factory;
     readonly Texture2D _texture;
-    readonly Color _tint;
     readonly int _handAttachA;
     readonly int _handAttachB;
 
-    readonly float _w1Start;
-    readonly float _w1Mid;
-    readonly float _w1End;
-    readonly float _w2Start;
-    readonly float _w2End;
-    readonly float _w3Start;
-    readonly float _w3End;
-    readonly float _w4Start;
-    readonly float _w4End;
-    readonly int _childId27;
-    readonly int _childId28;
-    readonly int _childId29;
-    readonly int _childId30;
-    readonly int _childId31;
-    readonly int _childId32;
+    readonly float _durationField;
+    readonly float[] _colorA = new float[4];
+    readonly float[] _colorB = new float[4];
+    /// <summary>Fields 18-26 (+0x64..+0x84). NextState rewrites some of them.</summary>
+    readonly float[] _w = new float[9];
     readonly bool _skipLateWindows;
-    readonly Color _colorA;
-    readonly Color _colorB;
 
-    bool _broken;
-    bool _active;
     Vector3 _posA;
     Vector3 _posB;
     Vector3 _posC;
 
-    float _scale;
-    float _scaleBase = 1f;
-    float _scaleMax = float.MaxValue;
-    Vector3 _midStored;
-    Color _trailColor = Color.white;
-
+    readonly GfxControl[] _window1 = new GfxControl[4];
     bool _w1Entered;
     bool _w1MidFired;
     bool _w1Exited;
     bool _w2Entered;
     bool _w2Past;
-    bool _w3Entered;
-    bool _w3Exited;
-    bool _w4Entered;
-    bool _w4Exited;
-
-    EffectHandle _child140;
-    EffectHandle _child144;
-    EffectHandle _child148;
-    EffectHandle _child14c;
-    EffectHandle _child150;
-    EffectHandle _child154;
-    EffectLocator _loc140;
-    EffectLocator _loc144;
-    EffectLocator _loc148;
-    EffectLocator _loc14c;
-    EffectLocator _loc150;
+    uint _trailArgb;
+    readonly float[] _passes = new float[8];
 
     struct TrailSprite
     {
         public Vector3 Pos;
         public float Size;
-        public Color Color;
     }
 
-    readonly List<TrailSprite> _trail = new List<TrailSprite>(64);
+    readonly List<TrailSprite> _trail = new List<TrailSprite>(128);
+
+    /// <summary>Window-1 child <paramref name="i"/> (stock +0x140 + 4i), or null. For debug tooling.</summary>
+    public GfxControl Window1Child(int i) => i >= 0 && i < _window1.Length ? _window1[i] : null;
+
+    /// <summary>Trail sprites drawn this frame. For debug tooling.</summary>
+    public int TrailSpriteCount => _trail.Count;
+
+    /// <summary>Locator A / B positions from the last Process. For debug tooling.</summary>
+    public Vector3 HandA => _posA;
+    public Vector3 HandB => _posB;
+
+    // Late windows (UNVERIFIED model).
+    readonly int _childId31;
+    readonly int _childId32;
+    float _scale;
+    float _scaleBase = 1f;
+    float _scaleMax = float.MaxValue;
+    Vector3 _midStored;
+    bool _w3Entered;
+    bool _w3Exited;
+    bool _w4Entered;
+    bool _w4Exited;
+    EffectHandle _child150;
+    EffectHandle _child154;
+    EffectLocator _loc150;
 
     public GfxControlSpell1(
         GfxTweakRecord record,
@@ -95,11 +109,11 @@ public sealed class GfxControlSpell1 : GfxControl
         VisualDynel targetVisual = null)
         : base(record, locator)
     {
+        // Stock Spell1 takes no tint; colour comes from fields 10-17 only.
         _caster = caster;
         _target = target != null ? target : caster;
         _factory = factory;
         _texture = texture;
-        _tint = EffectColors.IsOverrideTint(tint) ? tint : Color.white;
 
         _handAttachA = attachOverride != 0 ? attachOverride : EffectAttachIds.LeftHand;
         _handAttachB = attachOverride != 0 ? attachOverride : EffectAttachIds.RightHand;
@@ -107,38 +121,24 @@ public sealed class GfxControlSpell1 : GfxControl
         _casterVisual = casterVisual != null ? casterVisual : GetVisual(_caster);
         _targetVisual = targetVisual != null ? targetVisual : (GetVisual(_target) ?? _casterVisual);
 
-        _colorA = EffectColors.ReadArgbBlock(record, 10, Color.white);
-        _colorB = EffectColors.ReadArgbBlock(record, 14, _colorA);
-        _w1Start = record != null ? record.Field(18, 0f) : 0f;
-        _w1Mid = record != null ? record.Field(19, _w1Start) : 0f;
-        _w1End = record != null ? record.Field(20, _w1Start) : 0f;
-        _w2Start = record != null ? record.Field(21, 0f) : 0f;
-        _w2End = record != null ? record.Field(22, 0f) : 0f;
-        _w3Start = record != null ? record.Field(23, 0f) : 0f;
-        _w3End = record != null ? record.Field(24, 0f) : 0f;
-        _w4Start = record != null ? record.Field(25, 0f) : 0f;
-        _w4End = record != null ? record.Field(26, 0f) : 0f;
-        _childId27 = record != null ? record.FieldInt(27, 0) : 0;
-        _childId28 = record != null ? record.FieldInt(28, 0) : 0;
-        _childId29 = record != null ? record.FieldInt(29, 0) : 0;
-        _childId30 = record != null ? record.FieldInt(30, 0) : 0;
+        _durationField = record != null ? record.Field(8, -1f) : -1f;
+        for (int c = 0; c < 4; c++)
+        {
+            _colorA[c] = record != null ? record.Field(10 + c) : 0f;
+            _colorB[c] = record != null ? record.Field(14 + c) : 0f;
+        }
+        for (int i = 0; i < 9; i++)
+            _w[i] = record != null ? record.Field(18 + i) : 0f;
         _childId31 = record != null ? record.FieldInt(31, 0) : 0;
         _childId32 = record != null ? record.FieldInt(32, 0) : 0;
-        _skipLateWindows = record != null && record.FieldCount > 33 && record.FieldInt(33, 0) != 0;
+        _skipLateWindows = record != null && record.FieldInt(33, 0) != 0;
 
-        if (!TryResolveAttach(_casterVisual, _caster, _handAttachA, out _posA, out _)
-            || !TryResolveAttach(_casterVisual, _caster, _handAttachB, out _posB, out _)
-            || !TryResolveLocatorC(out _posC, out _))
-        {
-            _broken = true;
+        base.SetDuration(InfiniteDuration);
+
+        if (!ResolveLocators())
             ReadyFlag = true;
-            return;
-        }
-
-        RecomputeScale();
-        SetDuration(SafetyDuration);
-        _active = true;
-        _trailColor = ApplyTint(_colorA);
+        else
+            RecomputeScale();
     }
 
     static VisualDynel GetVisual(Dynel dynel)
@@ -148,29 +148,22 @@ public sealed class GfxControlSpell1 : GfxControl
         return null;
     }
 
-    Color ApplyTint(Color c) => EffectColors.ApplyTint(c, _tint);
+    int ChildId(int field) => Record != null ? Record.FieldInt(field, 0) : 0;
 
-    bool TryResolveLocatorC(out Vector3 pos, out Quaternion rot)
+    bool ResolveLocators()
     {
-        if (TryResolveAttach(_targetVisual, _target, EffectAttachIds.BoneSpine2, out pos, out rot))
-            return true;
-        return TryResolveAttach(_targetVisual, _target, EffectAttachIds.Head, out pos, out rot);
+        return TryResolveAttach(_casterVisual, _caster, _handAttachA, out _posA)
+            && TryResolveAttach(_casterVisual, _caster, _handAttachB, out _posB)
+            && (TryResolveAttach(_targetVisual, _target, EffectAttachIds.BoneSpine2, out _posC)
+                || TryResolveAttach(_targetVisual, _target, EffectAttachIds.Head, out _posC));
     }
 
-    static bool TryResolveAttach(
-        VisualDynel visual,
-        Dynel dynel,
-        int attachId,
-        out Vector3 pos,
-        out Quaternion rot)
+    static bool TryResolveAttach(VisualDynel visual, Dynel dynel, int attachId, out Vector3 pos)
     {
         pos = default;
-        rot = Quaternion.identity;
-        Matrix4x4 m;
-        if (visual != null && visual.TryGetAttachMatrixStrict(attachId, out m))
+        if (visual != null && visual.TryGetAttachMatrixStrict(attachId, out Matrix4x4 m))
         {
             pos = m.GetColumn(3);
-            rot = m.rotation;
             return true;
         }
 
@@ -180,20 +173,178 @@ public sealed class GfxControlSpell1 : GfxControl
             if (dynel is Character character && character.Visual != null)
                 return false;
             pos = dynel.transform.position;
-            rot = dynel.transform.rotation;
             return attachId == 0;
-        }
-
-        if (visual != null)
-        {
-            Transform t = visual.VisualRoot != null ? visual.VisualRoot.transform : visual.transform;
-            pos = t.position;
-            rot = t.rotation;
-            return false;
         }
 
         return false;
     }
+
+    /// <summary>Stock slot 8 is a stub (<c>10079931 RET 4</c>): the cast's SetDuration(6000) does nothing.</summary>
+    public override void SetDuration(float seconds)
+    {
+    }
+
+    /// <summary>
+    /// Stock slot 10 (<c>100f2617</c>). With field 33 clear and window 1 not yet over, pull the
+    /// timeline to now: f20 = f19 + age - f20, then f19 = f21 = age, f22 = age + 0.5,
+    /// f23 = age + 0.35. With field 33 set it does nothing.
+    /// </summary>
+    public override void NextState()
+    {
+        if (_skipLateWindows || ReadyFlag)
+            return;
+        if (!(_w[2] > Age))
+            return;
+
+        _w[2] = _w[1] + Age - _w[2];
+        _w[1] = Age;
+        _w[3] = Age;
+        _w[4] = (float)(Age + 0.5);
+        _w[5] = (float)(Age + 0.3499999940395355);
+    }
+
+    /// <summary>Stock slot 6 (<c>100f2612</c>): ready at once; the destructor deletes the children.</summary>
+    protected override void OnTerminateGracefully() => ReadyFlag = true;
+
+    protected override void OnProcess(float dt)
+    {
+        _trail.Clear();
+
+        // _GfxControl_t::Process: ready once 0 < duration < age.
+        if (_durationField > 0f && _durationField < Age)
+        {
+            ReadyFlag = true;
+            return;
+        }
+
+        if (!ResolveLocators())
+        {
+            ReadyFlag = true;
+            return;
+        }
+
+        RecomputeScale();
+        Window1(dt);
+        Window2();
+        if (!_skipLateWindows)
+        {
+            Window3(dt);
+            Window4();
+        }
+    }
+
+    void Window1(float dt)
+    {
+        float age = Age;
+        if (!(_w[0] <= age))
+            return;
+
+        if (age <= _w[2])
+        {
+            if (!_w1Entered)
+            {
+                _w1Entered = true;
+                SpawnWindow1();
+                return;
+            }
+
+            if (_w[1] <= age && !_w1MidFired)
+            {
+                _w1MidFired = true;
+                for (int i = 0; i < _window1.Length; i++)
+                    _window1[i]?.TerminateGracefully();
+            }
+
+            for (int i = 0; i < _window1.Length; i++)
+            {
+                GfxControl child = _window1[i];
+                if (child == null)
+                    continue;
+                child.UpdatePosition(Window1OnB[i] ? _posB : _posA);
+                child.Process(dt);
+            }
+            return;
+        }
+
+        if (!_w1Exited)
+        {
+            _w1Exited = true;
+            DeleteWindow1();
+        }
+    }
+
+    void SpawnWindow1()
+    {
+        if (_factory == null)
+            return;
+
+        for (int i = 0; i < _window1.Length; i++)
+        {
+            int id = ChildId(Window1Field[i]);
+            if (id <= 0)
+                continue;
+            Vector3 pos = Window1OnB[i] ? _posB : _posA;
+            _window1[i] = _factory.CreateOwnedControl(id, EffectLocator.WorldPoint(pos, Quaternion.identity));
+        }
+
+        for (int i = 0; i < _window1.Length; i++)
+        {
+            GfxControl child = _window1[i];
+            if (child == null)
+                continue;
+            child.SetStartColor(_colorA[0], _colorA[1], _colorA[2], _colorA[3]);
+            child.SetStopColor(_colorB[0], _colorB[1], _colorB[2], _colorB[3]);
+        }
+    }
+
+    void DeleteWindow1()
+    {
+        for (int i = 0; i < _window1.Length; i++)
+        {
+            _window1[i]?.Release(true);
+            _window1[i] = null;
+        }
+    }
+
+    void Window2()
+    {
+        float age = Age;
+        if (!(_w[3] <= age))
+            return;
+
+        if (age <= _w[4])
+        {
+            if (!_w2Entered)
+            {
+                _w2Entered = true;
+                _trailArgb = Spell1Trail.PackColor(_colorA[0], _colorA[1], _colorA[2], _colorA[3]);
+                return;
+            }
+
+            int passes = Spell1Trail.WindowPasses(age, _w[3], _w[4], _passes);
+            Vector3 delta = _posB - _posA;
+            float distance = delta.magnitude;
+            for (int p = 0; p < passes; p++)
+            {
+                Spell1Trail.Pass(
+                    distance,
+                    _passes[p * 4], _passes[p * 4 + 1], _passes[p * 4 + 2], _passes[p * 4 + 3],
+                    () => Random.value,
+                    (t, size) =>
+                    {
+                        // GfxVisualSprite2Type2::Init(256) caps the sprites a frame can hold.
+                        if (_trail.Count < 256)
+                            _trail.Add(new TrailSprite { Pos = _posA + delta * t, Size = size });
+                    });
+            }
+            return;
+        }
+
+        if (!_w2Past)
+            _w2Past = true;
+    }
+
+    // ---- Late windows: UNVERIFIED (earlier port model, only reached when field 33 is 0) ----------
 
     void RecomputeScale()
     {
@@ -204,199 +355,10 @@ public sealed class GfxControlSpell1 : GfxControl
             _scale = _scaleMax;
     }
 
-    protected override void OnProcess(float dt)
-    {
-        _trail.Clear();
-        if (_broken || !_active)
-            return;
-
-        if (!TryResolveAttach(_casterVisual, _caster, _handAttachA, out _posA, out _)
-            || !TryResolveAttach(_casterVisual, _caster, _handAttachB, out _posB, out _)
-            || !TryResolveLocatorC(out _posC, out _))
-        {
-            _broken = true;
-            return;
-        }
-
-        RecomputeScale();
-        DispatchWindow1();
-        DispatchWindow2();
-        if (!_skipLateWindows)
-        {
-            DispatchWindow3(dt);
-            DispatchWindow4();
-        }
-    }
-
-    void DispatchWindow1()
+    void Window3(float dt)
     {
         float age = Age;
-        if (_w1Start <= age && age <= _w1End)
-        {
-            if (!_w1Entered)
-            {
-                _w1Entered = true;
-                SpawnWindow1Children();
-            }
-            else
-            {
-                if (!_w1MidFired && _w1Mid < age)
-                {
-                    _w1MidFired = true;
-                    TerminateWindow1ChildrenGracefully();
-                }
-            }
-
-            return;
-        }
-
-        if (_w1Entered && !_w1Exited && age > _w1End)
-        {
-            _w1Exited = true;
-            DestroyWindow1Children();
-        }
-    }
-
-    void SpawnWindow1Children()
-    {
-        if (_factory == null)
-            return;
-
-        // Stock attaches all four of these to the hands through their own templates: Cord 8000/8001
-        // and Flare 46002/46003 each carry field 7 = 2001 or 2000, the left and right hand
-        // attractors. Handing them a live caster locator lets the spawn path apply that field the
-        // way InitDynelTemplate does, so every emitter follows its own hand for as long as it runs.
-        //
-        // These used to get a WorldPoint locator sampled once at spawn. A world point cannot carry
-        // an attach id, so the cluster hung in the air where the cast began, and because the
-        // sprites are emitted into world space a moving hand strung stationary filaments out behind
-        // it as loose lines.
-        _loc140 = _loc144 = _loc148 = _loc14c = CasterLocator();
-
-        _child140 = SpawnWorld(_childId29, _loc140, ApplyTint(_colorA));
-        _child144 = SpawnWorld(_childId30, _loc144, ApplyTint(_colorA));
-        _child148 = SpawnWorld(_childId27, _loc148, ApplyTint(_colorB));
-        _child14c = SpawnWorld(_childId28, _loc14c, ApplyTint(_colorB));
-    }
-
-    /// <summary>
-    /// A locator on the caster carrying no attach of its own, so each child's template field 7
-    /// chooses the hand. Attach 0 is the mesh frame, which is what stock starts from before
-    /// <c>FUN_10105c44</c> replaces it with the named attractor.
-    /// </summary>
-    EffectLocator CasterLocator()
-    {
-        if (_casterVisual != null)
-            return EffectLocator.OnVisual(_casterVisual, EffectAttachIds.MeshFrame);
-        if (_caster != null)
-            return EffectLocator.OnDynel(_caster, EffectAttachIds.MeshFrame);
-        return null;
-    }
-
-    EffectHandle SpawnWorld(int effectId, EffectLocator locator, Color tint)
-    {
-        if (effectId <= 0 || locator == null)
-            return null;
-        return _factory.SpawnChild(effectId, locator, tint);
-    }
-
-    void TerminateWindow1ChildrenGracefully()
-    {
-        _factory?.TerminateEffectGracefully(_child140);
-        _factory?.TerminateEffectGracefully(_child144);
-        _factory?.TerminateEffectGracefully(_child148);
-        _factory?.TerminateEffectGracefully(_child14c);
-    }
-
-    void DestroyWindow1Children()
-    {
-        Delete(ref _child140);
-        Delete(ref _child144);
-        Delete(ref _child148);
-        Delete(ref _child14c);
-        _loc140 = _loc144 = _loc148 = _loc14c = null;
-    }
-
-    void DispatchWindow2()
-    {
-        float age = Age;
-        if (_w2Start <= age && age <= _w2End)
-        {
-            if (!_w2Entered)
-            {
-                _w2Entered = true;
-                _trailColor = ApplyTint(_colorA);
-            }
-
-            EmitWindow2Trail(age);
-            return;
-        }
-
-        if (_w2Entered && !_w2Past && age > _w2End)
-            _w2Past = true;
-    }
-
-    void EmitWindow2Trail(float age)
-    {
-        float w = _w2End - _w2Start;
-        if (w <= 1e-6f)
-            return;
-
-        float half = w * 0.5f;
-        float t = age - _w2Start;
-
-        if (t < half)
-        {
-            float u = (t / half) * 0.5f;
-            NewSpritePass(0f, 0.75f - u, u, 0.25f);
-            NewSpritePass(1f - u, 0.75f - u, 1f - u, 0.25f);
-        }
-        else if (t < w)
-        {
-            float u = (t - half) / half;
-            float s = u * 0.5f;
-            float c = u * 0.75f + 0.25f;
-            NewSpritePass(s, 0.25f, 0.5f, c);
-            NewSpritePass(1f - s, 0.25f, 0.5f, c);
-        }
-    }
-
-    /// <summary>Stock FUN_100f2fde(t0, size0, t1, size1).</summary>
-    void NewSpritePass(float t0, float size0, float t1, float size1)
-    {
-        Vector3 delta = _posB - _posA;
-        float len = delta.magnitude;
-        float span = Mathf.Abs(t1 - t0);
-        int count = Mathf.RoundToInt(len * span * 50f);
-        if (count < 2)
-            count = 2;
-        if (count > MaxTrailSprites)
-            count = MaxTrailSprites;
-
-        float t = t0;
-        float size = size0;
-        float tStep = (count <= 1) ? 0f : (t1 - t0) / (count - 1);
-        float sizeStep = (count <= 1) ? 0f : (size1 - size0) / (count - 1);
-
-        for (int i = 0; i < count; i++)
-        {
-            float jittered = t + (Random.value * 0.02f - 0.01f);
-            Vector3 pos = Vector3.Lerp(_posA, _posB, Mathf.Clamp01(jittered));
-            _trail.Add(new TrailSprite
-            {
-                Pos = pos,
-                Size = Mathf.Max(0.01f, size),
-                Color = _trailColor,
-            });
-            t += tStep;
-            size += sizeStep;
-        }
-    }
-
-    void DispatchWindow3(float dt)
-    {
-        float age = Age;
-        if (_w3Start <= age && age <= _w3End)
+        if (_w[5] <= age && age <= _w[6])
         {
             if (!_w3Entered)
             {
@@ -405,38 +367,27 @@ public sealed class GfxControlSpell1 : GfxControl
                 _scaleBase = 5f;
                 _scaleMax = 10f;
                 RecomputeScale();
-
-                Color tint = ApplyTint(_colorA);
                 _loc150 = EffectLocator.WorldPoint(_midStored, Quaternion.identity);
-                _child150 = SpawnWorld(_childId31, _loc150, tint);
+                if (_factory != null && _childId31 > 0)
+                    _child150 = _factory.SpawnChild(_childId31, _loc150, Color.white);
             }
             else
             {
-                // FUN_100f2e49 — grow scale toward mid→C distance, move mid by dt * scale.
                 Vector3 toC = _posC - _midStored;
                 float dist = toC.magnitude;
-                if (dist < _scale * Mathf.Max(dt, 1e-6f) && !_w4Entered)
-                {
-                    // Pull window 4 earlier (stock closes w3 end / shifts w4).
-                    // Soften by ending w3 at current age conceptually — just allow w4 next.
-                }
-
                 float grown = dist * _scaleBase;
                 if (grown > _scaleMax)
                     grown = _scaleMax;
                 if (grown > _scale)
                     _scale = grown;
-
                 if (dist > 1e-6f)
                     _midStored += toC.normalized * (_scale * dt);
-
                 _loc150?.SetWorldPoint(_midStored, Quaternion.identity);
             }
-
             return;
         }
 
-        if (_w3Entered && !_w3Exited && age > _w3End)
+        if (_w3Entered && !_w3Exited && age > _w[6])
         {
             _w3Exited = true;
             Delete(ref _child150);
@@ -444,10 +395,10 @@ public sealed class GfxControlSpell1 : GfxControl
         }
     }
 
-    void DispatchWindow4()
+    void Window4()
     {
         float age = Age;
-        if (_w4Start <= age && age <= _w4End)
+        if (_w[7] <= age && age <= _w[8])
         {
             if (!_w4Entered)
             {
@@ -455,19 +406,18 @@ public sealed class GfxControlSpell1 : GfxControl
                 if (_factory != null && _childId32 > 0 && _target != null)
                 {
                     var loc = EffectLocator.OnDynel(_target, EffectAttachIds.BoneSpine2);
-                    _child154 = _factory.SpawnChild(_childId32, loc, ApplyTint(_colorA));
+                    _child154 = _factory.SpawnChild(_childId32, loc, Color.white);
                     if (_child154 == null)
                     {
                         loc = EffectLocator.OnDynel(_target, EffectAttachIds.Head);
-                        _child154 = _factory.SpawnChild(_childId32, loc, ApplyTint(_colorA));
+                        _child154 = _factory.SpawnChild(_childId32, loc, Color.white);
                     }
                 }
             }
-
             return;
         }
 
-        if (_w4Entered && !_w4Exited && age > _w4End)
+        if (_w4Entered && !_w4Exited && age > _w[8])
         {
             _w4Exited = true;
             Delete(ref _child154);
@@ -482,25 +432,9 @@ public sealed class GfxControlSpell1 : GfxControl
         handle = null;
     }
 
-    protected override void OnTerminateGracefully()
-    {
-        // Cast finished / interrupted: fade hand children instead of hard-killing them.
-        // Detach refs so OnReleased does not DeleteEffect while they are still fading
-        // (children are independently registered handles).
-        TerminateWindow1ChildrenGracefully();
-        _factory?.TerminateEffectGracefully(_child150);
-        _factory?.TerminateEffectGracefully(_child154);
-        _child140 = _child144 = _child148 = _child14c = null;
-        _child150 = null;
-        _child154 = null;
-        _loc140 = _loc144 = _loc148 = _loc14c = null;
-        _loc150 = null;
-        ReadyFlag = true;
-    }
-
     protected override void OnReleased(bool immediate)
     {
-        DestroyWindow1Children();
+        DeleteWindow1();
         Delete(ref _child150);
         Delete(ref _child154);
         _loc150 = null;
@@ -509,19 +443,32 @@ public sealed class GfxControlSpell1 : GfxControl
 
     public override void CollectBillboards(List<EffectBillboardBatch.Quad> dest, Camera camera)
     {
-        if (!_active || _broken || dest == null || _texture == null)
+        if (!IsAlive || dest == null)
             return;
 
+        for (int i = 0; i < _window1.Length; i++)
+            _window1[i]?.CollectBillboards(dest, camera);
+
+        if (_texture == null || _trail.Count == 0)
+            return;
+
+        uint argb = _trailArgb;
+        var color = new Color(
+            ((argb >> 16) & 0xff) / 255f,
+            ((argb >> 8) & 0xff) / 255f,
+            (argb & 0xff) / 255f,
+            ((argb >> 24) & 0xff) / 255f);
         for (int i = 0; i < _trail.Count; i++)
         {
             TrailSprite s = _trail[i];
             dest.Add(new EffectBillboardBatch.Quad
             {
+                // GfxVisualSprite2Type2 (10027df8): camera-facing square, full side = size.
                 Matrix = Matrix4x4.TRS(s.Pos, Quaternion.identity, Vector3.one),
-                // Unit quad is ±0.5; Scale == stock NewSprite size (draw uses size*0.5 half-extents).
                 Scale = s.Size,
-                Color = s.Color,
+                Color = color,
                 Texture = _texture,
+                // GfxVisualSprite2Type2(material, null, true): SRCALPHA / ONE.
                 Additive = true,
             });
         }

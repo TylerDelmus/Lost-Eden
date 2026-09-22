@@ -17,6 +17,9 @@ public sealed class CatAnimRuntimeClip
     public readonly BoneTrack[] Tracks;
     public readonly int BoneCount;
 
+    /// <summary>Notes with a stock event id (<see cref="AnimNoteIds"/>), by time. Source-clip seconds.</summary>
+    public readonly Note[] Notes;
+
     public const uint AlwaysOnFlags = 0xFFFFFFFFu;
 
     public struct BoneTrack
@@ -39,6 +42,12 @@ public sealed class CatAnimRuntimeClip
         public Quaternion Value;
     }
 
+    public struct Note
+    {
+        public float Time;
+        public int EventId;
+    }
+
     CatAnimRuntimeClip(
         int animId,
         string name,
@@ -48,7 +57,8 @@ public sealed class CatAnimRuntimeClip
         bool hasLoopTiming,
         float noteTimeMs,
         BoneTrack[] tracks,
-        int boneCount)
+        int boneCount,
+        Note[] notes)
     {
         AnimId = animId;
         Name = name;
@@ -60,6 +70,7 @@ public sealed class CatAnimRuntimeClip
         Duration = Mathf.Max(loopEnd - loopStart, 0.001f);
         Tracks = tracks;
         BoneCount = boneCount;
+        Notes = notes ?? System.Array.Empty<Note>();
         IndexTracksByBone();
     }
 
@@ -193,7 +204,25 @@ public sealed class CatAnimRuntimeClip
             hasLoopTiming,
             noteTimeMs,
             tracks.ToArray(),
-            boneCount);
+            boneCount,
+            BuildNotes(catAnim));
+    }
+
+    /// <summary>Named notes → stock event ids; notes that map to 0 fire nothing and are dropped.</summary>
+    static Note[] BuildNotes(CATAnim catAnim)
+    {
+        if (catAnim.AnimationIdentifiers == null || catAnim.AnimationIdentifiers.Length == 0)
+            return System.Array.Empty<Note>();
+
+        var notes = new List<Note>(catAnim.AnimationIdentifiers.Length);
+        foreach (var id in catAnim.AnimationIdentifiers)
+        {
+            int eventId = AnimNoteIds.FromName(id.Name);
+            if (eventId != AnimNoteIds.None)
+                notes.Add(new Note { Time = ToSeconds(id.TimeMs), EventId = eventId });
+        }
+        notes.Sort((a, b) => a.Time.CompareTo(b.Time));
+        return notes.ToArray();
     }
 
     static uint ReadTrackFlags(BoneData boneData)

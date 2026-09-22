@@ -106,16 +106,19 @@ public static class EffectTypeCatalog
         Add(EffectTypeTags.Scatter, "GfxControlScatter_t", EffectCategory.Composite, EffectSupport.Ported);
 
         // ---- Point clouds -----------------------------------------------------
-        // Control is ported; starTypes 0, 3 and 8 match FUN_100f826a exactly, the rest
-        // still fall back to the continuous/case-0 approximations.
+        // Process is FUN_100f8491 (vftable 1016ddac slot 1), not FUN_100f826a. Only starType 3 is
+        // recovered call-for-call (StarsCase3); every other starType is still an approximation.
         Add(EffectTypeTags.Stars, "_GfxControlStars_t", EffectCategory.PointCloud, EffectSupport.Ported);
         Add(0x7d5, "_GfxControlSuns_t", EffectCategory.PointCloud, EffectSupport.Missing);
 
         // ---- Sprite family ----------------------------------------------------
-        // Pooled burst emitter ported from FUN_100dd0c4. Still missing: independent width/height
-        // from the two size channels, per-sprite rotation, and fields 33/36-39.
+        // Flare: GfxControlFlareType0 / FlareType0Sim, from Process 100ddc6d, spawn 100dd2eb and
+        // DisplaySystem GfxVisualFlareType0 (NewSprite 100130a4, ProcessSprites 100131f3, quad 1001364b).
         Add(EffectTypeTags.Flare, "_GfxControlFlare_t", EffectCategory.Sprite, EffectSupport.Ported);
+        // Flare1 (ctor 100dea3d) is a separate class still on the earlier emitter; not checked.
         Add(EffectTypeTags.FlareAlt, "_GfxControlFlare1_t", EffectCategory.Sprite, EffectSupport.Ported);
+        // Cord: stock adds links only in slot 4 in local mode (field 0 bit 1), so a Cord without that
+        // bit never draws — verified. The local-mode link model is still the earlier port's.
         Add(EffectTypeTags.Cord, "_GfxControlCord_t", EffectCategory.Sprite, EffectSupport.Ported);
         Add(EffectTypeTags.SpriteAlt, null, EffectCategory.Sprite, EffectSupport.Approximated);
         Add(EffectTypeTags.Nano0, "_GfxControlNano0_t", EffectCategory.Sprite, EffectSupport.Approximated);
@@ -123,6 +126,8 @@ public static class EffectTypeCatalog
         Add(EffectTypeTags.Nano2, "_GfxControlNano2_t", EffectCategory.Sprite, EffectSupport.Approximated);
         Add(EffectTypeTags.Nano3, "_GfxControlNano3_t", EffectCategory.Sprite, EffectSupport.Approximated);
         Add(EffectTypeTags.Sprite, "_GfxControlSprite_t", EffectCategory.Sprite, EffectSupport.Approximated);
+        // Spell1: windows 1-2, NextState, SetDuration and terminate from 100f3f59 and friends; windows
+        // 3-4 (field 33 = 0 only) are still the earlier model.
         Add(EffectTypeTags.Spell1, "_GfxControlSpell1_t", EffectCategory.Sprite, EffectSupport.Ported);
 
         // ---- Particle emitters ------------------------------------------------
@@ -153,10 +158,10 @@ public static class EffectTypeCatalog
         Add(0xbde, "GfxControlVolGrid_t", EffectCategory.Mesh, EffectSupport.Missing);
         Add(0xbb8, "_GfxControlShockWave_t", EffectCategory.Mesh, EffectSupport.Missing);
         Add(0xbba, "_GfxControlSplash_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0xbb9, "_GfxControlDeformer_t", EffectCategory.Mesh, EffectSupport.Missing);
+        Add(EffectTypeTags.Deformer, "_GfxControlDeformer_t", EffectCategory.Mesh, EffectSupport.Ported);
         Add(0x7d1, "_GfxControlSpiral_t", EffectCategory.Mesh, EffectSupport.Missing);
         Add(0xbd9, "GfxControlSpiral2_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0x7d6, "_GfxControlElectra_t", EffectCategory.Mesh, EffectSupport.Missing);
+        Add(EffectTypeTags.Electra, "_GfxControlElectra_t", EffectCategory.Mesh, EffectSupport.Ported);
         Add(0xbca, "_GfxControlSkyRise_t", EffectCategory.Mesh, EffectSupport.Missing);
         Add(0xbbe, "_GfxControlSkyFlash_t", EffectCategory.Mesh, EffectSupport.Missing);
         Add(0x405, "_GfxControlVulcanRocks_t", EffectCategory.Mesh, EffectSupport.Missing);
@@ -168,17 +173,17 @@ public static class EffectTypeCatalog
 
         // ---- Tracers: only reachable through CreateGfxControlTracer(id, from, to) ----
         Add(EffectTypeTags.BeamCylinder, null, EffectCategory.Tracer, EffectSupport.Approximated);
-        Add(EffectTypeTags.BeamRibbon, null, EffectCategory.Tracer, EffectSupport.Approximated);
+        Add(EffectTypeTags.Tracer4, "_GfxControlTracer4_t", EffectCategory.Tracer, EffectSupport.Ported);
         Add(EffectTypeTags.BeamRibbonAlt, null, EffectCategory.Tracer, EffectSupport.Approximated);
         Add(EffectTypeTags.BeamRibbonWide, null, EffectCategory.Tracer, EffectSupport.Approximated);
-        Add(0x3fb, null, EffectCategory.Tracer, EffectSupport.Missing);
+        Add(EffectTypeTags.Tracer1, "_GfxControlTracer1_t", EffectCategory.Tracer, EffectSupport.Ported);
         Add(0x3fd, null, EffectCategory.Tracer, EffectSupport.Missing);
         Add(EffectTypeTags.HitSpawner, null, EffectCategory.Tracer, EffectSupport.Missing);
         Add(0x403, null, EffectCategory.Tracer, EffectSupport.Missing);
         Add(0xbd2, null, EffectCategory.Tracer, EffectSupport.Missing);
 
         // ---- Constructed by a CreateGfxControl overload we have not mapped yet ----
-        Add(0x7d2, null, EffectCategory.Unidentified, EffectSupport.Missing);
+        Add(EffectTypeTags.Plasma, "_GfxControlPlasma_t", EffectCategory.Tracer, EffectSupport.Ported);
 
         // ---- Never rendered ---------------------------------------------------
         Add(0xfa0, "_GfxControlAudio_t", EffectCategory.Audio, EffectSupport.NotRendered);

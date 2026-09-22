@@ -1,0 +1,495 @@
+/* GFX Test window (GfxTestWindow.cs). Dark by default; .gfx-light retunes the palette. */
+
+.gfx-root {
+    --verified: #3fbf7f;
+    --unverified: #6f9dff;
+    --approx: #e5a93b;
+    --missing: #e0605f;
+    --bg: #1b1c21;
+    --card: #24262d;
+    --card-border: #30333b;
+    --raised: #2d3038;
+    --raised-hover: #373a44;
+    --text: #dde1e8;
+    --muted: #8a909c;
+    --accent: #5b8cff;
+    --accent-hover: #7aa2ff;
+    --violet: #a978ff;
+    --violet-hover: #bb94ff;
+    --danger: #e0605f;
+    --good: #3fbf7f;
+    --warn: #e5a93b;
+    --bad: #e0605f;
+    --row-hover: rgba(255, 255, 255, 0.04);
+    --row-selected: rgba(91, 140, 255, 0.22);
+
+    flex-grow: 1;
+    background-color: var(--bg);
+    color: var(--text);
+}
+
+.gfx-light {
+    --bg: #e9ebf0;
+    --card: #f7f8fa;
+    --card-border: #d3d7de;
+    --raised: #e3e6ec;
+    --raised-hover: #d8dce4;
+    --text: #1f232a;
+    --muted: #666d78;
+    --row-hover: rgba(0, 0, 0, 0.04);
+    --row-selected: rgba(91, 140, 255, 0.25);
+}
+
+/* ---- Header ---- */
+
+.gfx-header {
+    flex-direction: row;
+    flex-shrink: 0;
+    align-items: center;
+    padding: 12px 14px 10px 14px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--card-border);
+}
+
+.gfx-titles {
+    flex-shrink: 0;
+}
+
+.gfx-title {
+    font-size: 17px;
+    -unity-font-style: bold;
+    color: var(--text);
+}
+
+.gfx-subtitle {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 1px;
+}
+
+.gfx-spacer {
+    flex-grow: 1;
+}
+
+.gfx-pill {
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: var(--muted);
+    background-color: var(--raised);
+    border-radius: 10px;
+    padding: 3px 9px;
+    margin-left: 6px;
+}
+
+.gfx-pill.is-good {
+    color: var(--good);
+    background-color: rgba(63, 191, 127, 0.14);
+}
+
+.gfx-pill.is-warn {
+    color: var(--warn);
+    background-color: rgba(229, 169, 59, 0.14);
+}
+
+.gfx-pill.is-bad {
+    color: var(--bad);
+    background-color: rgba(224, 96, 95, 0.14);
+}
+
+/* ---- Empty state ---- */
+
+.gfx-empty {
+    flex-grow: 1;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.gfx-empty-title {
+    font-size: 15px;
+    -unity-font-style: bold;
+    margin-bottom: 6px;
+}
+
+.gfx-empty-body {
+    color: var(--muted);
+    white-space: normal;
+    -unity-text-align: middle-center;
+    max-width: 320px;
+    margin-bottom: 14px;
+}
+
+.gfx-empty-action {
+    min-width: 170px;
+}
+
+/* ---- Content and cards ---- */
+
+.gfx-content {
+    flex-grow: 1;
+    padding: 10px 12px 4px 12px;
+}
+
+.gfx-card {
+    flex-shrink: 0;
+    background-color: var(--card);
+    border-width: 1px;
+    border-color: var(--card-border);
+    border-radius: 8px;
+    padding: 10px 10px 8px 10px;
+    margin-bottom: 10px;
+}
+
+.gfx-card--fill {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 220px;
+}
+
+.gfx-card-title {
+    font-size: 10px;
+    -unity-font-style: bold;
+    color: var(--muted);
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    margin-left: 2px;
+}
+
+.gfx-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.gfx-grow {
+    flex-grow: 1;
+    flex-basis: 0;
+}
+
+/* ---- Buttons ---- */
+
+.gfx-button {
+    height: 28px;
+    margin: 0 3px;
+    padding: 0 12px;
+    border-width: 0;
+    border-radius: 6px;
+    background-color: var(--raised);
+    color: var(--text);
+    -unity-font-style: bold;
+    transition-duration: 0.12s;
+    transition-property: background-color;
+}
+
+.gfx-button:hover {
+    background-color: var(--raised-hover);
+}
+
+.gfx-button:active {
+    scale: 0.98 0.98;
+}
+
+.gfx-primary {
+    background-color: var(--accent);
+    color: #ffffff;
+}
+
+.gfx-primary:hover {
+    background-color: var(--accent-hover);
+}
+
+.gfx-accent {
+    background-color: var(--violet);
+    color: #ffffff;
+}
+
+.gfx-accent:hover {
+    background-color: var(--violet-hover);
+}
+
+.gfx-danger {
+    color: var(--danger);
+}
+
+/* ---- Fields ---- */
+
+.gfx-fields {
+    flex-wrap: wrap;
+}
+
+.gfx-field {
+    flex-grow: 1;
+    flex-basis: 110px;
+    min-width: 110px;
+    margin: 0 3px 4px 3px;
+}
+
+.gfx-field > .unity-base-field__label {
+    min-width: 42px;
+    width: 42px;
+    color: var(--muted);
+}
+
+.gfx-record {
+    flex-direction: row;
+    align-items: center;
+    background-color: var(--raised);
+    border-radius: 6px;
+    padding: 5px 8px;
+    margin: 2px 3px 8px 3px;
+}
+
+.gfx-record-text {
+    flex-shrink: 1;
+    color: var(--muted);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-left: 8px;
+}
+
+/* ---- Catalog ---- */
+
+.gfx-search {
+    flex-shrink: 0;
+    flex-grow: 0;
+    width: auto;
+    height: 22px;
+    margin: 0 3px 8px 3px;
+}
+
+.gfx-count {
+    color: var(--muted);
+    font-size: 11px;
+    margin: 0 4px 0 8px;
+}
+
+.gfx-chips {
+    flex-shrink: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin: 0 0 8px 0;
+}
+
+.gfx-filter {
+    height: 22px;
+    margin: 0 3px 4px 3px;
+    padding: 0 9px;
+    border-radius: 11px;
+    font-size: 11px;
+    -unity-font-style: normal;
+    color: var(--muted);
+}
+
+.gfx-filter.is-active {
+    background-color: var(--accent);
+    color: #ffffff;
+    -unity-font-style: bold;
+}
+
+.gfx-list {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 140px;
+    background-color: var(--bg);
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: var(--card-border);
+}
+
+.gfx-list .unity-collection-view__item:hover {
+    background-color: var(--row-hover);
+}
+
+.gfx-list .unity-collection-view__item--selected,
+.gfx-list .unity-collection-view__item--selected:hover {
+    background-color: var(--row-selected);
+}
+
+.gfx-item {
+    flex-direction: row;
+    align-items: center;
+    height: 26px;
+    padding: 0 8px;
+}
+
+.gfx-item-id {
+    width: 62px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-right;
+    margin-right: 10px;
+}
+
+.gfx-item-class {
+    flex-grow: 1;
+    flex-shrink: 1;
+    color: var(--muted);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-left: 8px;
+}
+
+.gfx-hint {
+    flex-shrink: 0;
+    color: var(--muted);
+    font-size: 10px;
+    white-space: normal;
+    margin: 6px 2px 0 2px;
+}
+
+/* ---- Chips and badges ---- */
+
+.gfx-chip {
+    font-size: 10px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    min-width: 64px;
+    padding: 1px 7px;
+    border-radius: 9px;
+    color: var(--muted);
+    background-color: rgba(138, 144, 156, 0.16);
+}
+
+.gfx-chip.cat-sprite { color: #f0b54a; background-color: rgba(240, 181, 74, 0.15); }
+.gfx-chip.cat-composite { color: #a978ff; background-color: rgba(169, 120, 255, 0.16); }
+.gfx-chip.cat-particle { color: #ff7ab6; background-color: rgba(255, 122, 182, 0.15); }
+.gfx-chip.cat-points { color: #ff9a5c; background-color: rgba(255, 154, 92, 0.15); }
+.gfx-chip.cat-tracer { color: #4cc8e6; background-color: rgba(76, 200, 230, 0.15); }
+.gfx-chip.cat-mesh { color: #62d394; background-color: rgba(98, 211, 148, 0.15); }
+
+.gfx-badge {
+    flex-shrink: 0;
+    font-size: 10px;
+    -unity-text-align: middle-center;
+    width: 70px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border-width: 1px;
+    margin-left: 8px;
+}
+
+.gfx-badge.st-verified { color: var(--verified); border-color: rgba(63, 191, 127, 0.5); }
+.gfx-badge.st-unverified { color: var(--unverified); border-color: rgba(111, 157, 255, 0.5); }
+.gfx-badge.st-approx { color: var(--approx); border-color: rgba(229, 169, 59, 0.5); }
+.gfx-badge.st-missing { color: var(--missing); border-color: rgba(224, 96, 95, 0.5); }
+
+/* ---- Browser tabs ---- */
+
+.gfx-tabs {
+    flex-shrink: 0;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.gfx-tab {
+    height: 26px;
+    margin: 0 2px 0 0;
+    padding: 0 14px;
+    border-radius: 6px;
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--muted);
+}
+
+.gfx-tab.is-active {
+    background-color: var(--raised);
+    color: var(--text);
+}
+
+/* ---- Status chips ---- */
+
+.gfx-filter--status.st-verified.is-active { background-color: var(--verified); }
+.gfx-filter--status.st-unverified.is-active { background-color: var(--unverified); }
+.gfx-filter--status.st-approx.is-active { background-color: var(--approx); }
+.gfx-filter--status.st-missing.is-active { background-color: var(--missing); }
+
+/* ---- Nano rows: one dot per role (cast, tracer, impact, hit) ---- */
+
+.gfx-item-name {
+    color: var(--text);
+    font-size: 12px;
+    margin-left: 0;
+}
+
+.gfx-dot {
+    width: 18px;
+    height: 18px;
+    margin-left: 4px;
+    border-radius: 9px;
+    font-size: 9px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    color: #ffffff;
+    padding: 0;
+}
+
+.gfx-dot.st-verified { background-color: var(--verified); }
+.gfx-dot.st-unverified { background-color: var(--unverified); }
+.gfx-dot.st-approx { background-color: var(--approx); }
+.gfx-dot.st-missing { background-color: var(--missing); }
+
+.gfx-dot.is-none {
+    color: var(--muted);
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 1px;
+    border-color: var(--card-border);
+}
+
+/* ---- Nano summary in the spawn card ---- */
+
+.gfx-nano-info {
+    flex-wrap: wrap;
+}
+
+.gfx-nano-name {
+    flex-grow: 1;
+    color: var(--text);
+    margin-left: 0;
+    margin-right: 6px;
+}
+
+.gfx-role {
+    font-size: 10px;
+    -unity-font-style: bold;
+    padding: 1px 7px;
+    margin: 1px 0 1px 4px;
+    border-radius: 9px;
+    color: #ffffff;
+}
+
+.gfx-role.st-verified { background-color: var(--verified); }
+.gfx-role.st-unverified { background-color: var(--unverified); }
+.gfx-role.st-approx { background-color: var(--approx); }
+.gfx-role.st-missing { background-color: var(--missing); }
+
+.gfx-role.is-none {
+    color: var(--muted);
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 1px;
+    border-color: var(--card-border);
+}
+
+/* ---- Status bar ---- */
+
+.gfx-statusbar {
+    flex-direction: row;
+    flex-shrink: 0;
+    align-items: center;
+    min-height: 26px;
+    padding: 4px 14px;
+    border-top-width: 1px;
+    border-top-color: var(--card-border);
+    background-color: var(--card);
+}
+
+.gfx-status {
+    flex-shrink: 1;
+    color: var(--muted);
+    font-size: 11px;
+    white-space: normal;
+}

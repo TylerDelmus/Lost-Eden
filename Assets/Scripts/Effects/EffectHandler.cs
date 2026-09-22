@@ -9,8 +9,13 @@ public sealed class EffectHandler : IEffectSpawnFactory
 {
     const int MaxSpawnDepth = 6;
     const float DefaultLifetime = 1.5f;
-    /// <summary>How long the cast FX plays on a character that just received a buff.</summary>
-    const float BuffCastEffectSeconds = 3f;
+    /// <summary>
+    /// Stock <c>CharCastNano_t</c> ctor (<c>Gamecode 1007b6d7</c>) gives the cast effect
+    /// <c>SetDuration(6000)</c>; a Meta hands that on to its children (<c>100e5e09</c>). The cast ends
+    /// the effect itself, with <c>NextState</c> when the result arrives (<c>1007b1e3</c>), which is a
+    /// graceful terminate (<c>_GfxControl_t::NextState</c> 100a76f9 calls slot 6).
+    /// </summary>
+    const float CastEffectSeconds = 6000f;
     /// <summary>Stock NewHitLocation target attach (Bip01 Head_ac).</summary>
     const int TracerTargetAttachId = EffectAttachIds.BoneHead;
 
@@ -20,10 +25,24 @@ public sealed class EffectHandler : IEffectSpawnFactory
         public EffectHandle Tracer;
     }
 
-    struct PendingCast
+    /// <summary>
+    /// A nano cast in progress: stock <c>CharCastNano_t</c> (charstate 5), from the cast start until
+    /// its release clip ends. Its caster's clip notes are watched for effect1start.
+    /// </summary>
+    sealed class PendingCast
     {
         public EffectHandle Handle;
+        public bool Released;
+        public Character Caster;
         public Character Target;
+        public VisualDynel CasterVisual;
+        public VisualDynel TargetVisual;
+        public NanoSpell Nano;
+        public int NanoId;
+        public bool IsLocal;
+        public bool TracerLaunched;
+        public CatAnimPlayer Player;
+        public System.Action<int, int> OnNote;
     }
 
     readonly GfxTweakCatalog _catalog;
@@ -34,17 +53,28 @@ public sealed class EffectHandler : IEffectSpawnFactory
     readonly EffectLightPool _lights = new EffectLightPool();
     readonly List<EffectHandle> _handles = new List<EffectHandle>(64);
     readonly List<GfxControl> _tick = new List<GfxControl>(64);
+    readonly List<EffectHandle> _sweep = new List<EffectHandle>(64);
     readonly List<EffectBillboardBatch.Quad> _quads = new List<EffectBillboardBatch.Quad>(128);
+    readonly List<EffectBillboardBatch.Strip> _strips = new List<EffectBillboardBatch.Strip>(8);
     readonly Dictionary<int, Texture2D> _materialTextures = new Dictionary<int, Texture2D>();
     readonly HashSet<EffectHandle> _handleSet = new HashSet<EffectHandle>();
     readonly List<EffectHitLocation> _hitLocations = new List<EffectHitLocation>(16);
     readonly Dictionary<int, PendingTrace> _pendingTraces = new Dictionary<int, PendingTrace>();
     readonly Dictionary<int, PendingCast> _pendingCasts = new Dictionary<int, PendingCast>();
 
+    /// <summary>
+    /// Live buff effects by recipient (a Character or, in GfxTest, a VisualDynel) and nano. Stock keeps
+    /// the handle in the recipient's buff entry (FUN_100517f3, entry +0x1c).
+    /// </summary>
+    readonly Dictionary<(object Host, int Nano), EffectHandle> _buffEffects = new Dictionary<(object Host, int Nano), EffectHandle>();
+
     int _spawnDepth;
     int _nextHitLocId = 1;
 
     public bool ShowOthersEffects { get; set; } = true;
+
+    /// <summary>Controls processed on the last <see cref="Tick"/>. Read-only, for debug tooling.</summary>
+    public IReadOnlyList<GfxControl> LiveControls => _tick;
 
     public EffectHandler(
         GfxTweakCatalog catalog,
@@ -86,6 +116,8 @@ public sealed class EffectHandler : IEffectSpawnFactory
     {
         if (effectId == EffectTypeTags.RejectedEffectId || effectId <= 0 || caster == null)
             return null;
+        if (!IsSpell1(effectId))
+            return null;
 
         Dynel resolvedTarget = target != null ? target : caster;
         var locator = EffectLocator.OnDynel(caster, 0);
@@ -111,6 +143,8 @@ public sealed class EffectHandler : IEffectSpawnFactory
     {
         if (effectId == EffectTypeTags.RejectedEffectId || effectId <= 0 || casterVisual == null)
             return null;
+        if (!IsSpell1(effectId))
+            return null;
 
         VisualDynel resolvedTarget = targetVisual != null ? targetVisual : casterVisual;
         var locator = EffectLocator.OnVisual(casterVisual, 0);
@@ -125,6 +159,14 @@ public sealed class EffectHandler : IEffectSpawnFactory
             casterVisual,
             resolvedTarget);
     }
+
+    /// <summary>
+    /// Stock <c>CreateGfxControl(id, caster, target, attach)</c> (Gamecode 100d1705) builds a control
+    /// only for typeCode 0x3f2 and returns null for anything else, so a caster/target effect is
+    /// always a Spell1.
+    /// </summary>
+    bool IsSpell1(int effectId)
+        => _catalog.TryGet(effectId, out GfxTweakRecord record) && record.TypeCode == EffectTypeTags.Spell1;
 
     /// <summary>
     /// Stock <c>NewHitLocation(source, LHand, target, Head, true)</c>.
@@ -192,6 +234,24 @@ public sealed class EffectHandler : IEffectSpawnFactory
     void IEffectSpawnFactory.TerminateEffectGracefully(EffectHandle handle)
         => handle?.TerminateGracefully();
 
+    GfxControl IEffectSpawnFactory.CreateOwnedControl(int effectId, EffectLocator locator)
+    {
+        if (effectId == EffectTypeTags.RejectedEffectId || effectId <= 0 || locator == null)
+            return null;
+        if (_spawnDepth > MaxSpawnDepth)
+            return null;
+
+        _spawnDepth++;
+        try
+        {
+            return CreateControl(effectId, locator, Color.white, null, null, 0, null, null);
+        }
+        finally
+        {
+            _spawnDepth--;
+        }
+    }
+
     EffectHandle SpawnInternal(
         int effectId,
         EffectLocator locator,
@@ -247,6 +307,10 @@ public sealed class EffectHandler : IEffectSpawnFactory
         _handles.Remove(handle);
     }
 
+    /// <summary>
+    /// CastNanoSpell: stock <c>CharCastNano_t</c> begins. The cast effect goes on the caster, and the
+    /// caster's clips are watched for the note that launches the tracer (<see cref="OnCastNote"/>).
+    /// </summary>
     public EffectHandle PlayNanoCast(Character caster, Character target, int nanoId, bool isLocal, NanoSpell nano)
     {
         if (caster == null)
@@ -273,35 +337,36 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 $"[Effects] nano={nanoId} missing CastEffectType — cast FX skipped.");
         }
 
-        // Recorded even without a cast handle: the hit site needs the target either way.
-        RememberPendingCast(caster.Identity.Instance, castHandle, target);
-
-        // Stock anim 0x42: NewHitLocation(LHand→Head) + CreateEffect2(tracereffecttype, hitLoc).
-        // Hold until FinishNanoCasting — do not land / play HitEffectType mid-cast.
-        if (target != null && nano != null
-            && NanoEffectResolver.TryResolveTrace(nano, out NanoEffectResolver.SpellFx traceFx)
-            && traceFx.EffectId != 0)
+        // Recorded even without a cast handle: the tracer and the hit need the target either way.
+        RememberPendingCast(caster.Identity.Instance, new PendingCast
         {
-            float travel = Mathf.Max(EstimateTravelSeconds(caster, target, traceFx.EffectId), 8f);
-            StartTracer(
-                caster.Identity.Instance,
-                caster,
-                target,
-                null,
-                null,
-                traceFx.EffectId,
-                travel,
-                nanoId,
-                isLocal,
-                holdUntilComplete: true);
-        }
+            Handle = castHandle,
+            Caster = caster,
+            Target = target,
+            Nano = nano,
+            NanoId = nanoId,
+            IsLocal = isLocal,
+        });
 
         return castHandle;
     }
 
     /// <summary>
-    /// Stock impact site: kill tracer, then <c>impacteffecttype</c> (414) then <c>hiteffecttype</c> (361)
-    /// on the target with attach 0 (CAT mesh frame / mid-body — not dynel feet).
+    /// FinishNanoCasting: the cast's result is in. Stock <c>CharCastNano_t</c> (Gamecode
+    /// <c>1007b1e3</c>) gives the cast effect <c>NextState</c> and plays the release clip. The caster
+    /// stays in charstate 5 through that clip, so its effect1start note still launches the tracer, and
+    /// the impact and hit wait for the clip to end (<see cref="PlayNanoHit"/>).
+    /// </summary>
+    public void FinishNanoCast(Character caster)
+    {
+        if (caster != null)
+            ReleasePendingCast(caster.Identity.Instance);
+    }
+
+    /// <summary>
+    /// The release clip ended: stock plays <c>impacteffecttype</c> (414) then <c>hiteffecttype</c>
+    /// (361) on the target with attach 0 (CAT mesh frame / mid-body, not dynel feet), and the cast is
+    /// over (<c>1007b1e3</c>, second phase).
     /// </summary>
     public EffectHandle PlayNanoHit(Character caster, Character target, int nanoId, bool isLocal, NanoSpell nano)
     {
@@ -309,12 +374,12 @@ public sealed class EffectHandler : IEffectSpawnFactory
             return null;
 
         int casterKey = caster != null ? caster.Identity.Instance : 0;
-        // Read before EndPendingCast clears the entry.
+        // Read before the pending cast is dropped.
         if (target == null)
             TryGetPendingCastTarget(casterKey, out target);
 
-        // Cast Spell1 is duration 60 / infinite — end it so hand children don't keep stacking over hit.
-        EndPendingCast(casterKey);
+        ReleasePendingCast(casterKey);
+        ForgetPendingCast(casterKey);
         CompletePendingTrace(casterKey);
 
         Character host = target != null ? target : caster;
@@ -356,100 +421,108 @@ public sealed class EffectHandler : IEffectSpawnFactory
     }
 
     /// <summary>
-    /// Buff landed on a character: stock <c>casteffecttype</c> on the recipient itself.
-    /// Unlike the caster's cast FX there is no finish message to wind this down, so it runs
-    /// on a bounded duration instead of the Spell1 safety duration.
+    /// A buff's time arrived (CharacterAction 98 SetNanoDuration, Gamecode 1005dd25 into FUN_100517f3).
+    /// Stock first ends any buff the new one replaces, then, for a nano whose flags have bit 0x10000
+    /// (100518a9), creates its stat 413 effecttype on the recipient (CreateEffect2(id, dynel, 0)) and
+    /// sets its duration to the time in centiseconds / 100, integer-divided. A time of 0 does nothing.
     /// </summary>
-    public EffectHandle PlayNanoBuff(Character target, int nanoId, bool isLocal, NanoSpell nano)
+    public EffectHandle AddNanoBuff(Character target, int nanoId, NanoSpell nano, int centiseconds, bool isLocal)
     {
         if (target == null)
             return null;
         if (!isLocal && !ShowOthersEffects)
             return null;
+        return AddNanoBuff(target, EffectLocator.OnDynel(target, 0), nanoId, nano, centiseconds);
+    }
 
-        if (nano == null
-            || !NanoEffectResolver.TryResolveCast(nano, out NanoEffectResolver.SpellFx castFx)
-            || castFx.EffectId == 0)
+    /// <summary>GfxTest: <see cref="AddNanoBuff(Character, int, NanoSpell, int, bool)"/> on a bare visual.</summary>
+    public EffectHandle AddNanoBuffVisual(VisualDynel target, int nanoId, NanoSpell nano, int centiseconds)
+        => target == null ? null : AddNanoBuff(target, EffectLocator.OnVisual(target, 0), nanoId, nano, centiseconds);
+
+    EffectHandle AddNanoBuff(object host, EffectLocator locator, int nanoId, NanoSpell nano, int centiseconds)
+    {
+        // 10051807 compares the time unsigned: only 0 is turned away.
+        if (centiseconds == 0 || nano == null)
+            return null;
+
+        // Stock ends the buffs the new one conflicts with (FUN_1004e9cc); the port only knows the same
+        // nano replacing itself.
+        RemoveNanoBuff(host, nanoId);
+
+        if (!NanoEffectResolver.HasBuffEffect(nano)
+            || !NanoEffectResolver.TryResolveBuff(nano, out NanoEffectResolver.SpellFx buffFx))
         {
-            Debug.LogWarning($"[Effects] buff nano={nanoId} missing CastEffectType — buff FX skipped.");
             return null;
         }
 
-        EffectHandle handle = CreateEffect2(
-            castFx.EffectId,
-            target,
-            target,
-            castFx.HasColor ? castFx.Color : Color.white,
-            attachOverride: 0);
+        EffectHandle handle = CreateEffect2(buffFx.EffectId, locator, Color.white);
         if (handle == null)
         {
-            Debug.LogWarning(
-                $"[Effects] CreateEffect2 failed buff nano={nanoId} effectId={castFx.EffectId} host={target.Identity}");
+            Debug.LogWarning($"[Effects] CreateEffect2 failed buff nano={nanoId} effectId={buffFx.EffectId}");
             return null;
         }
 
-        handle.SetDuration(BuffCastEffectSeconds);
-        Debug.Log(
-            $"[Effects] nano buff nano={nanoId} effectId={castFx.EffectId} host={target.Identity} local={isLocal}");
+        handle.SetDuration((uint)centiseconds / 100u);
+        _buffEffects[(host, nanoId)] = handle;
+        Debug.Log($"[Effects] nano buff nano={nanoId} effectId={buffFx.EffectId} seconds={(uint)centiseconds / 100u}");
         return handle;
     }
 
-    /// <summary>GfxTest: cast FX only during the cast. Tracer/hit start after cast finishes.</summary>
+    /// <summary>
+    /// The buff wore off (the Buff message with its first field 0: BuffIIR_c 100726e5 into FUN_10051041
+    /// and FUN_10050b90). Stock ends its effect gracefully.
+    /// </summary>
+    public void RemoveNanoBuff(Character target, int nanoId) => RemoveNanoBuff((object)target, nanoId);
+
+    /// <summary>GfxTest: <see cref="RemoveNanoBuff(Character, int)"/> on a bare visual.</summary>
+    public void RemoveNanoBuffVisual(VisualDynel target, int nanoId) => RemoveNanoBuff((object)target, nanoId);
+
+    void RemoveNanoBuff(object host, int nanoId)
+    {
+        if (host == null || !_buffEffects.TryGetValue((host, nanoId), out EffectHandle handle))
+            return;
+
+        _buffEffects.Remove((host, nanoId));
+        if (handle != null && handle.IsAlive)
+            handle.TerminateGracefully();
+    }
+
+    /// <summary>GfxTest: <see cref="PlayNanoCast"/> between two bare visuals.</summary>
     public EffectHandle PlayNanoCastVisual(
         VisualDynel caster,
         VisualDynel target,
         int nanoId,
-        NanoSpell nano)
+        NanoSpell nano,
+        int casterKey)
     {
         if (caster == null)
             return null;
 
-        if (nano == null || !NanoEffectResolver.TryResolveCast(nano, out NanoEffectResolver.SpellFx castFx) || castFx.EffectId == 0)
-            return null;
+        EffectHandle castHandle = null;
+        if (nano != null && NanoEffectResolver.TryResolveCast(nano, out NanoEffectResolver.SpellFx castFx) && castFx.EffectId != 0)
+        {
+            castHandle = CreateEffect2(castFx.EffectId, caster, target != null ? target : caster, Color.white, 0);
+            castHandle?.SetDuration(CastEffectSeconds);
+            if (castHandle != null)
+                Debug.Log($"[Effects] nano cast nano={nanoId} effectId={castFx.EffectId} visual spell1");
+        }
 
-        EffectHandle castHandle = CreateEffect2(castFx.EffectId, caster, target != null ? target : caster, Color.white, 0);
-        castHandle?.SetDuration(60f);
-        if (castHandle != null)
-            Debug.Log($"[Effects] nano cast nano={nanoId} effectId={castFx.EffectId} visual spell1");
+        RememberPendingCast(casterKey, new PendingCast
+        {
+            Handle = castHandle,
+            CasterVisual = caster,
+            TargetVisual = target != null ? target : caster,
+            Nano = nano,
+            NanoId = nanoId,
+            IsLocal = true,
+        });
         return castHandle;
     }
 
-    /// <summary>GfxTest: remember cast handle so finish can wind it down before tracer/hit.</summary>
-    public void RememberPendingCastVisual(int casterKey, EffectHandle castHandle)
-        => RememberPendingCast(casterKey, castHandle, null);
+    /// <summary>GfxTest: <see cref="FinishNanoCast"/>.</summary>
+    public void FinishNanoCastVisual(int casterKey) => ReleasePendingCast(casterKey);
 
-    /// <summary>GfxTest: start tracer after cast finishes. Returns travel seconds (0 if none).</summary>
-    public float BeginNanoTracerVisual(
-        VisualDynel caster,
-        VisualDynel target,
-        int nanoId,
-        NanoSpell nano,
-        int casterKey,
-        float travelSeconds,
-        out EffectHandle tracerHandle)
-    {
-        tracerHandle = null;
-        if (caster == null || target == null || nano == null)
-            return 0f;
-        if (!NanoEffectResolver.TryResolveTrace(nano, out NanoEffectResolver.SpellFx traceFx) || traceFx.EffectId == 0)
-            return 0f;
-
-        float travel = Mathf.Max(0.15f, travelSeconds);
-        tracerHandle = StartTracer(
-            casterKey,
-            null,
-            null,
-            caster,
-            target,
-            traceFx.EffectId,
-            travel,
-            nanoId,
-            isLocal: true,
-            holdUntilComplete: false);
-        return tracerHandle != null ? travel : 0f;
-    }
-
-    /// <summary>GfxTest: land tracer (if any) then impact+hit on target attach 0.</summary>
+    /// <summary>GfxTest: <see cref="PlayNanoHit"/> on a bare visual.</summary>
     public EffectHandle PlayNanoHitVisual(
         VisualDynel target,
         int nanoId,
@@ -458,7 +531,8 @@ public sealed class EffectHandler : IEffectSpawnFactory
         out EffectHandle impactHandle)
     {
         impactHandle = null;
-        EndPendingCast(casterKey);
+        ReleasePendingCast(casterKey);
+        ForgetPendingCast(casterKey);
         CompletePendingTrace(casterKey);
         if (target == null)
             return null;
@@ -505,7 +579,9 @@ public sealed class EffectHandler : IEffectSpawnFactory
             return null;
         }
 
-        tracer.SetDuration(holdUntilComplete ? 60f : Mathf.Max(travelSeconds + 0.5f, 2f));
+        // Stock's launch (FUN_1004f989) sets no duration; only the older stand-ins need one.
+        if (!IsStockTracer(tracer))
+            tracer.SetDuration(holdUntilComplete ? 60f : Mathf.Max(travelSeconds + 0.5f, 2f));
         _pendingTraces[casterKey] = new PendingTrace { HitLoc = hitLoc, Tracer = tracer };
         Debug.Log(
             $"[Effects] nano tracer nano={nanoId} effectId={traceEffectId} travel={travelSeconds:0.###}s hold={holdUntilComplete} local={isLocal}");
@@ -519,20 +595,84 @@ public sealed class EffectHandler : IEffectSpawnFactory
 
         _pendingTraces.Remove(casterKey);
         pending.HitLoc?.Complete();
-        if (pending.Tracer != null && pending.Tracer.IsAlive)
+        // Stock-built tracers run their own course. Stock keeps the handle with the cast's result entry
+        // (FUN_1004f989); whether anything there ends it early is not traced, so the port leaves it.
+        if (pending.Tracer != null && pending.Tracer.IsAlive && !IsStockTracer(pending.Tracer))
             pending.Tracer.TerminateGracefully();
     }
 
-    void RememberPendingCast(int casterKey, EffectHandle castHandle, Character target)
+    void RememberPendingCast(int casterKey, PendingCast cast)
     {
         if (casterKey == 0)
             return;
 
-        EndPendingCast(casterKey);
-        if (castHandle == null && target == null)
+        ReleasePendingCast(casterKey);
+        ForgetPendingCast(casterKey);
+        if (cast.Handle == null && cast.Target == null && cast.TargetVisual == null)
             return;
 
-        _pendingCasts[casterKey] = new PendingCast { Handle = castHandle, Target = target };
+        _pendingCasts[casterKey] = cast;
+
+        VisualDynel visual = cast.Caster != null ? cast.Caster.Visual : cast.CasterVisual;
+        if (visual != null && visual.TryGetAnimPlayer(out CatAnimPlayer player))
+        {
+            cast.Player = player;
+            cast.OnNote = (eventId, animId) => OnCastNote(casterKey, cast, eventId);
+            player.NoteReached += cast.OnNote;
+        }
+    }
+
+    /// <summary>
+    /// A clip note on a casting caster. Stock (<c>FUN_100452d3</c>) launches the tracer on
+    /// effect1start while the caster is in charstate 5 (<c>FUN_1004f989</c>):
+    /// <c>NewHitLocation(caster, LHand 2001, target, Head 1006, true)</c>, then
+    /// <c>CreateEffect2(tracereffecttype, hitLoc)</c>, and only with a target. One per cast here.
+    /// </summary>
+    void OnCastNote(int casterKey, PendingCast cast, int eventId)
+    {
+        if (eventId != AnimNoteIds.Effect1Start || cast.TracerLaunched)
+            return;
+        if (!_pendingCasts.TryGetValue(casterKey, out PendingCast live) || live != cast)
+            return;
+
+        cast.TracerLaunched = true;
+        if (cast.Nano == null
+            || !NanoEffectResolver.TryResolveTrace(cast.Nano, out NanoEffectResolver.SpellFx traceFx)
+            || traceFx.EffectId == 0)
+        {
+            return;
+        }
+
+        if (cast.Caster != null)
+        {
+            if (cast.Target == null)
+                return;
+            StartTracer(
+                casterKey,
+                cast.Caster,
+                cast.Target,
+                null,
+                null,
+                traceFx.EffectId,
+                EstimateTravelSeconds(cast.Caster, cast.Target, traceFx.EffectId),
+                cast.NanoId,
+                cast.IsLocal,
+                holdUntilComplete: false);
+        }
+        else if (cast.CasterVisual != null && cast.TargetVisual != null)
+        {
+            StartTracer(
+                casterKey,
+                null,
+                null,
+                cast.CasterVisual,
+                cast.TargetVisual,
+                traceFx.EffectId,
+                0.35f,
+                cast.NanoId,
+                cast.IsLocal,
+                holdUntilComplete: false);
+        }
     }
 
     /// <summary>
@@ -552,23 +692,48 @@ public sealed class EffectHandler : IEffectSpawnFactory
         return true;
     }
 
-    void EndPendingCast(int casterKey)
+    /// <summary>
+    /// The cast's result arrived. Stock <c>CharCastNano_t</c> (Gamecode 1007b1e3) calls
+    /// <c>NextState</c> on the cast effect and otherwise leaves it running: for a Spell1 that re-times
+    /// its windows around now (<c>100f2617</c>) or, when field 33 is set, does nothing at all, so the
+    /// hand effects play out their own template timeline. Once per cast.
+    /// </summary>
+    void ReleasePendingCast(int casterKey)
+    {
+        if (casterKey == 0 || !_pendingCasts.TryGetValue(casterKey, out PendingCast pending) || pending.Released)
+            return;
+
+        pending.Released = true;
+        if (pending.Handle != null && pending.Handle.IsAlive)
+            pending.Handle.NextState();
+    }
+
+    /// <summary>The cast is over: stop watching its caster's notes.</summary>
+    void ForgetPendingCast(int casterKey)
     {
         if (casterKey == 0 || !_pendingCasts.TryGetValue(casterKey, out PendingCast pending))
             return;
 
         _pendingCasts.Remove(casterKey);
-        if (pending.Handle != null && pending.Handle.IsAlive)
-            pending.Handle.TerminateGracefully();
+        if (pending.Player != null && pending.OnNote != null)
+            pending.Player.NoteReached -= pending.OnNote;
     }
 
-    /// <summary>Wind down cast Spell1 (and its hand children) without playing hit.</summary>
-    public void EndPendingCastVisual(int casterKey) => EndPendingCast(casterKey);
-
-    /// <summary>Interrupt / Clear: wind down cast + tracer without playing hit.</summary>
+    /// <summary>
+    /// Interrupt / Clear. Stock's abort path (Gamecode 1007b1e3, top) deletes the cast effect
+    /// outright with <c>DeleteEffect</c>.
+    /// </summary>
     public void CancelPendingTrace(int casterKey)
     {
-        EndPendingCast(casterKey);
+        if (casterKey != 0 && _pendingCasts.TryGetValue(casterKey, out PendingCast pending))
+        {
+            ForgetPendingCast(casterKey);
+            if (pending.Handle != null)
+            {
+                pending.Handle.Destroy();
+                Unregister(pending.Handle);
+            }
+        }
         CompletePendingTrace(casterKey);
     }
 
@@ -630,7 +795,7 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 return null;
             }
 
-            castHandle.SetDuration(60f);
+            castHandle.SetDuration(CastEffectSeconds);
             Debug.Log(
                 $"[Effects] nano {phase} nano={nanoId} effectId={effectId} host={host.Identity} local={isLocal} spell1");
             return castHandle;
@@ -664,36 +829,40 @@ public sealed class EffectHandler : IEffectSpawnFactory
             hitLoc.Tick(dt);
         }
 
+        // Sweep a snapshot. Releasing a finished parent (Meta, Sequencer, ...) deletes its children,
+        // which unregisters them from _handles in the middle of this loop; indexing _handles directly
+        // then removed the wrong entry or ran off the end once a parent and its live children went
+        // together.
         _tick.Clear();
-        for (int i = _handles.Count - 1; i >= 0; i--)
+        _sweep.Clear();
+        _sweep.AddRange(_handles);
+        for (int i = _sweep.Count - 1; i >= 0; i--)
         {
-            EffectHandle handle = _handles[i];
-            if (handle == null)
-            {
-                _handles.RemoveAt(i);
+            EffectHandle handle = _sweep[i];
+            if (handle == null || !_handleSet.Contains(handle))
                 continue;
-            }
 
             handle.CollectLive(_tick);
             if (!handle.IsAlive)
-            {
-                _handleSet.Remove(handle);
-                _handles.RemoveAt(i);
-            }
+                Unregister(handle);
         }
 
         _batch.Clear();
         _quads.Clear();
+        _strips.Clear();
         for (int i = 0; i < _tick.Count; i++)
         {
             GfxControl control = _tick[i];
             if (!control.Process(dt))
                 continue;
             control.CollectBillboards(_quads, camera);
+            control.CollectStrips(_strips, camera);
         }
 
         for (int i = 0; i < _quads.Count; i++)
             _batch.Add(_quads[i]);
+        for (int i = 0; i < _strips.Count; i++)
+            _batch.Add(_strips[i]);
 
         _batch.Submit(camera);
     }
@@ -727,7 +896,9 @@ public sealed class EffectHandler : IEffectSpawnFactory
             case EffectTypeTags.Stars:
                 return CreateStars(record, locator);
             case EffectTypeTags.Flare:
+                return CreateFlareType0(record, locator);
             case EffectTypeTags.FlareAlt:
+                // _GfxControlFlare1_t (ctor 100dea3d) is a separate class; still the earlier emitter.
                 return CreateFlare(record, locator, tint);
             case EffectTypeTags.Cord:
                 return CreateCord(record, locator, tint);
@@ -744,6 +915,20 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 return new GfxControlHighlight(record, locator);
             case EffectTypeTags.Spell1:
                 return CreateSpell1(record, locator, tint, caster, target, attachOverride, casterVisual, targetVisual);
+            case EffectTypeTags.Tracer1:
+                return CreateTracer1(record, locator);
+            case EffectTypeTags.Plasma:
+                return CreatePlasma(record, locator);
+            case EffectTypeTags.Tracer4:
+                return CreateTracer4(record, locator);
+            case EffectTypeTags.Deformer:
+                if (record.FieldInt(10, 0) == DeformerSim.WobbleMode)
+                    return new GfxControlDeformer(record, locator);
+                return new GfxControlUnsupported(record, locator);
+            case EffectTypeTags.Electra:
+                if (record.FieldInt(10, 0) == ElectraSim.ShellMode)
+                    return CreateElectra(record, locator);
+                return new GfxControlUnsupported(record, locator);
             default:
                 // Tracers are strips between two points, so they get the stretched control.
                 // Remaining sprite-family types fall back to the generic billboard stand-in.
@@ -802,9 +987,22 @@ public sealed class EffectHandler : IEffectSpawnFactory
         int materialIndex = ResolveMaterialIndex(record, defaultIndex: 9, preferredField: 9);
         EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
         Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        EffectHitLocation hitLoc = null;
+        locator?.TryGetHitLocation(out hitLoc);
         return new GfxControlStars(
             record, locator, texture, _atlasFrames,
-            slot.Cols, slot.Rows, slot.FirstFrame, slot.LastFrame, _lights);
+            slot.Cols, slot.Rows, slot.FirstFrame, slot.LastFrame, hitLoc);
+    }
+
+    GfxControl CreateFlareType0(GfxTweakRecord record, EffectLocator locator)
+    {
+        // Visual init FUN_100dd071: material, columns, rows and frame range all from field 9.
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 9, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        return new GfxControlFlareType0(
+            record, locator, texture, _atlasFrames,
+            slot.Cols, slot.Rows, slot.FirstFrame, slot.LastFrame);
     }
 
     GfxControl CreateFlare(GfxTweakRecord record, EffectLocator locator, Color tint)
@@ -896,6 +1094,90 @@ public sealed class EffectHandler : IEffectSpawnFactory
 
         return locator.WithAttach(templateAttach);
     }
+
+    /// <summary>
+    /// Stock builds a Tracer1 only from a hit location (<c>CreateGfxControl(id, hitLoc)</c>,
+    /// <c>100fecea</c>), reading its start and end once. Without one stock readies it at once.
+    /// </summary>
+    GfxControl CreateTracer1(GfxTweakRecord record, EffectLocator locator)
+    {
+        if (locator == null
+            || !locator.TryGetHitLocation(out EffectHitLocation hitLoc)
+            || !hitLoc.TryGetEndpoints(out Vector3 start, out Vector3 end))
+        {
+            return new GfxControlUnsupported(record, locator);
+        }
+
+        // Visual build FUN_100fe845: material and frame range from field 9, as Flare.
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 16, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        return new GfxControlTracer1(
+            record,
+            EffectLocator.WorldPoint(start, Quaternion.identity),
+            start,
+            end,
+            texture,
+            _atlasFrames,
+            slot.Cols,
+            slot.Rows,
+            slot.FirstFrame);
+    }
+
+    /// <summary>
+    /// Stock builds a Plasma only from a hit location (<c>CreateGfxControl(id, hitLoc)</c>,
+    /// <c>100ec5ae</c>) and follows it every frame.
+    /// </summary>
+    GfxControl CreatePlasma(GfxTweakRecord record, EffectLocator locator)
+    {
+        if (locator == null || !locator.TryGetHitLocation(out EffectHitLocation hitLoc))
+            return new GfxControlUnsupported(record, locator);
+
+        // FUN_100ec522: GfxVisualPlasma(material from field 9, 0, 6.28, 12).
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 8, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        return new GfxControlPlasma(record, locator, hitLoc, texture);
+    }
+
+    /// <summary>
+    /// Stock builds a Tracer4 only from a hit location (<c>CreateGfxControl(id, hitLoc)</c>,
+    /// <c>101002e0</c>), reading its start and end once.
+    /// </summary>
+    GfxControl CreateTracer4(GfxTweakRecord record, EffectLocator locator)
+    {
+        if (locator == null
+            || !locator.TryGetHitLocation(out EffectHitLocation hitLoc)
+            || !hitLoc.TryGetEndpoints(out Vector3 start, out Vector3 end))
+        {
+            return new GfxControlUnsupported(record, locator);
+        }
+
+        // Visual build 100ffd67: GfxVisualCord4(material from field 9, null, additive, modulate).
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 15, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        return new GfxControlTracer4(record, EffectLocator.WorldPoint(start, Quaternion.identity), start, end, texture);
+    }
+
+    /// <summary>
+    /// Electra's visual (100d98e0): GfxVisualElectra(material from field 9, 0, additive), sized by the
+    /// material's own columns and rows.
+    /// </summary>
+    GfxControl CreateElectra(GfxTweakRecord record, EffectLocator locator)
+    {
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 2, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        return new GfxControlElectra(record, locator, texture, slot.Cols, slot.Rows);
+    }
+
+    /// <summary>Tracers stock builds from its own data and lets run their course (no SetDuration, no cut-off).</summary>
+    static bool IsStockTracer(EffectHandle handle)
+        => handle?.Control is GfxControlTracer1
+           || handle?.Control is GfxControlPlasma
+           || handle?.Control is GfxControlTracer4
+           || handle?.Control is GfxControlStars { IsHitLocationTracer: true };
 
     GfxControl CreateTracer(GfxTweakRecord record, EffectLocator locator, Color tint)
     {

@@ -120,6 +120,9 @@ public sealed class EffectLocator
         }
     }
 
+    /// <summary>True for a locator placed by a bare position (stock locator mode 1).</summary>
+    public bool IsWorldPoint => _kind == Kind.World;
+
     public bool TryGetSourceDynel(out Dynel dynel)
     {
         dynel = _source;
@@ -130,6 +133,12 @@ public sealed class EffectLocator
     {
         dynel = _target;
         return dynel != null && _kind == Kind.Beam;
+    }
+
+    public bool TryGetHitLocation(out EffectHitLocation hitLocation)
+    {
+        hitLocation = _hitLocation;
+        return hitLocation != null && _kind == Kind.HitLocation;
     }
 
     public bool TryGetVisual(out VisualDynel visual)

@@ -188,6 +188,12 @@ public class PlayfieldFactory : MonoBehaviour
         if (!NetworkDriven || _current == null || msg == null)
             return;
 
+        if (msg.Action == CharacterActionType.SetNanoDuration)
+        {
+            OnSetNanoDuration(msg);
+            return;
+        }
+
         int action = (int)msg.Action;
         bool combat = action == AnimKindIds.FightEnterAction
             || action == AnimKindIds.FightLeaveAction
@@ -247,8 +253,13 @@ public class PlayfieldFactory : MonoBehaviour
             ? msg.Target.Instance == caster.Identity.Instance
             : caster.SpellCastOnSelf;
 
-        caster.PlaySpellCastReleaseAnim(selfCast);
-        _effectHandler?.PlayNanoHit(caster, target, nanoId, isLocal, nano);
+        // Stock CharCastNano_t (Gamecode 1007b1e3): NextState on the cast effect and the release clip
+        // now; the clip's effect1start note launches the tracer, and the impact and hit play when
+        // the clip ends.
+        _effectHandler?.FinishNanoCast(caster);
+        caster.PlaySpellCastReleaseAnim(
+            selfCast,
+            () => _effectHandler?.PlayNanoHit(caster, target, nanoId, isLocal, nano));
     }
 
     void OnCastNanoSpell(CastNanoSpellMessage msg)
@@ -292,28 +303,38 @@ public class PlayfieldFactory : MonoBehaviour
         _effectHandler?.PlayNanoCast(caster, target, nanoId, isLocal, nano);
     }
 
-    /// <summary>Buff landed: identity is the recipient, Buff is the nano that was applied.</summary>
+    /// <summary>
+    /// A buff's time for msg.Identity: Target is the nano, Parameter2 the time in centiseconds. Stock
+    /// (CharacterAction 98, Gamecode 1005dd25 into FUN_100517f3) starts the buff's effect here, for
+    /// anyone, local or not.
+    /// </summary>
+    void OnSetNanoDuration(CharacterActionMessage msg)
+    {
+        if (!_current.TryGetCharacter(msg.Identity, out Character target))
+            return;
+
+        int nanoId = msg.Target.Instance;
+        NanoSpell nano = _itemTemplates != null ? _itemTemplates.GetNano(nanoId) : null;
+        if (nano == null)
+            return; // stock: no nano template (100a4b10), nothing happens
+
+        bool isLocal = target.Identity.Instance == _networkClient.LocalDynelId;
+        _effectHandler?.AddNanoBuff(target, nanoId, nano, msg.Parameter2, isLocal);
+    }
+
+    /// <summary>
+    /// Stock BuffIIR_c (Gamecode 100726e5): with its first field 0, the Buff message means the nano Buff
+    /// on msg.Identity wore off, and the buff's effect ends gracefully.
+    /// </summary>
     void OnBuff(BuffMessage msg)
     {
-        if (!NetworkDriven || _current == null || msg == null)
+        if (!NetworkDriven || _current == null || msg == null || msg.Unknown1 != 0)
             return;
 
         if (!_current.TryGetCharacter(msg.Identity, out Character target))
             return;
 
-        int nanoId = msg.Buff.Instance;
-        if (nanoId == 0)
-            return;
-
-        NanoSpell nano = _itemTemplates != null ? _itemTemplates.GetNano(nanoId) : null;
-        if (nano == null)
-        {
-            Debug.LogWarning($"[Effects] Buff: nano template {msg.Buff.Type}:{nanoId} failed to load.");
-            return;
-        }
-
-        bool isLocal = target.Identity.Instance == _networkClient.LocalDynelId;
-        _effectHandler?.PlayNanoBuff(target, nanoId, isLocal, nano);
+        _effectHandler?.RemoveNanoBuff(target, msg.Buff.Instance);
     }
 
     void OnAttackInfo(AttackInfoMessage msg)

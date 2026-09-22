@@ -9,11 +9,14 @@ using Quaternion = UnityEngine.Quaternion;
 using Vector2 = UnityEngine.Vector2;
 using Vector3 = UnityEngine.Vector3;
 using Color = UnityEngine.Color;
-using Rect = UnityEngine.Rect;
 
 /// <summary>
 /// DEV scene host: gfxtweak catalog + two Solitus-female CatMeshes for nano cast/hit tests.
+/// Runs late (same order as EffectRuntimeHost) so effects tick after CatAnimPlayer's LateUpdate has
+/// posed the bones they attach to. Driven from the editor window Lost Eden/GFX Test; the Game view
+/// keeps only the fly camera and the Space / X keys.
 /// </summary>
+[DefaultExecutionOrder(20100)]
 public sealed class GfxTest_DEV : MonoBehaviour
 {
     const string DefaultAoPath = @"C:\Program Files (x86)\Steam\steamapps\common\Anarchy Online";
@@ -53,19 +56,29 @@ public sealed class GfxTest_DEV : MonoBehaviour
     Coroutine _nanoRoutine;
 
     readonly List<int> _allIds = new List<int>();
-    readonly List<int> _filteredIds = new List<int>();
     readonly List<EffectHandle> _live = new List<EffectHandle>(16);
 
     string _status = "Open AO DB to load Setupf/gfxtweak.bin.";
-    string _idFilter = string.Empty;
-    Vector2 _listScroll;
     float _yaw;
     float _pitch;
     bool _looking;
-    int _typeFilter; // 0=all, 1=billboard, 2=composite, 3=beam, 4=stars/particles, 5=other
 
-    static readonly string[] TypeFilterLabels =
-        { "All", "Billboard", "Composite", "Beam", "Stars/FX", "Other" };
+    // ---- Editor window API (Lost Eden/GFX Test) ----
+
+    public string AoPath { get => _aoPath; set => _aoPath = value; }
+    public int EffectId { get => _effectId; set => _effectId = value; }
+    public int NanoId { get => _nanoId; set => _nanoId = value; }
+    public Color Tint { get => _tint; set => _tint = value; }
+    public string Status => _status;
+    public bool IsDatabaseOpen => _database?.IsInitialized == true;
+    public GfxTweakCatalog Catalog => _catalog;
+    public IReadOnlyList<int> CatalogIds => _allIds;
+    public ResourceDatabase Database => _database;
+
+    /// <summary>Bumped whenever the catalog is (re)loaded, so a viewer knows to rebuild its list.</summary>
+    public int CatalogVersion { get; private set; }
+
+    public int LiveCount => _live.Count;
 
     void Awake()
     {
@@ -108,130 +121,16 @@ public sealed class GfxTest_DEV : MonoBehaviour
     {
         UpdateFlyCamera();
         PruneDeadHandles();
+    }
+
+    void LateUpdate()
+    {
+        // After CatAnimPlayer.LateUpdate: ticking in Update read last frame's pose, so every attached
+        // effect trailed its bone by a frame.
         _handler?.Tick(Time.deltaTime, Camera.main);
     }
 
-    void OnGUI()
-    {
-        GUILayout.BeginArea(new Rect(12f, 12f, 440f, Screen.height - 24f), GUI.skin.box);
-        GUILayout.Label("GFX Test");
-
-        GUILayout.Label("AO Path");
-        _aoPath = GUILayout.TextField(_aoPath ?? string.Empty);
-
-        GUILayout.BeginHorizontal();
-        if (GUILayout.Button("Open DB", GUILayout.Height(28f)))
-            OpenDatabase();
-        if (GUILayout.Button("Reload Catalog", GUILayout.Height(28f)))
-            ReloadCatalog();
-        GUILayout.EndHorizontal();
-
-        GUILayout.Label(_database?.IsInitialized == true
-            ? $"DB open — catalog {_catalog?.Count ?? 0}"
-            : "DB closed");
-        GUILayout.Label(_status ?? string.Empty);
-
-        GUILayout.Space(6f);
-        DrawSpawnControls();
-        GUILayout.Space(6f);
-        DrawCatalogList();
-        GUILayout.Space(6f);
-        GUILayout.Label("WASD/QE fly · RMB look · Space spawn · X clear");
-        GUILayout.Label("Nano: cast anim + both hands (2s) → spell-dir + hit");
-        GUILayout.EndArea();
-    }
-
-    void DrawSpawnControls()
-    {
-        GUILayout.Label("Spawn");
-        GUILayout.BeginHorizontal();
-        GUILayout.Label("Effect Id", GUILayout.Width(70f));
-        string effectText = GUILayout.TextField(_effectId.ToString());
-        if (int.TryParse(effectText, out int parsedEffect))
-            _effectId = parsedEffect;
-        GUILayout.EndHorizontal();
-
-        GUILayout.BeginHorizontal();
-        GUILayout.Label("Nano Id", GUILayout.Width(70f));
-        string nanoText = GUILayout.TextField(_nanoId.ToString());
-        if (int.TryParse(nanoText, out int parsedNano))
-            _nanoId = parsedNano;
-        GUILayout.EndHorizontal();
-
-        GUILayout.BeginHorizontal();
-        GUILayout.Label("Tint", GUILayout.Width(70f));
-        _tint = DrawColorField(_tint);
-        GUILayout.EndHorizontal();
-
-        if (_catalog != null && _catalog.TryGet(_effectId, out GfxTweakRecord record))
-        {
-            GUILayout.Label(
-                $"tag=0x{record.TypeTag:X} ({DescribeTag(record.TypeTag)}) life={record.Lifetime:F2} fields={record.Fields?.Length ?? 0}");
-        }
-        else
-        {
-            GUILayout.Label("Not in catalog (will use fallback flare params).");
-        }
-
-        GUILayout.BeginHorizontal();
-        if (GUILayout.Button("Spawn at look", GUILayout.Height(28f)))
-            SpawnAtLook();
-        if (GUILayout.Button("Spawn origin", GUILayout.Height(28f)))
-            SpawnAt(new Vector3(0f, _spawnHeight, 0f));
-        GUILayout.EndHorizontal();
-
-        GUILayout.BeginHorizontal();
-        if (GUILayout.Button("Spawn from nano", GUILayout.Height(28f)))
-            SpawnFromNano();
-        if (GUILayout.Button($"Clear ({_live.Count})", GUILayout.Height(28f)))
-            ClearEffects();
-        GUILayout.EndHorizontal();
-    }
-
-    void DrawCatalogList()
-    {
-        GUILayout.Label("Catalog");
-        GUILayout.BeginHorizontal();
-        GUILayout.Label("Filter", GUILayout.Width(40f));
-        string nextFilter = GUILayout.TextField(_idFilter ?? string.Empty);
-        if (nextFilter != _idFilter)
-        {
-            _idFilter = nextFilter;
-            RebuildFilter();
-        }
-        GUILayout.EndHorizontal();
-
-        GUILayout.BeginHorizontal();
-        for (int i = 0; i < TypeFilterLabels.Length; i++)
-        {
-            bool on = _typeFilter == i;
-            if (GUILayout.Toggle(on, TypeFilterLabels[i], GUI.skin.button) && !on)
-            {
-                _typeFilter = i;
-                RebuildFilter();
-            }
-        }
-        GUILayout.EndHorizontal();
-
-        GUILayout.Label($"{_filteredIds.Count} / {_allIds.Count}");
-        _listScroll = GUILayout.BeginScrollView(_listScroll, GUILayout.Height(280f));
-        for (int i = 0; i < _filteredIds.Count; i++)
-        {
-            int id = _filteredIds[i];
-            string label = id.ToString();
-            if (_catalog != null && _catalog.TryGet(id, out GfxTweakRecord rec))
-                label = $"{id}  0x{rec.TypeTag:X} {DescribeTag(rec.TypeTag)}";
-
-            if (GUILayout.Button(label, _effectId == id ? GUI.skin.box : GUI.skin.button))
-            {
-                _effectId = id;
-                SpawnAtLook();
-            }
-        }
-        GUILayout.EndScrollView();
-    }
-
-    void OpenDatabase()
+    public void OpenDatabase()
     {
         string path = AoInstallPath.Normalize(_aoPath);
         if (!AoInstallPath.IsValid(path))
@@ -271,11 +170,11 @@ public sealed class GfxTest_DEV : MonoBehaviour
         EnsureNanoActors();
 
         _catalog.CopyIds(_allIds);
-        RebuildFilter();
+        CatalogVersion++;
         _status = $"Loaded catalog ({_catalog.Count}). Solitus ♀ duo ready for nano tests.";
     }
 
-    void ReloadCatalog()
+    public void ReloadCatalog()
     {
         if (_database?.Rdb == null)
         {
@@ -287,11 +186,11 @@ public sealed class GfxTest_DEV : MonoBehaviour
         _handler = new EffectHandler(_catalog, _imageTextures, _textureNames);
         _handler.SetLightParent(transform);
         _catalog.CopyIds(_allIds);
-        RebuildFilter();
+        CatalogVersion++;
         _status = $"Reloaded catalog ({_catalog.Count}).";
     }
 
-    void SpawnAtLook()
+    public void SpawnAtLook()
     {
         Camera cam = Camera.main;
         if (cam == null)
@@ -305,6 +204,8 @@ public sealed class GfxTest_DEV : MonoBehaviour
             + Vector3.up * (_spawnHeight - 1.2f);
         SpawnAt(pos);
     }
+
+    public void SpawnAtOrigin() => SpawnAt(new Vector3(0f, _spawnHeight, 0f));
 
     void SpawnAt(Vector3 position)
     {
@@ -399,7 +300,7 @@ public sealed class GfxTest_DEV : MonoBehaviour
         return _highlightProxy;
     }
 
-    void SpawnFromNano()
+    public void SpawnFromNano()
     {
         if (_handler == null || _itemTemplates == null)
         {
@@ -451,7 +352,6 @@ public sealed class GfxTest_DEV : MonoBehaviour
     IEnumerator NanoCastThenHit(NanoSpell nano, int castId, int traceId, int hitId)
     {
         const int casterKey = 1;
-        const float tracerTravelSeconds = 0.35f;
 
         bool castAnimDone = false;
         if (_casterVisual != null)
@@ -464,12 +364,11 @@ public sealed class GfxTest_DEV : MonoBehaviour
             castAnimDone = true;
         }
 
-        EffectHandle castHandle = _handler.PlayNanoCastVisual(_casterVisual, _targetVisual, _nanoId, nano);
+        EffectHandle castHandle = _handler.PlayNanoCastVisual(_casterVisual, _targetVisual, _nanoId, nano, casterKey);
         if (castId != 0 && castHandle != null)
         {
             _effectId = castId;
             _live.Add(castHandle);
-            _handler.RememberPendingCastVisual(casterKey, castHandle);
         }
 
         _status = $"Nano {_nanoId}: casting {castId}... (hit waits until cast finishes)";
@@ -484,29 +383,22 @@ public sealed class GfxTest_DEV : MonoBehaviour
         if (!castAnimDone)
             yield return new WaitForSeconds(Mathf.Max(0f, NanoCastHoldSeconds - waited));
 
-        PlayCasterKindName("spell-dir");
-
-
-        // Cast finished: stop Spell1 + hand children before tracer/hit so they don't stack over them.
-
-
-        _handler.EndPendingCastVisual(casterKey);
-
-        float travel = _handler.BeginNanoTracerVisual(
-            _casterVisual,
-            _targetVisual,
-            _nanoId,
-            nano,
-            casterKey,
-            tracerTravelSeconds,
-            out EffectHandle tracerHandle);
-        if (tracerHandle != null)
-            _live.Add(tracerHandle);
-
-        if (travel > 0f)
+        // The result is in (stock CharCastNano_t): NextState on the cast effect, then the release
+        // clip. Its effect1start note launches the tracer; the impact and hit wait for it to end.
+        _handler.FinishNanoCastVisual(casterKey);
+        bool releaseDone = false;
+        if (_casterVisual == null
+            || !_casterVisual.PlayKindNameOnce("spell-dir", 0f, () => releaseDone = true, overlay: true))
         {
-            _status = $"Nano {_nanoId}: cast done -> tracer {traceId} ({travel:0.##}s) -> hit";
-            yield return new WaitForSeconds(travel);
+            releaseDone = true;
+        }
+
+        _status = $"Nano {_nanoId}: release -> tracer {traceId} on effect1start -> hit at the clip's end";
+        waited = 0f;
+        while (!releaseDone && waited < 8f)
+        {
+            waited += Time.deltaTime;
+            yield return null;
         }
 
         EffectHandle hitHandle = _handler.PlayNanoHitVisual(
@@ -529,16 +421,17 @@ public sealed class GfxTest_DEV : MonoBehaviour
             _status = $"Nano {_nanoId}: cast finished (no impact/hit FX).";
         }
 
+        // The buff's own effect (stat 413) on the recipient. In game its time comes from the server
+        // (CharacterAction 98 SetNanoDuration); here the nano's timeexist stands in for it.
+        EffectHandle buffHandle = _handler.AddNanoBuffVisual(
+            _targetVisual, _nanoId, nano, NanoEffectResolver.TimeExist(nano));
+        if (buffHandle != null)
+        {
+            _live.Add(buffHandle);
+            _status += $" + buff {NanoEffectResolver.TimeExist(nano) / 100}s";
+        }
+
         _nanoRoutine = null;
-    }
-
-    void PlayCasterKindName(string kindName)
-    {
-        if (_casterVisual == null || string.IsNullOrEmpty(kindName))
-            return;
-
-        if (!_casterVisual.PlayKindNameOnce(kindName, 0f, null, overlay: true))
-            Debug.LogWarning($"[GfxTest] Failed to play '{kindName}' on caster.");
     }
 
     bool SpawnCastOnBothHands(VisualDynel actor, int effectId)
@@ -551,9 +444,44 @@ public sealed class GfxTest_DEV : MonoBehaviour
         if (handle == null)
             return false;
 
-        handle.SetDuration(60f);
+        handle.SetDuration(6000f); // stock CharCastNano_t (Gamecode 1007b6d7)
         _live.Add(handle);
         return true;
+    }
+
+    /// <summary>The harness's effect handler. For editor automation.</summary>
+    public EffectHandler Handler => _handler;
+
+    /// <summary>Same as the "Spawn from nano" button. For editor automation.</summary>
+    public void SpawnNano(int nanoId)
+    {
+        _nanoId = nanoId;
+        SpawnFromNano();
+    }
+
+    /// <summary>
+    /// Caster actor, or null before the first nano spawn. For editor automation. Does not rebuild:
+    /// EnsureNanoActors re-applies the appearance and would restart the actor's animation.
+    /// </summary>
+    public VisualDynel CasterVisual => _casterVisual;
+
+    /// <summary>
+    /// Plays <paramref name="effectId"/> the way stock plays a nano's cast effect (CharCastNano_t,
+    /// Gamecode 1007b6d2): CreateEffect2(id, caster, target, 0) then SetDuration(6000). End it with
+    /// <see cref="EffectHandle.TerminateGracefully"/>, which is what the cast result does.
+    /// </summary>
+    public EffectHandle PlayCastEffectOnCaster(int effectId)
+    {
+        if (_handler == null || effectId <= 0 || (_casterVisual == null && !EnsureNanoActors()))
+            return null;
+
+        EffectHandle handle = _handler.CreateEffect2(effectId, _casterVisual, _targetVisual, _tint, attachOverride: 0);
+        if (handle == null)
+            return null;
+
+        handle.SetDuration(6000f);
+        _live.Add(handle);
+        return handle;
     }
 
     bool SpawnOnActor(VisualDynel actor, int effectId)
@@ -641,7 +569,7 @@ public sealed class GfxTest_DEV : MonoBehaviour
         SyncCameraAngles();
     }
 
-    void ClearEffects()
+    public void ClearEffects()
     {
         if (_nanoRoutine != null)
         {
@@ -667,44 +595,7 @@ public sealed class GfxTest_DEV : MonoBehaviour
         }
     }
 
-    void RebuildFilter()
-    {
-        _filteredIds.Clear();
-        string filter = (_idFilter ?? string.Empty).Trim();
-        bool hasFilter = filter.Length > 0;
-
-        for (int i = 0; i < _allIds.Count; i++)
-        {
-            int id = _allIds[i];
-            if (hasFilter && id.ToString().IndexOf(filter, System.StringComparison.OrdinalIgnoreCase) < 0)
-                continue;
-
-            if (_typeFilter != 0 && _catalog != null && _catalog.TryGet(id, out GfxTweakRecord rec))
-            {
-                int bucket = TagBucket(rec.TypeTag);
-                if (bucket != _typeFilter)
-                    continue;
-            }
-
-            _filteredIds.Add(id);
-        }
-    }
-
-    static int TagBucket(int typeTag)
-    {
-        if (EffectTypeTags.IsBillboard(typeTag))
-            return 1;
-        if (EffectTypeTags.IsComposite(typeTag))
-            return 2;
-        if (EffectTypeTags.IsBeam(typeTag))
-            return 3;
-        if (EffectTypeTags.IsStars(typeTag) || EffectTypeTags.IsParticle(typeTag)
-            || EffectTypeTags.IsHighlight(typeTag))
-            return 4;
-        return 5;
-    }
-
-    static string DescribeTag(int typeTag)
+    public static string DescribeTag(int typeTag)
     {
         if (EffectTypeTags.IsBillboard(typeTag))
             return "billboard";
@@ -727,15 +618,6 @@ public sealed class GfxTest_DEV : MonoBehaviour
         if (EffectTypeTags.IsHighlight(typeTag))
             return "highlight";
         return $"other(0x{typeTag:X})";
-    }
-
-    static Color DrawColorField(Color color)
-    {
-        string hex = ColorUtility.ToHtmlStringRGBA(color);
-        string next = GUILayout.TextField(hex);
-        if (next != hex && ColorUtility.TryParseHtmlString("#" + next, out Color parsed))
-            return parsed;
-        return color;
     }
 
     void EnsureSceneBasics()

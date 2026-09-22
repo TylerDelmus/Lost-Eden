@@ -35,6 +35,14 @@ public sealed class CatAnimPlayer : MonoBehaviour
     readonly List<AnimInstance> _removeBuffer = new List<AnimInstance>();
     readonly List<AnimInstance> _applyOrder = new List<AnimInstance>();
     readonly List<Action> _completedCallbacks = new List<Action>();
+    readonly List<(int EventId, int AnimId)> _reachedNotes = new List<(int, int)>();
+
+    /// <summary>
+    /// A clip's note was crossed: (stock event id, anim id). Stock fires notes from every playing
+    /// clip as its time passes them (Gamecode <c>FUN_1003c248</c>); see <see cref="AnimNoteIds"/>.
+    /// Raised after the frame's clips have advanced.
+    /// </summary>
+    public event Action<int, int> NoteReached;
 
     sealed class AnimInstance
     {
@@ -60,6 +68,7 @@ public sealed class CatAnimPlayer : MonoBehaviour
         public int LoopKey;
         public int KindId;
         public float StartDelay;
+        public bool NotesStarted;
     }
 
     public int MonsterDataId => _monsterDataId;
@@ -794,6 +803,7 @@ public sealed class CatAnimPlayer : MonoBehaviour
             }
 
             FlushRemovals();
+            InvokeReachedNotes();
             InvokeCompletedCallbacks();
         }
 
@@ -809,8 +819,10 @@ public sealed class CatAnimPlayer : MonoBehaviour
         if (clipDuration <= 0f)
             return;
 
+        float before = instance.Time;
         instance.Time += dt;
 
+        // A clip fading out on a cross-fade raises no more notes.
         if (instance.OutgoingCrossFade)
         {
             instance.Time = Mathf.Min(instance.Time, clipDuration);
@@ -822,14 +834,22 @@ public sealed class CatAnimPlayer : MonoBehaviour
             if (instance.Time > clipDuration)
                 instance.Time = clipDuration;
             if (instance.Time < clipDuration)
+            {
+                CollectNotes(instance, before, instance.Time);
                 return;
+            }
         }
 
+        // One-shots run on source time (see EvaluateBone); loops on LoopStart + time.
         if (instance.OneShot)
         {
             if (instance.Time < clipDuration)
+            {
+                CollectNotes(instance, before, instance.Time);
                 return;
+            }
 
+            CollectNotes(instance, before, clipDuration);
             instance.Time = clipDuration;
             instance.OneShot = false;
             bool loopsAfterPrefix = instance.Clip.HasLoopTiming && instance.Clip.LoopStart > 0.001f;
@@ -845,8 +865,44 @@ public sealed class CatAnimPlayer : MonoBehaviour
             return;
         }
 
+        float loopStart = instance.Clip.LoopStart;
         if (instance.Time > clipDuration)
+        {
+            CollectNotes(instance, loopStart + before, loopStart + clipDuration);
             instance.Time %= clipDuration;
+            CollectNotes(instance, loopStart, loopStart + instance.Time, includeFrom: true);
+            return;
+        }
+
+        CollectNotes(instance, loopStart + before, loopStart + instance.Time);
+    }
+
+    /// <summary>Queues the notes crossed moving this clip's source time from one point to another.</summary>
+    void CollectNotes(AnimInstance instance, float from, float to, bool includeFrom = false)
+    {
+        CatAnimRuntimeClip.Note[] notes = instance.Clip.Notes;
+        includeFrom |= !instance.NotesStarted;
+        instance.NotesStarted = true;
+        if (notes.Length == 0 || NoteReached == null)
+            return;
+
+        for (int i = 0; i < notes.Length; i++)
+        {
+            if (AnimNoteIds.Crossed(notes[i].Time, from, to, includeFrom))
+                _reachedNotes.Add((notes[i].EventId, instance.Clip.AnimId));
+        }
+    }
+
+    void InvokeReachedNotes()
+    {
+        if (_reachedNotes.Count == 0)
+            return;
+
+        // Handlers may start clips; raise from a copy.
+        var reached = _reachedNotes.ToArray();
+        _reachedNotes.Clear();
+        for (int i = 0; i < reached.Length; i++)
+            NoteReached?.Invoke(reached[i].EventId, reached[i].AnimId);
     }
 
     void AdvanceFade(AnimInstance instance, float dt)
