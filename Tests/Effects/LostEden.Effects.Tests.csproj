@@ -24,7 +24,9 @@
     <Compile Include="..\..\Assets\Scripts\Effects\Tracer4Sim.cs" Link="Tracer4Sim.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\Cord4Strip.cs" Link="Cord4Strip.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\DeformerSim.cs" Link="DeformerSim.cs" />
-    <Compile Include="..\..\Assets\Scripts\Effects\StarsCase19.cs" Link="StarsCase19.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\IStarsStockCase.cs" Link="IStarsStockCase.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\StarsLineSparks.cs" Link="StarsLineSparks.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\StarsLimbSparks.cs" Link="StarsLimbSparks.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\ElectraSim.cs" Link="ElectraSim.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\PlasmaSim.cs" Link="PlasmaSim.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\EffectCoverage.cs" Link="EffectCoverage.cs" />

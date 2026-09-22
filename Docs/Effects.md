@@ -248,6 +248,7 @@ nano's `timeexist` standing in for the server's time.
 | 28638 | Spell1 | 17600 Plasma (violet wavy strand, 1 s) | hit 45001 Stars #7 (ring expanding to 20 m in 1.9 s) | — |
 | 266281 | 46240 Spell1 | 45502 Tracer4 (3 lightning ribbons, 1 s) | hit 45057 Deformer mode 1 (the body ripples ~3 s) | — |
 | 150501 Nullity Sphere | 46188 Spell1 | 45597 Stars #19 (red spark trail, 1 s) | hit 49999 = nothing | 43452 Electra mode 1 (orange spark bubble, 18 s + 0.5) |
+| 43878 Lifegiving Elixir | 46262 Spell1 | 17100 Stars #16 (sparks along the whole line, 1 s) | hit 43426 Stars #22 (sparks pulled onto the limbs, 5 s + drain) | — |
 
 ---
 
@@ -277,7 +278,7 @@ Status legend (matches `EffectCoverage` and the GfxTest window):
 | 0x3fb | `_GfxControlTracer1_t` | `GfxControlTracer1` + `Tracer1Sim` | Verified |
 | 0x400 | `_GfxControlTracer4_t` | `GfxControlTracer4` + `Tracer4Sim` + `Cord4Strip` | Verified |
 | 0x7d2 | `_GfxControlPlasma_t` | `GfxControlPlasma` + `PlasmaSim` | Verified |
-| 0x7d4 | `_GfxControlStars_t` | `GfxControlStars` + `StarsCase3` / `StarsRing` / `StarsCase19` | Verified for starTypes 3, 7, 8, 19; others Unverified |
+| 0x7d4 | `_GfxControlStars_t` | `GfxControlStars` + `StarsCase3` / `StarsRing` / `StarsLineSparks` / `StarsLimbSparks` | Verified for starTypes 3, 7, 8, 16, 19, 22; others Unverified |
 | 0xbb9 | `_GfxControlDeformer_t` | `GfxControlDeformer` + `DeformerSim` + `CatMeshDeformHost` | Verified mode 1; modes 0/4 Missing |
 | 0x7d6 | `_GfxControlElectra_t` | `GfxControlElectra` + `ElectraSim` | Verified mode 1; modes 0/2 Missing |
 | 0x7db | `_GfxControlHighlight_t` | `GfxControlHighlight` | Unverified |
@@ -392,22 +393,42 @@ ctor `100f74ad`, Process `FUN_100f8491`, loader `FUN_100f72a9`, lazy init `FUN_1
 - `u = f31·age/dur`, `frac = u − floor u`, `s = √frac`.
 - Size `f28·s + f29`. Position `locator + dir·f30·0.01·s`. Colour is the ramp at frac.
 
-**Case 19** (`100fa9e4`, `StarsCase19`): the tracer spark trail. It's built from a hit location (ctor
-`100f7d4a` stores the hitloc id at +0x34 and a locator at the world origin).
+**Cases 16 and 19** (`100fa20f` / `100fa9e4`, `StarsLineSparks`): tracer spark lines. They're built
+from a hit location (ctor `100f7d4a` stores the hitloc id at +0x34 and a locator at the world origin).
 - Per call:
-  - `p = age/dur`
   - 15 spawns
-  - each spark is **static** at `end·p + start·(1−p) + ball·f29`
-  - life `f30/1000·((rand()&0x7ff)·1e-4 + 0.9)`
+  - each spark is **static** at `end·q + start·(1−q) + ball·f29`
   - size `f28·(1 − (1−2t)²)` (can be slightly negative early; drawn at |size|)
   - frame `15 − _ftol(t·15.99)`
   - colour is the ramp at t
-- No hit location → no spawns.
-- All 173 type-19 records have field 0 = 5 (world mode).
-- Handled as a stock tracer (no SetDuration).
+- Case 19 (the trail's head): `q = age/dur`, life `f30/1000·((rand()&0x7ff)·1e-4 + 0.9)`.
+- Case 16 (the whole line at once): `q = (rand()&0x7fff)/32768`, life exactly `f30/1000`.
+- No hit location → no spawns. On expiry both are just ready, with no drain.
+- Every record of both types has field 0 = 5 (world mode): 173 of type 19, 1 of type 16 (17100, the
+  tracer of ~1k nanos).
+- Handled as stock tracers (no SetDuration).
+
+**Case 22** (`100fb299`, `StarsLimbSparks`): sparks drawn onto the host's limbs (e.g. 43426, a heal hit).
+- Each call reads 12 attach points on the locator's dynel (`10106078`, ids at `0x102c5fe8`:
+  1013/1011, 1014/1012, 1000/1006, 1009/1007, 1010/1008, 1007/1008) as 6 segments (base P, vector D,
+  length L): calf→thigh ×2, pelvis→head, forearm→upper arm ×2, shoulder→shoulder.
+- Spawn:
+  - up to field 31 per call
+  - segment `k = rand() % 6`, `q = (rand()&0x7fff)/32768`
+  - direction r = a unit vector on the XZ circle (`100d3215`), mapped onto
+    `a = FindPerpendicular(D)` and `b = unit(a × D)`
+  - start at rest at `P + D·q + r'·f28`
+- Each call after that:
+  - `s = clamp(dot(D, p−P)/L, 0, 1)`. This divides by L, not L², so on limbs shorter than 1 m the
+    sparks slide toward the base.
+  - `c = P + D·s`, then `v += (c−p)·0.1`, `p += v·0.1`
+  - a spark within 0.04 of c is due again
+- Life `f30/1000`, size `(t·0.7 + 0.3)·f29`, frame `_ftol(t·15.99)`, colour is the ramp at t.
+- The lazy init sets the timers to 0. On expiry it drains like case 3.
+- All 37 records are world mode, attach 1000.
 
 Other starTypes are still the previous developer's approximations. By nano count, the biggest are:
-tracer types 17/18/16 (~1k nanos each) and hit types 22/6/10/11.
+tracer types 17/18 (~1k nanos each) and hit types 6/10/11.
 
 ### 5.9 Deformer (0xbb9) mode 1: `DeformerSim`, `CatMeshDeformHost`
 vftable `1016c6bc`, loader `100d823f`, Process `100d7caa`, vertex callback `FUN_100d776f`, slot 6 `100d7742`.
@@ -461,7 +482,7 @@ vftable `1016cbbc`, loader `100d97ba`, visual build `100d98e0`, Process `100d9de
 | Handler, creation, nano flow | `EffectHandler.cs` (`CreateControl` switch, `Create*` builders, cast/tracer/hit/buff flow, `IsStockTracer`), `EffectHandle.cs` |
 | Base control | `GfxControl.cs`. The first `Process` only arms (**the body is skipped on that call**), age += dt, the locator is resolved into `WorldMatrix`, and after `OnProcess` it readies at `age ≥ duration`. Controls with stock expiry quirks keep their own duration and set the base one to `InfiniteDuration`. |
 | Locators / hit locations | `EffectLocator.cs` (`OnDynel`, `OnVisual`, `OnHitLocation`, `WorldPoint`, `Beam`, `TryGetHighlightRoot`), `EffectHitLocation.cs`, `EffectAttachIds.cs` |
-| Stock sims (Unity-free, unit-tested) | `FlareType0Visual`, `FlareType0Sim`, `Tracer1Sim`, `PlasmaSim`, `Tracer4Sim`, `Cord4Strip`, `StarsCase3`, `StarsRing`, `StarsCase19`, `DeformerSim`, `ElectraSim`, `StockColorRamp`, `Spell1Trail`, `ScatterSchedule`, `SpriteEmitterMath`, `TracerMath`, `EffectFrameRate`, `EffectTypeCatalog`, `EffectCoverage`, `AnimNoteIds` |
+| Stock sims (Unity-free, unit-tested) | `FlareType0Visual`, `FlareType0Sim`, `Tracer1Sim`, `PlasmaSim`, `Tracer4Sim`, `Cord4Strip`, `StarsCase3`, `StarsRing`, `StarsLineSparks`, `StarsLimbSparks` (behind `IStarsStockCase`), `DeformerSim`, `ElectraSim`, `StockColorRamp`, `Spell1Trail`, `ScatterSchedule`, `SpriteEmitterMath`, `TracerMath`, `EffectFrameRate`, `EffectTypeCatalog`, `EffectCoverage`, `AnimNoteIds` |
 | Drawing | `EffectBillboardBatch.cs`:<br>• `Quad`: camera-facing, one texture per frame via `EffectAtlasFrames.GetFrame`.<br>• `Strip`: a dynamic mesh, one colour, one texture with UVs, both windings.<br>• `Strip.Quads = true`: every 4 vertices form an independent quad.<br>Controls hand geometry over in `CollectBillboards` / `CollectStrips`. |
 | Mesh deform | `Rendering/CatMesh/CatMeshDeformHost.cs`, `CatMeshSourceVertices.cs` |
 | Anim notes | `Rendering/CatMesh/AnimNoteIds.cs`, `CatAnimRuntimeClip.Notes`, `CatAnimPlayer.NoteReached` |
@@ -542,11 +563,12 @@ spawn them). A tree is as good as its worst record. Two scan pitfalls that have 
 Stars field 30 is the spark life, not a child id; and Spell1 spawns fields 31/32 only when field
 33 == 0.
 
-As of 2026-09-22, with the buff slot counted: **7,756 nanos have effects. 1,293 are verified,
-4,530 unverified, 179 approx, 1,754 missing.** Missing rose when buff effects started being counted.
+As of 2026-09-22 (after Stars 16/22), with the buff slot counted: **7,756 nanos have effects. 2,297
+are verified, 3,526 unverified, 179 approx, 1,754 missing.** Missing rose when buff effects started
+being counted.
 
 Next targets, by nano count:
-- Stars starTypes 17 / 18 / 16 (tracers, ~1k each) and 22 / 6 / 10 / 11 (hits)
+- Stars starTypes 17 / 18 (tracers, ~1k each) and 6 / 10 / 11 (hits)
 - Suns 0x7d5 (~378)
 - Spiral 0x7d1 (~282)
 - Shield 0xbbb (~206)

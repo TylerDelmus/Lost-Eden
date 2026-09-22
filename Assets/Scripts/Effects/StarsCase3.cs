@@ -16,7 +16,7 @@ using System;
 ///
 /// No Unity dependency so the recovered maths can be asserted from plain unit tests.
 /// </summary>
-public sealed class StarsCase3
+public sealed class StarsCase3 : IStarsStockCase
 {
     /// <summary>Slot count. The ctor (<c>FUN_100f74ad</c>) sizes every per-particle array for 0x80.</summary>
     public const int SlotCount = 128;

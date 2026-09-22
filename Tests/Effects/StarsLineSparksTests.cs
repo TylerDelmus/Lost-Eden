@@ -1,31 +1,32 @@
 using Xunit;
 
 /// <summary>
-/// Locks <see cref="StarsCase19"/> to stock _GfxControlStars_t case 19 (<c>100fa9e4</c>), with 45597
-/// (nano 150501's tracer): life 300 ms, size 0.44, scatter 0.55, a constant dark-red ramp.
+/// Locks <see cref="StarsLineSparks"/> to stock _GfxControlStars_t cases 19 (<c>100fa9e4</c>) and 16
+/// (<c>100fa20f</c>). Case 19 uses 45597 (nano 150501's tracer): life 300 ms, size 0.44, scatter 0.55,
+/// a constant dark-red ramp. Case 16 uses 17100 (nano 43878's tracer): life 300 ms, size 0.2, scatter 0.4.
 /// </summary>
-public class StarsCase19Tests
+public class StarsLineSparksTests
 {
     const float Step = 1f / 30f;
     static readonly float[] Red = { 1f, 0.215f, 0.039f, 0.039f };
 
     // A ball point of (0, 0, 0) (16384 / 16384 - 1 on each axis), then a life jitter of 0.9.
-    static StarsCase19 Make45597(System.Func<int> rand) => new StarsCase19(0.3f, 0.44f, 0.55f, Red, Red, rand);
+    static StarsLineSparks Make45597(System.Func<int> rand) => new StarsLineSparks(19, 0.3f, 0.44f, 0.55f, Red, Red, rand);
 
-    static StarsCase19 Centred()
+    static StarsLineSparks Centred()
     {
         int[] seq = { 16384, 16384, 16384, 0 };
         int i = 0;
         return Make45597(() => seq[i++ % seq.Length]);
     }
 
-    static void StepAlongX(StarsCase19 s, float age, bool hasHitLocation = true)
+    static void StepAlongX(StarsLineSparks s, float age, bool hasHitLocation = true)
         => s.Step(age, 1f, hasHitLocation, 0f, 1f, 0f, 10f, 1f, 0f);
 
     [Fact]
     public void FirstCall_OpensFifteenSlotsAndDrawsNothingYet()
     {
-        StarsCase19 s = Centred();
+        StarsLineSparks s = Centred();
         StepAlongX(s, 0f);
         Assert.Equal(15, s.LastCount);
         foreach (StarsCase3.Sprite sprite in s.Sprites)
@@ -35,7 +36,7 @@ public class StarsCase19Tests
     [Fact]
     public void Spark_SitsStillAtTheProgressPointOfTheHitLocation()
     {
-        StarsCase19 s = Centred();
+        StarsLineSparks s = Centred();
         StepAlongX(s, 0.5f); // p = 0.5: halfway from (0, 1, 0) to (10, 1, 0)
         StepAlongX(s, 0.5f + Step);
         StarsCase3.Sprite a = s.Sprites[0];
@@ -56,7 +57,7 @@ public class StarsCase19Tests
     [Fact]
     public void Spark_LivesLifeTimesTheJitter_ThenItsSlotRespawns()
     {
-        StarsCase19 s = Centred();
+        StarsLineSparks s = Centred();
         float age = 0f;
         StepAlongX(s, age);
         int serial = 0;
@@ -79,7 +80,7 @@ public class StarsCase19Tests
     [Fact]
     public void WithoutAHitLocation_NothingSpawns()
     {
-        StarsCase19 s = Centred();
+        StarsLineSparks s = Centred();
         StepAlongX(s, 0f, hasHitLocation: false);
         StepAlongX(s, Step, hasHitLocation: false);
         Assert.Equal(0, s.LastCount);
@@ -88,7 +89,7 @@ public class StarsCase19Tests
     [Fact]
     public void Terminating_StopsSpawningAndDrainsWithinALife()
     {
-        StarsCase19 s = Centred();
+        StarsLineSparks s = Centred();
         StepAlongX(s, 0f);
         StepAlongX(s, Step);
         s.Terminating = true;
@@ -101,7 +102,7 @@ public class StarsCase19Tests
     [Fact]
     public void Blend_GrowsTheSizeBetweenSteps_WithoutMovingTheSpark()
     {
-        StarsCase19 s = Centred();
+        StarsLineSparks s = Centred();
         StepAlongX(s, 0.5f);
         StepAlongX(s, 0.5f + Step);
         StarsCase3.Sprite before = s.Sprites[0];
@@ -118,7 +119,7 @@ public class StarsCase19Tests
     {
         int[] seq = { 16384, 16384, 16384, 0x7ff };
         int i = 0;
-        StarsCase19 s = Make45597(() => seq[i++ % seq.Length]);
+        StarsLineSparks s = Make45597(() => seq[i++ % seq.Length]);
         StepAlongX(s, 0f);
         // 0.3 * (2047 * 0.0001 + 0.9) = 0.33141: still alive at 0.33, respawned at 0.3334.
         StepAlongX(s, 0.33f);
@@ -127,5 +128,54 @@ public class StarsCase19Tests
         StepAlongX(s, 0.3334f);
         StepAlongX(s, 0.34f);
         Assert.NotEqual(1, s.Sprites[0].Serial);
+    }
+
+    static StarsLineSparks Make17100(int alongRand)
+    {
+        // Ball point (0, 0, 0), then the case 16 position rand.
+        int[] seq = { 16384, 16384, 16384, alongRand };
+        int i = 0;
+        return new StarsLineSparks(16, 0.3f, 0.2f, 0.4f, Red, Red, () => seq[i++ % seq.Length]);
+    }
+
+    [Fact]
+    public void Case16_SparksLandAnywhereAlongTheLine_NotAtTheProgressPoint()
+    {
+        StarsLineSparks s = Make17100(8192); // q = 8192 / 32768 = 0.25
+        StepAlongX(s, 0.5f);                 // case 19 would put it at p = 0.5
+        StepAlongX(s, 0.5f + Step);
+        Assert.True(s.Sprites[0].Visible);
+        Assert.Equal(2.5f, s.Sprites[0].X, 5);
+        Assert.Equal(1f, s.Sprites[0].Y, 5);
+    }
+
+    [Fact]
+    public void Case16_LivesExactlyTheFieldLife()
+    {
+        StarsLineSparks s = Make17100(0);
+        StepAlongX(s, 0f);
+        int serial = 0;
+        for (int n = 1; n <= 8; n++)
+        {
+            StepAlongX(s, n * Step);
+            if (n == 1)
+                serial = s.Sprites[0].Serial;
+            Assert.Equal(serial, s.Sprites[0].Serial);
+        }
+
+        // Due at 0.3 (no jitter): respawned then, rewritten by the next call.
+        StepAlongX(s, 9 * Step);
+        StepAlongX(s, 10 * Step);
+        Assert.NotEqual(serial, s.Sprites[0].Serial);
+    }
+
+    [Fact]
+    public void Case16_OpensFifteenACall()
+    {
+        StarsLineSparks s = Make17100(0);
+        StepAlongX(s, 0f);
+        Assert.Equal(15, s.LastCount);
+        StepAlongX(s, Step);
+        Assert.Equal(30, s.LastCount);
     }
 }

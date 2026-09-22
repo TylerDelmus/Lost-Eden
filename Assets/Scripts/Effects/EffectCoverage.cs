@@ -107,7 +107,7 @@ public sealed class EffectCoverage
 
     /// <summary>
     /// The parts rebuilt from stock and checked live: Meta, Flare, Tracer1, Tracer4, Plasma, Deformer mode 1, Electra mode 1, Spell1 when field 33
-    /// skips its late windows, Stars starTypes 3, 7, 8 and 19, and a Cord that cannot link (field 0 bit 1 clear,
+    /// skips its late windows, Stars starTypes 3, 7, 8, 16, 19 and 22, and a Cord that cannot link (field 0 bit 1 clear,
     /// invisible in stock).
     /// </summary>
     static bool IsVerified(GfxTweakRecord record)
@@ -125,7 +125,7 @@ public sealed class EffectCoverage
             case EffectTypeTags.Spell1:
                 return record.FieldInt(33, 0) != 0;
             case EffectTypeTags.Stars:
-                return record.FieldInt(10, 0) is 3 or 7 or 8 or 19;
+                return record.FieldInt(10, 0) is 3 or 7 or 8 or 16 or 19 or 22;
             case EffectTypeTags.Cord:
                 return (record.FieldInt(0, 0) & 2) == 0;
             default:

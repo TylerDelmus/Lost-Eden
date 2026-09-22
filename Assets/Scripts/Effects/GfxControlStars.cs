@@ -5,9 +5,10 @@ using UnityEngine;
 /// typeCode 2004 — stock <c>_GfxControlStars_t</c> (ctor <c>Gamecode 100f74ad</c>, Process
 /// <c>FUN_100f8491</c>): up to 128 sprites drawn by one <c>GfxVisualDiaBill</c>.
 ///
-/// starTypes 3 and 19 are recovered in full and replayed call-for-call by <see cref="StarsCase3"/> and
-/// <see cref="StarsCase19"/>, and starTypes 7 and 8 by <see cref="StarsRing"/>. Every other starType below
-/// is still the earlier approximation and has not been checked against FUN_100f8491.
+/// starTypes 3, 16, 19 and 22 are recovered in full and replayed call-for-call by <see cref="StarsCase3"/>,
+/// <see cref="StarsLineSparks"/> (16, 19) and <see cref="StarsLimbSparks"/> (22), and starTypes 7 and 8
+/// by <see cref="StarsRing"/>. Every other starType below is still the earlier approximation and has not
+/// been checked against FUN_100f8491.
 ///
 /// Stock Stars never creates a light: no code in the class range (100f7164..100fc404) reaches a light
 /// API, so none is attached here.
@@ -30,19 +31,26 @@ public sealed class GfxControlStars : GfxControl
     const float StockDrainSeconds = 5f;
 
     readonly StarsCase3 _case3;
-    readonly StarsCase19 _case19;
+    readonly StarsLineSparks _line;
+    readonly StarsLimbSparks _limbs;
+    readonly IStarsStockCase _stock;
     readonly EffectHitLocation _hitLocation;
+    readonly EffectLocator[] _limbLocators;
+    readonly float[] _limbAttach = new float[StarsLimbSparks.AttachIds.Length * 3];
     readonly StarsRing _ring;
     bool _ringTerminating;
 
     /// <summary>The replayed starType 3 state, or null for other starTypes. For debug tooling.</summary>
     public StarsCase3 StockCase3 => _case3;
 
-    /// <summary>The replayed starType 19 state, or null for other starTypes. For debug tooling.</summary>
-    public StarsCase19 StockCase19 => _case19;
+    /// <summary>The replayed starType 16/19 state, or null for other starTypes. For debug tooling.</summary>
+    public StarsLineSparks StockLineSparks => _line;
 
-    /// <summary>A starType 19 trail built on a hit location: stock sets it no duration and lets it run.</summary>
-    public bool IsHitLocationTracer => _case19 != null && _hitLocation != null;
+    /// <summary>The replayed starType 22 state, or null for other starTypes. For debug tooling.</summary>
+    public StarsLimbSparks StockLimbSparks => _limbs;
+
+    /// <summary>A starType 16/19 trail built on a hit location: stock sets it no duration and lets it run.</summary>
+    public bool IsHitLocationTracer => _line != null && _hitLocation != null;
 
     float _stockCarry;
     float _stockAge;
@@ -121,24 +129,48 @@ public sealed class GfxControlStars : GfxControl
                 startArgb: new[] { record.Field(18), record.Field(19), record.Field(20), record.Field(21) },
                 endArgb: new[] { record.Field(22), record.Field(23), record.Field(24), record.Field(25) },
                 rand: () => Random.Range(0, 0x8000));
+            _stock = _case3;
             // Stock expiry is handled per replayed step, not by the base timer.
             base.SetDuration(InfiniteDuration);
             return;
         }
 
-        if (_starType == 19 && record != null)
+        if (StarsLineSparks.Handles(_starType) && record != null)
         {
             // Loader FUN_100f72a9: the duration is field 26. The hit location comes from
             // CreateGfxControl(id, hitLoc) (100f7d4a); without one the trail never spawns.
             _hitLocation = hitLocation;
             _stockDuration = record.Field(26, 0f);
-            _case19 = new StarsCase19(
+            _line = new StarsLineSparks(
+                _starType,
                 lifeSeconds: record.FieldInt(30, 0) / 1000f,
                 size: record.Field(28, 0f),
                 radius: record.Field(29, 0f),
                 startArgb: new[] { record.Field(18), record.Field(19), record.Field(20), record.Field(21) },
                 endArgb: new[] { record.Field(22), record.Field(23), record.Field(24), record.Field(25) },
                 rand: () => Random.Range(0, 0x8000));
+            _stock = _line;
+            base.SetDuration(InfiniteDuration);
+            return;
+        }
+
+        if (_starType == 22 && record != null)
+        {
+            // Loader FUN_100f72a9: 26 duration, 28 radius (+0x16d4), 29 size (+0x16d8), 30 life ms,
+            // 31 spawns per call (+0x16e0). The limbs are read through the locator's own dynel (10106078).
+            _stockDuration = record.Field(26, 0f);
+            _limbs = new StarsLimbSparks(
+                lifeSeconds: record.FieldInt(30, 0) / 1000f,
+                radius: record.Field(28, 0f),
+                size: record.Field(29, 0f),
+                allowance: record.FieldInt(31, 0),
+                startArgb: new[] { record.Field(18), record.Field(19), record.Field(20), record.Field(21) },
+                endArgb: new[] { record.Field(22), record.Field(23), record.Field(24), record.Field(25) },
+                rand: () => Random.Range(0, 0x8000));
+            _stock = _limbs;
+            _limbLocators = new EffectLocator[StarsLimbSparks.AttachIds.Length];
+            for (int i = 0; i < _limbLocators.Length; i++)
+                _limbLocators[i] = locator?.WithAttach(StarsLimbSparks.AttachIds[i]);
             base.SetDuration(InfiniteDuration);
             return;
         }
@@ -188,7 +220,7 @@ public sealed class GfxControlStars : GfxControl
     /// </summary>
     public override void SetDuration(float seconds)
     {
-        if (_case3 != null || _case19 != null)
+        if (_stock != null)
         {
             _stockDuration = seconds;
             return;
@@ -227,9 +259,15 @@ public sealed class GfxControlStars : GfxControl
             return;
         }
 
-        if (_case19 != null)
+        if (_line != null)
         {
-            ProcessStockCase19(dt);
+            ProcessStockLine(dt);
+            return;
+        }
+
+        if (_limbs != null)
+        {
+            ProcessStockLimbs(dt);
             return;
         }
 
@@ -364,19 +402,19 @@ public sealed class GfxControlStars : GfxControl
     }
 
     /// <summary>
-    /// starType 19, replayed like case 3 at <see cref="EffectFrameRate.StockProcessHz"/>. The first call
-    /// arms at age 0 and still runs the case. Once <c>_GfxControl_t::Process</c> finds 0 &lt;= duration
-    /// &lt; age the control is ready and starType 19 leaves at once (the <c>100f84d6</c> table sends it
-    /// straight out, with no drain as case 3 gets), so the whole trail goes with it. Terminating stops
-    /// the spawns, and a step that then finds nothing alive readies it (<c>100fc2f0</c>).
+    /// starTypes 16 and 19, replayed like case 3 at <see cref="EffectFrameRate.StockProcessHz"/>. The
+    /// first call arms at age 0 and still runs the case. Once <c>_GfxControl_t::Process</c> finds
+    /// 0 &lt;= duration &lt; age the control is ready and both types leave at once (the <c>100f84d6</c>
+    /// table sends them straight out, with no drain as case 3 gets), so the whole trail goes with it.
+    /// Terminating stops the spawns, and a step that then finds nothing alive readies it (<c>100fc2f0</c>).
     /// </summary>
-    void ProcessStockCase19(float dt)
+    void ProcessStockLine(float dt)
     {
         if (!_stockArmed)
         {
             _stockArmed = true;
-            StepStockCase19();
-            if (_case19.Drained)
+            StepStockLine();
+            if (_line.Drained)
                 ReadyFlag = true;
             return;
         }
@@ -392,8 +430,8 @@ public sealed class GfxControlStars : GfxControl
                 return;
             }
 
-            StepStockCase19();
-            if (_case19.Drained)
+            StepStockLine();
+            if (_line.Drained)
             {
                 ReadyFlag = true;
                 return;
@@ -401,11 +439,71 @@ public sealed class GfxControlStars : GfxControl
         }
     }
 
-    void StepStockCase19()
+    void StepStockLine()
     {
         Vector3 start = default, end = default;
         bool found = _hitLocation != null && _hitLocation.TryGetEndpoints(out start, out end);
-        _case19.Step(_stockAge, _stockDuration, found, start.x, start.y, start.z, end.x, end.y, end.z);
+        _line.Step(_stockAge, _stockDuration, found, start.x, start.y, start.z, end.x, end.y, end.z);
+    }
+
+    /// <summary>
+    /// starType 22, replayed like case 3 at <see cref="EffectFrameRate.StockProcessHz"/>, with case 3's
+    /// expiry: the first time 0 &lt;= duration &lt; age it stops spawning and gets 5 s more
+    /// (<c>100f84ed</c>), the second time it goes; terminating with nothing alive readies it
+    /// (<c>100f884e</c>). The twelve limb points are read once per frame; stock reads them every call.
+    /// </summary>
+    void ProcessStockLimbs(float dt)
+    {
+        ReadLimbs();
+
+        if (!_stockArmed)
+        {
+            _stockArmed = true;
+            _limbs.Step(0f, _limbAttach);
+            return;
+        }
+
+        float step = EffectFrameRate.StockProcessSeconds;
+        int steps = EffectFrameRate.TakeFixedSteps(ref _stockCarry, dt, step, MaxStockStepsPerFrame);
+        for (int s = 0; s < steps; s++)
+        {
+            _stockAge += step;
+
+            bool expired = _stockDuration >= 0f && _stockDuration < _stockAge;
+            if (expired && !_limbs.Terminating)
+            {
+                _limbs.Terminating = true;
+                _stockDuration += StockDrainSeconds;
+                expired = false;
+            }
+
+            _limbs.Step(_stockAge, _limbAttach);
+
+            if (expired || _limbs.Drained)
+            {
+                ReadyFlag = true;
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// <c>10106078</c> for each of <see cref="StarsLimbSparks.AttachIds"/> on the locator's dynel. A point
+    /// the host cannot resolve falls back to the locator itself.
+    /// </summary>
+    void ReadLimbs()
+    {
+        Vector3 fallback = WorldMatrix.GetColumn(3);
+        for (int i = 0; i < _limbLocators.Length; i++)
+        {
+            Vector3 p = fallback;
+            EffectLocator limb = _limbLocators[i];
+            if (limb != null && limb.TryResolve(out Matrix4x4 m))
+                p = m.GetColumn(3);
+            _limbAttach[i * 3] = p.x;
+            _limbAttach[i * 3 + 1] = p.y;
+            _limbAttach[i * 3 + 2] = p.z;
+        }
     }
 
     /// <summary>
@@ -521,15 +619,9 @@ public sealed class GfxControlStars : GfxControl
     protected override void OnTerminateGracefully()
     {
         // Stock slot 6 (100f717c) only raises +0x1648: spawning stops and live particles run out.
-        if (_case3 != null)
+        if (_stock != null)
         {
-            _case3.Terminating = true;
-            return;
-        }
-
-        if (_case19 != null)
-        {
-            _case19.Terminating = true;
+            _stock.Terminating = true;
             return;
         }
 
@@ -551,7 +643,7 @@ public sealed class GfxControlStars : GfxControl
         if (!IsAlive || dest == null || _atlas == null)
             return;
 
-        if (_case3 != null || _case19 != null)
+        if (_stock != null)
         {
             CollectStockSprites(dest);
             return;
@@ -618,12 +710,12 @@ public sealed class GfxControlStars : GfxControl
     {
         // Draw between the last two replayed steps: the time carried towards the next one says how far.
         float t = Mathf.Clamp01(_stockCarry / EffectFrameRate.StockProcessSeconds);
-        StarsCase3.Sprite[] sprites = _case3 != null ? _case3.Sprites : _case19.Sprites;
+        StarsCase3.Sprite[] sprites = _stock.Sprites;
         for (int i = 0; i < sprites.Length; i++)
         {
             if (!sprites[i].Visible)
                 continue;
-            StarsCase3.Sprite s = _case3 != null ? _case3.Blend(i, t) : _case19.Blend(i, t);
+            StarsCase3.Sprite s = _stock.Blend(i, t);
 
             Texture2D frameTex = _frames != null
                 ? _frames.GetFrame(_atlas, _cols, _rows, s.Frame)
