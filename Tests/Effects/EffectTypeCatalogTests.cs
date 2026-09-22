@@ -109,7 +109,8 @@ public class EffectTypeCatalogTests
             EffectTypeTags.Tracer4, EffectTypeTags.Deformer, EffectTypeTags.Electra, EffectTypeTags.Suns, EffectTypeTags.Shield, EffectTypeTags.BuffFsm, EffectTypeTags.BuffPlaceHolder,
             EffectTypeTags.TParticle, EffectTypeTags.BParticle2, EffectTypeTags.BParticle, EffectTypeTags.GroundGrid,
             EffectTypeTags.EffectMesh, EffectTypeTags.MParticle, EffectTypeTags.Tracer5, EffectTypeTags.Fire,
-            EffectTypeTags.Smoke, EffectTypeTags.Spiral,
+            EffectTypeTags.Smoke, EffectTypeTags.Spiral, EffectTypeTags.Tracer3, EffectTypeTags.Nano0, EffectTypeTags.ShockWave,
+            EffectTypeTags.VulcanRocks, EffectTypeTags.VolGrid, EffectTypeTags.Sprite,
         };
         int[] actual = EffectTypeCatalog.All
             .Where(i => i.Support == EffectSupport.Ported)

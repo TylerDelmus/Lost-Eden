@@ -37,6 +37,12 @@
     <Compile Include="..\..\Assets\Scripts\Effects\StarsLineSparks.cs" Link="StarsLineSparks.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\StarsLimbSparks.cs" Link="StarsLimbSparks.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\StarsBodySparks.cs" Link="StarsBodySparks.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\Tracer3Sim.cs" Link="Tracer3Sim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\Nano0Sim.cs" Link="Nano0Sim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\ShockWaveSim.cs" Link="ShockWaveSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\VulcanRocksSim.cs" Link="VulcanRocksSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\VolGridSim.cs" Link="VolGridSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\SpriteSim.cs" Link="SpriteSim.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\SunsSim.cs" Link="SunsSim.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\ShieldSim.cs" Link="ShieldSim.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\ElectraSim.cs" Link="ElectraSim.cs" />

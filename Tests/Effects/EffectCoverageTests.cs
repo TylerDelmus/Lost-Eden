@@ -74,14 +74,16 @@ public class EffectCoverageTests
     }
 
     [Fact]
-    public void MissingRecordsAndCycles_AreHandled()
+    public void IdsNotInGfxtweak_AreVerified_AndCyclesEnd()
     {
+        // Stock's factory makes nothing for an id gfxtweak doesn't hold, and so does the port.
         EffectCoverage c = Coverage(
             Rec(1, EffectTypeTags.Meta, (0, 2), (1, 999)),
             Rec(2, EffectTypeTags.Meta, (0, 1)));
         EffectCoverage.Result r = c.Of(1);
-        Assert.Equal(EffectStatus.Missing, r.Status);
-        Assert.Equal(new[] { "999 not in gfxtweak" }, r.Gaps);
+        Assert.Equal(EffectStatus.Verified, r.Status);
+        Assert.Empty(r.Gaps);
+        Assert.Equal(EffectStatus.Verified, c.Of(999).Status);
     }
 
     [Fact]

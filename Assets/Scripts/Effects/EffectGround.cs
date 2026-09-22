@@ -18,4 +18,24 @@ public static class EffectGround
             return hit.point.y;
         return float.NaN;
     }
+
+    /// <summary>
+    /// The ground under a point with its normal, as stock's playfield query gives both (<c>Gamecode 100ada15</c>).
+    /// False when nothing is there.
+    /// </summary>
+    public static bool TryGround(float x, float y, float z, out float height, out Vector3 normal)
+    {
+        int mask = ~GameLayers.DynelMask;
+        var origin = new Vector3(x, y + Above, z);
+        if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, Reach, mask, QueryTriggerInteraction.Ignore))
+        {
+            height = hit.point.y;
+            normal = hit.normal;
+            return true;
+        }
+
+        height = float.NaN;
+        normal = Vector3.zero;
+        return false;
+    }
 }

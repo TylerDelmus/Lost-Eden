@@ -120,10 +120,10 @@ public static class EffectTypeCatalog
         // Cord: GfxControlCord, from Process 100d5f5a, slot 4 100d69d8 and GfxVisualCord4. Links come
         // only from slot 4 in local mode (field 0 bit 1); without that bit a Cord never draws.
         Add(EffectTypeTags.Cord, "_GfxControlCord_t", EffectCategory.Sprite, EffectSupport.Ported);
-        Add(EffectTypeTags.Nano0, "_GfxControlNano0_t", EffectCategory.Sprite, EffectSupport.Approximated);
+        Add(EffectTypeTags.Nano0, "_GfxControlNano0_t", EffectCategory.Sprite, EffectSupport.Ported);
         Add(EffectTypeTags.Nano1, "_GfxControlNano1_t", EffectCategory.Sprite, EffectSupport.Approximated);
         Add(EffectTypeTags.Nano3, "_GfxControlNano3_t", EffectCategory.Sprite, EffectSupport.Approximated);
-        Add(EffectTypeTags.Sprite, "_GfxControlSprite_t", EffectCategory.Sprite, EffectSupport.Approximated);
+        Add(EffectTypeTags.Sprite, "_GfxControlSprite_t", EffectCategory.Sprite, EffectSupport.Ported);
         // Spell1: windows 1-2, NextState, SetDuration and terminate from 100f3f59 and friends; windows
         // 3-4 (field 33 = 0 only) are still the earlier model.
         Add(EffectTypeTags.Spell1, "_GfxControlSpell1_t", EffectCategory.Sprite, EffectSupport.Ported);
@@ -164,8 +164,8 @@ public static class EffectTypeCatalog
         Add(0xbc4, "_GfxControlGroundRing_t", EffectCategory.Mesh, EffectSupport.Missing);
         // GroundGrid: GfxControlGroundGrid / GroundGridSim, visual mode 0 only (1010e704, GfxVisualGroundGrid).
         Add(EffectTypeTags.GroundGrid, "GfxControlGroundGrid_t", EffectCategory.Mesh, EffectSupport.Ported);
-        Add(0xbde, "GfxControlVolGrid_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0xbb8, "_GfxControlShockWave_t", EffectCategory.Mesh, EffectSupport.Missing);
+        Add(EffectTypeTags.VolGrid, "GfxControlVolGrid_t", EffectCategory.Mesh, EffectSupport.Ported);
+        Add(EffectTypeTags.ShockWave, "_GfxControlShockWave_t", EffectCategory.Mesh, EffectSupport.Ported);
         Add(0xbba, "_GfxControlSplash_t", EffectCategory.Mesh, EffectSupport.Missing);
         Add(EffectTypeTags.Deformer, "_GfxControlDeformer_t", EffectCategory.Mesh, EffectSupport.Ported);
         // Spiral: GfxControlSpiral / SpiralSim from Process 100f4cb5 and GfxVisualSpiral (draw 10021924).
@@ -174,7 +174,7 @@ public static class EffectTypeCatalog
         Add(EffectTypeTags.Electra, "_GfxControlElectra_t", EffectCategory.Mesh, EffectSupport.Ported);
         Add(0xbca, "_GfxControlSkyRise_t", EffectCategory.Mesh, EffectSupport.Missing);
         Add(0xbbe, "_GfxControlSkyFlash_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0x405, "_GfxControlVulcanRocks_t", EffectCategory.Mesh, EffectSupport.Missing);
+        Add(EffectTypeTags.VulcanRocks, "_GfxControlVulcanRocks_t", EffectCategory.Mesh, EffectSupport.Ported);
         Add(0xbc0, "GfxControlShadow_c", EffectCategory.Mesh, EffectSupport.Missing);
 
         // ---- Screen / camera --------------------------------------------------
@@ -188,7 +188,7 @@ public static class EffectTypeCatalog
         Add(EffectTypeTags.BeamRibbonWide, null, EffectCategory.Tracer, EffectSupport.Approximated);
         Add(EffectTypeTags.Tracer1, "_GfxControlTracer1_t", EffectCategory.Tracer, EffectSupport.Ported);
         Add(0x3fd, null, EffectCategory.Tracer, EffectSupport.Missing);
-        Add(EffectTypeTags.HitSpawner, null, EffectCategory.Tracer, EffectSupport.Missing);
+        Add(EffectTypeTags.Tracer3, "_GfxControlTracer3_t", EffectCategory.Tracer, EffectSupport.Ported);
         Add(0x403, null, EffectCategory.Tracer, EffectSupport.Missing);
         Add(0xbd2, null, EffectCategory.Tracer, EffectSupport.Missing);
 

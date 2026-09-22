@@ -63,12 +63,10 @@ public sealed class EffectCoverage
             return EffectStatus.Verified;
 
         GfxTweakRecord record = _lookup(effectId);
+        // Not in gfxtweak.bin: stock's factory (100d0656) creates nothing and neither does the port, so it
+        // matches stock exactly (user's decision, 2026-09-22; Docs/Effects.md §8).
         if (record == null)
-        {
-            // Stock can't create it either, but by decision it stays Missing (Docs/Effects.md §8).
-            gaps.Add($"{effectId} not in gfxtweak");
-            return EffectStatus.Missing;
-        }
+            return EffectStatus.Verified;
 
         EffectStatus worst = NodeStatus(record);
         if (worst != EffectStatus.Verified)
@@ -109,6 +107,11 @@ public sealed class EffectCoverage
                     return EffectStatus.Missing;
                 if (record.TypeCode == EffectTypeTags.EffectMesh && !EffectMeshSim.IsModelled(record.Fields))
                     return EffectStatus.Approximated;
+                // Sprite's unblended draw (0x1000) and Sprite3's multiply blends aren't drawn as stock does.
+                if (record.TypeCode == EffectTypeTags.Sprite
+                    && ((record.FieldInt(10, 0) & SpriteSim.FlagOpaque) != 0
+                        || ((record.FieldInt(10, 0) & 3) == 3 && (record.FieldInt(10, 0) & SpriteSim.FlagAlphaBlend) != 0)))
+                    return EffectStatus.Approximated;
                 return IsVerified(record) ? EffectStatus.Verified : EffectStatus.Unverified;
             default:
                 return record.TypeCode == 0 ? EffectStatus.Verified : EffectStatus.Missing;
@@ -117,7 +120,7 @@ public sealed class EffectCoverage
 
     /// <summary>
     /// The parts rebuilt from stock and checked live: Meta, Flare, Tracer1, Tracer4, Plasma, Deformer mode 1, Electra mode 1, Suns sunTypes 0, 1 and 4, Shield, Sequencer, Spell1 when field 33
-    /// skips its late windows, Stars starTypes 2, 3, 4, 6, 7, 8, 10, 11, 15, 16, 17, 18, 19, 20 and 22, BPHFSM, BuffPlaceHolder, BParticle2, TParticle, BParticle mode 8, GroundGrid mode 0, EffectMesh, MParticle, Sparks, Fire, Smoke, Spiral, Tracer5 and Cord (a Cord
+    /// skips its late windows, Stars starTypes 2, 3, 4, 6, 7, 8, 10, 11, 15, 16, 17, 18, 19, 20 and 22, BPHFSM, BuffPlaceHolder, BParticle2, TParticle, BParticle mode 8, GroundGrid mode 0, EffectMesh, MParticle, Sparks, Fire, Smoke, Spiral, Tracer5, Tracer3, Nano0, ShockWave, VulcanRocks, VolGrid, Sprite and Cord (a Cord
     /// without field 0 bit 1 never links, so it is invisible in stock and here).
     /// </summary>
     static bool IsVerified(GfxTweakRecord record)
@@ -148,6 +151,12 @@ public sealed class EffectCoverage
             case EffectTypeTags.Smoke:
             case EffectTypeTags.Spiral:
             case EffectTypeTags.Tracer5:
+            case EffectTypeTags.Tracer3:
+            case EffectTypeTags.Nano0:
+            case EffectTypeTags.ShockWave:
+            case EffectTypeTags.VulcanRocks:
+            case EffectTypeTags.VolGrid:
+            case EffectTypeTags.Sprite:
                 return true;
             case EffectTypeTags.Spell1:
                 return record.FieldInt(33, 0) != 0;
@@ -200,6 +209,11 @@ public sealed class EffectCoverage
             case EffectTypeTags.Scatter:
                 if (record.FieldInt(10, 0) > 0)
                     yield return record.FieldInt(10, 0);
+                break;
+            case EffectTypeTags.Tracer3:
+                // 100ff6e2: the child it carries.
+                if (record.FieldInt(15, 0) > 0)
+                    yield return record.FieldInt(15, 0);
                 break;
             case EffectTypeTags.Spell1:
                 // Window 1 always; fields 31 and 32 only in the late windows (field 33 == 0).

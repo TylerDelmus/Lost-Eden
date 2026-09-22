@@ -8,7 +8,6 @@ using UnityEngine;
 public sealed class EffectHandler : IEffectSpawnFactory
 {
     const int MaxSpawnDepth = 6;
-    const float DefaultLifetime = 1.5f;
     /// <summary>
     /// Stock <c>CharCastNano_t</c> ctor (<c>Gamecode 1007b6d7</c>) gives the cast effect
     /// <c>SetDuration(6000)</c>; a Meta hands that on to its children (<c>100e5e09</c>). The cast ends
@@ -462,7 +461,9 @@ public sealed class EffectHandler : IEffectSpawnFactory
         EffectHandle handle = CreateEffect2(buffFx.EffectId, locator, Color.white);
         if (handle == null)
         {
-            Debug.LogWarning($"[Effects] CreateEffect2 failed buff nano={nanoId} effectId={buffFx.EffectId}");
+            // An id missing from gfxtweak draws nothing in stock either; only a real failure is reported.
+            if (_catalog.TryGet(buffFx.EffectId, out _))
+                Debug.LogWarning($"[Effects] CreateEffect2 failed buff nano={nanoId} effectId={buffFx.EffectId}");
             return null;
         }
 
@@ -596,8 +597,9 @@ public sealed class EffectHandler : IEffectSpawnFactory
         EffectHandle tracer = CreateEffect2(traceEffectId, hitLoc, Color.white);
         if (tracer == null)
         {
-            Debug.LogWarning(
-                $"[Effects] CreateEffect2 tracer failed nano={nanoId} effectId={traceEffectId}");
+            if (_catalog.TryGet(traceEffectId, out _))
+                Debug.LogWarning(
+                    $"[Effects] CreateEffect2 tracer failed nano={nanoId} effectId={traceEffectId}");
             return null;
         }
 
@@ -906,8 +908,10 @@ public sealed class EffectHandler : IEffectSpawnFactory
         VisualDynel casterVisual,
         VisualDynel targetVisual)
     {
+        // 100d0656: an id gfxtweak.bin doesn't hold gives no control in stock (the table is loaded only from
+        // Setupf, 100ce664), so nothing is drawn: 39745 (the buff of 39 nanos) and 71016's child 71025.
         if (!_catalog.TryGet(effectId, out GfxTweakRecord record))
-            return CreateBillboard(CreateFallbackRecord(effectId), locator, tint);
+            return null;
 
         locator = ApplyTemplateAttach(record, locator, attachOverride);
         EffectBodyTable.Entry body = EffectBodyTable.Read(_catalog, record, locator);
@@ -947,6 +951,7 @@ public sealed class EffectHandler : IEffectSpawnFactory
             case EffectTypeTags.Spiral:
                 return CreateSpiral(record, locator);
             case EffectTypeTags.Nano0:
+                return CreateNano0(record, locator);
             case EffectTypeTags.Nano1:
                 return CreateNano(record, locator, tint);
             case EffectTypeTags.BParticle2:
@@ -973,6 +978,17 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 return CreateTracer4(record, locator);
             case EffectTypeTags.Tracer5:
                 return CreateTracer5(record, locator);
+            case EffectTypeTags.Tracer3:
+                return CreateTracer3(record, locator);
+            case EffectTypeTags.ShockWave:
+                return CreateShockWave(record, locator);
+            case EffectTypeTags.VulcanRocks:
+                return new GfxControlVulcanRocks(record, locator, Models);
+            case EffectTypeTags.Sprite:
+                return CreateSprite(record, locator);
+            case EffectTypeTags.VolGrid:
+                // 10115eb5: GfxVisualVolGrid(flags, fields 14-16, material from field 9).
+                return new GfxControlVolGrid(record, locator, WrappedTexture(record, field: 9));
             case EffectTypeTags.Deformer:
                 if (record.FieldInt(10, 0) == DeformerSim.WobbleMode)
                     return new GfxControlDeformer(record, locator);
@@ -1096,6 +1112,20 @@ public sealed class EffectHandler : IEffectSpawnFactory
     }
 
     /// <summary>
+    /// Stock Nano0 (init <c>100e7146</c>): GfxVisualSprite2Type0(material from field 9, null, additive
+    /// unless flag 0x800), with the material's frame range. No tint and no light.
+    /// </summary>
+    GfxControl CreateNano0(GfxTweakRecord record, EffectLocator locator)
+    {
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 10, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        return new GfxControlNano0(
+            record, locator, texture, _atlasFrames,
+            slot.Cols, slot.Rows, slot.FirstFrame, slot.LastFrame);
+    }
+
+    /// <summary>
     /// Stock Sparks (init <c>100f1939</c>): GfxVisualSprite2Type0(material from field 9, null, additive
     /// unless flag 0x800), with the material's frame range. No tint and no light.
     /// </summary>
@@ -1164,7 +1194,7 @@ public sealed class EffectHandler : IEffectSpawnFactory
     /// <summary>Loader 1010ebbd: the material is field 9 (visual build 1010ea04).</summary>
     EffectModels _models;
 
-    /// <summary>ABIFF models for EffectMesh and MParticle, loaded on first use.</summary>
+    /// <summary>ABIFF models for EffectMesh, MParticle and VulcanRocks, loaded on first use.</summary>
     EffectModels Models => _models ??= new EffectModels(_catalog.Database);
 
     GfxControl CreateGroundGrid(GfxTweakRecord record, EffectLocator locator)
@@ -1210,7 +1240,7 @@ public sealed class EffectHandler : IEffectSpawnFactory
     /// and Spiral (<c>100f54b5</c>) directly, and through the shared <c>100d2f58</c> Electra (<c>100d9aa9</c>),
     /// Stars (<c>100f7a74</c>), Suns (<c>100fd851</c>), BParticle (<c>1010ad28</c>), BParticle2
     /// (<c>1010c5bd</c>), EffectMesh (<c>1010da0d</c>), GroundGrid (<c>1010eebc</c>), MParticle (<c>10110597</c>)
-    /// and TParticle (<c>101134ed</c>). A hit-location or world-point locator ignores it. Other types keep the
+    /// TParticle (<c>101134ed</c>) and VolGrid (<c>10116562</c>). VulcanRocks (<c>10103a18</c>) and Sprite (<c>100f6c93</c>) call it directly. A hit-location or world-point locator ignores it. Other types keep the
     /// bare attach until theirs are checked; for some, fields 1-6 mean something else (Meta's child ids, a
     /// Billboard's scales).
     /// </summary>
@@ -1232,6 +1262,9 @@ public sealed class EffectHandler : IEffectSpawnFactory
             case EffectTypeTags.GroundGrid:
             case EffectTypeTags.MParticle:
             case EffectTypeTags.TParticle:
+            case EffectTypeTags.VulcanRocks:
+            case EffectTypeTags.VolGrid:
+            case EffectTypeTags.Sprite:
                 return true;
             default:
                 return false;
@@ -1343,6 +1376,42 @@ public sealed class EffectHandler : IEffectSpawnFactory
     }
 
     /// <summary>
+    /// Stock Tracer3 from a hit location (<c>CreateGfxControl(id, hitLoc)</c>, case <c>100d1b07</c>, ctor
+    /// <c>100ff996</c>): the endpoints are read once; the child is owned by the tracer.
+    /// </summary>
+    GfxControl CreateTracer3(GfxTweakRecord record, EffectLocator locator)
+    {
+        if (locator == null
+            || !locator.TryGetHitLocation(out EffectHitLocation hitLoc)
+            || !hitLoc.TryGetEndpoints(out Vector3 start, out Vector3 end))
+        {
+            return new GfxControlUnsupported(record, locator);
+        }
+
+        return new GfxControlTracer3(record, EffectLocator.WorldPoint(start, Quaternion.identity), start, end, this);
+    }
+
+    /// <summary>
+    /// Stock ShockWave (init <c>100eeacb</c>): GfxVisualGroundRing(material from field 9) per ring and
+    /// GfxVisualCone(material from field 25) per cone. Both textures wrap (D3D's default).
+    /// </summary>
+    GfxControl CreateShockWave(GfxTweakRecord record, EffectLocator locator)
+    {
+        return new GfxControlShockWave(
+            record, locator, WrappedTexture(record, field: 9), WrappedTexture(record, field: 25));
+    }
+
+    Texture2D WrappedTexture(GfxTweakRecord record, int field)
+    {
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 0, preferredField: field);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        if (texture != null && texture != WhiteTexture)
+            texture.wrapMode = TextureWrapMode.Repeat;
+        return texture;
+    }
+
+    /// <summary>
     /// Electra's visual (100d98e0): GfxVisualElectra(material from field 9, 0, additive), sized by the
     /// material's own columns and rows.
     /// </summary>
@@ -1394,6 +1463,7 @@ public sealed class EffectHandler : IEffectSpawnFactory
             || control is GfxControlPlasma
             || control is GfxControlTracer4
             || control is GfxControlTracer5
+            || control is GfxControlTracer3
             || control is GfxControlStars { IsHitLocationTracer: true }
             || control is GfxControlSuns { IsHitLocationTracer: true })
         {
@@ -1436,18 +1506,26 @@ public sealed class EffectHandler : IEffectSpawnFactory
             additive);
     }
 
+    /// <summary>
+    /// Stock Sprite (init <c>100f64a7</c>): GfxVisualSprite2 or 3 with the material from field 9, starting
+    /// on the material's first frame (<c>100cdfa1</c>) and running to its last (<c>100cdfb7</c>).
+    /// </summary>
+    GfxControl CreateSprite(GfxTweakRecord record, EffectLocator locator)
+    {
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 0, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        return new GfxControlSprite(
+            record, locator, texture, _atlasFrames, slot.Cols, slot.Rows, slot.FirstFrame, slot.LastFrame);
+    }
+
     GfxControl CreateBillboard(GfxTweakRecord record, EffectLocator locator, Color tint)
     {
-        // typeCode 1012 keeps the material index in field 0, so that layout has no flags word and
-        // cannot be asked about blending; every 1012 template is alpha-blended in stock anyway.
-        bool spriteLayout = record != null && record.TypeCode == EffectTypeTags.Sprite;
-        int materialField = spriteLayout ? 0 : 9;
-        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 10, preferredField: materialField);
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 10, preferredField: 9);
         EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
         Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
         // Flags bit 0x800 picks DESTBLEND=INVSRCALPHA over ONE, i.e. matte instead of glowing.
-        bool additive = !spriteLayout
-            && (record == null || SpriteEmitterMath.IsAdditive(record.FieldInt(0, 0)));
+        bool additive = record == null || SpriteEmitterMath.IsAdditive(record.FieldInt(0, 0));
         return new GfxControlBillboard(
             record,
             locator,
@@ -1568,13 +1646,4 @@ public sealed class EffectHandler : IEffectSpawnFactory
         }
     }
 
-    static GfxTweakRecord CreateFallbackRecord(int effectId)
-    {
-        return new GfxTweakRecord
-        {
-            Id = effectId,
-            TypeCode = EffectTypeTags.Flare,
-            Fields = new[] { 0f, 0f, 0.6f, 1.2f, 0f, 0f, 0f, 0f, DefaultLifetime, 10f },
-        };
-    }
 }

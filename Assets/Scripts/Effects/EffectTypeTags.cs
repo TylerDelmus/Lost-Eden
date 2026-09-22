@@ -56,13 +56,17 @@ public static class EffectTypeTags
     public const int BeamRibbon = 0x400;
     public const int BeamRibbonAlt = 0x401;
     public const int BeamRibbonWide = 0x402;
+    public const int Tracer3 = 0x3fe;        // 1022 — _GfxControlTracer3_t (carries a child along the hit line)
+    public const int ShockWave = 0xbb8;      // 3000 — _GfxControlShockWave_t (ground rings and cones)
+    public const int VulcanRocks = 0x405;    // 1029 — _GfxControlVulcanRocks_t (rocks thrown up, bouncing to rest)
+    public const int VolGrid = 0xbde;        // 3038 — GfxControlVolGrid_t (a box of crossed textured slices)
 
     public const int RejectedEffectId = 49999;
 
     // Backward-compat names
     public const int Spawner = Meta;
     public const int TimedSpawner = Sequencer;
-    public const int HitSpawner = 0x3fe;
+    public const int HitSpawner = Tracer3;
 
     public static bool IsSpriteFamily(int typeCode)
         => typeCode == Cord || typeCode == Fire
