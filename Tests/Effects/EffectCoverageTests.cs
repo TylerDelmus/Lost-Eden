@@ -36,10 +36,10 @@ public class EffectCoverageTests
     [Fact]
     public void OtherStarTypes_AreUnverified_AndNamed()
     {
-        EffectCoverage c = Coverage(Rec(45001, EffectTypeTags.Stars, (10, 5), (30, 2000)), Rec(2000, EffectTypeTags.FlareAlt));
+        EffectCoverage c = Coverage(Rec(45001, EffectTypeTags.Stars, (10, 13), (30, 2000)), Rec(2000, EffectTypeTags.FlareAlt));
         EffectCoverage.Result r = c.Of(45001);
         Assert.Equal(EffectStatus.Unverified, r.Status);
-        Assert.Equal(new[] { "Stars #5 unverified" }, r.Gaps); // field 30 is not a child
+        Assert.Equal(new[] { "Stars #13 unverified" }, r.Gaps); // field 30 is not a child
     }
 
     [Fact]

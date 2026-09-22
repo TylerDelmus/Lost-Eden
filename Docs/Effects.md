@@ -243,7 +243,7 @@ runs.
 
 **B. Replayed at a fixed 30 Hz** (`EffectFrameRate.StockProcessHz`, `TakeFixedSteps`, at most 8 steps
 a frame). For bodies with per-call spawn budgets, springs or step counts.
-- Stars starTypes 2, 3, 4, 6, 10, 11, 15, 16-20 and 22. They're drawn between the last two steps with
+- Stars starTypes 2, 3, 4, 5, 6, 10, 11, 15, 16-20 and 22. They're drawn between the last two steps with
   `StarsCase3.Blend`, which interpolates position and size only.
 - Suns sunType 4. It isn't interpolated, but its sparks don't move.
 - Electra, since 2026-09-22: its spawn cap (≤ 2 a call) made the shell fill faster at high fps. The
@@ -376,6 +376,7 @@ nano's `timeexist` standing in for the server's time.
 | 210484 Sanctifier (and 18 other Sanctifier / Reaper nanos) | 46142 | 45551 | hit 43187 | 43607 Sprite: an orange glow (0x7ffc8900) between the feet, about 1 m across, breathing ±0.125 m over 6.7 s (§5.33) |
 | 201723 Spawn Entrance Nano | 49999 = nothing | 49999 | 49999 | 80006 Sprite: a red dot at the head, shrinking from 0.5 m to nothing and fading in each 0.5 s, forever (§5.33) |
 | 269534 Blessing of the Ancient Form | 72362 VolGrid on the hand | 72362 | hit 72362 (and buff 413 = 72362): a green light pillar, 3.6 m square, shooting up to 80 m in 0.3 s and sinking to 20 m as it fades over 3 s (§5.32) | 72362 |
+| 152418 Imprisoned | 49999 = nothing | 45679 | hit 43008 Stars #5: a pale mist cage rising from the feet past the head, 4 s then a 1.3 s drain | — |
 | 157988 Fiery Breath | 46256 | 45712 | hit Meta 47400: Stars #7 45001, 43713-43715 and VulcanRocks 45060: tiny rocks thrown ~16 m up from the target's feet, bouncing up to 4 times and coming to rest ~20 m round; gone at ~6.9 s (§5.31) | — |
 | 152838 Magnified Psychic Hammer | 46167 | 45705 | hit 43103 ShockWave: two red ground rings 0.5 s apart, each spreading to 5 m and fading over 1.5 s, and two 40 m beams flashing up with each (§5.30) | — |
 | 246033 Fountain of Life | 19400 | 45662 | hit 43220 Stars #2: a ball of 128 many-coloured sparkles round the pelvis that spreads to 1.3 m, shrinks and fades to grey-white in 1.5 s | 1000 |
@@ -416,7 +417,7 @@ Status legend (matches `EffectCoverage` and the GfxTest window):
 | 0x400 | `_GfxControlTracer4_t` | `GfxControlTracer4` + `Tracer4Sim` + `Cord4Strip` | Verified |
 | 0x401 | `_GfxControlTracer5_t` | `GfxControlTracer5` + `Tracer5Sim` + `Cord4Strip` | Verified (§5.23) |
 | 0x7d2 | `_GfxControlPlasma_t` | `GfxControlPlasma` + `PlasmaSim` | Verified |
-| 0x7d4 | `_GfxControlStars_t` | `GfxControlStars` + `StarsCase2` / `StarsCase3` / `StarsCase4` / `StarsSwirl` / `StarsCase10` / `StarsRing` / `StarsBodySparks` / `StarsLineSparks` / `StarsLimbSparks` | Verified for starTypes 2, 3, 4, 6, 7, 8, 10, 11, 15, 16, 17, 18, 19, 20, 22; others Unverified |
+| 0x7d4 | `_GfxControlStars_t` | `GfxControlStars` + `StarsCase2` / `StarsCase3` / `StarsCase4` / `StarsSwirl` / `StarsCase10` / `StarsRing` / `StarsBodySparks` / `StarsLineSparks` / `StarsLimbSparks` | Verified for starTypes 2, 3, 4, 5, 6, 7, 8, 10, 11, 15, 16, 17, 18, 19, 20, 22; others Unverified |
 | 0xbb9 | `_GfxControlDeformer_t` | `GfxControlDeformer` + `DeformerSim` + `CatMeshDeformHost` | Verified mode 1; modes 0/4 Missing |
 | 0x7d6 | `_GfxControlElectra_t` | `GfxControlElectra` + `ElectraSim` | Verified mode 1; modes 0/2 Missing |
 | 0x7db | `_GfxControlHighlight_t` | `GfxControlHighlight` | Unverified |
@@ -567,6 +568,24 @@ and fades over 1.5 s, each in one of eight hues (hit 43220 of nano 246033).
   `v = f29·((0, 3, 0) + ball)`. The spawn call leaves the sprite record as it was.
 - On expiry it drains like case 3 (terminating + 5 s).
 - 38 records, 32 in world mode. At 30 Hz and 285 ms life that's ~18 sparks per locator, rising ~0.35 m.
+
+**Case 5** (`100f8e71`, `StarsSwirl`): sparks thrown out sideways 1.2 m below the locator and sprung back
+in, a rising cage of mist round the target (43000-43014 and 13300, e.g. hit 43008 of 152418 Imprisoned).
+- Fields: 18-25 ramp, 26 duration, 28 size curve, 29 launch speed, 30 life ms, 31 spring in hundredths
+  (int). Lazy init `100f81e0` (timers -100), and it drains on expiry (its `0x100fc374` entry is 0).
+- Alive (age < timer), with k = f31/100:
+  - `v += k·(locator − p)` in all three axes, then `p += v·0.2` (`1015f45c`)
+  - frame `15 − _ftol((timer − age)·16/life)` clamped 0..15
+  - t = (life + age − timer)/life; size `(t + 0.2)·f28·(1 − t²)`; colour the ramp at t
+- Spawn (`100f9018`): ≤ 2 per call, not while terminating. r = XZ unit vector (`100d3215`),
+  `p = locator + (0, −1.2, 0)`, `v = (r.x·f29, r.y, r.z·f29)`, timer = life + age. The spawn call
+  leaves the sprite record as it was.
+- The alive maths is case 11's with a 0.2 step, so the port runs it in `StarsSwirl`.
+- 23 records, all world mode on attach 1000 (the pelvis), life 1.3 s, size 3.5. Speed 0.3 with spring 1
+  (11), 0.2 with spring 4 (11), 0.4 with spring 5 (13300).
+- Seen live on 152418 (43008, 4 s): sparks start at the feet, swing out ~0.46 m, and rise through the
+  pelvis to ~2.15 m (the undamped spring carries them 1.2 m past it). About 80 are alive at once.
+  Spawning stops at 4 s and the last spark is gone at 5.3 s.
 
 **Cases 6 and 11** (`100f90d7` / `100f9800`, `StarsSwirl`): sparks launched round a ring a metre below
 the locator that circle and climb (hit 47175 of nano 223386).
@@ -1715,8 +1734,8 @@ spawn them). A tree is as good as its worst record. Two scan pitfalls that have 
 Stars field 30 is the spark life, not a child id; and Spell1 spawns fields 31/32 only when field
 33 == 0.
 
-As of 2026-09-22 (after 71016's types, Stars starTypes 18, 2, 15 and 20, Sparks, Tracer5, Fire, Smoke, Spiral, Suns sunTypes 0 and 1, Shield's per-vertex alpha, Tracer3 with Nano0, ShockWave, VulcanRocks, VolGrid and Sprite), with the buff slot counted:
-**7,756 nanos have effects. 7,539 are verified, 71 unverified, 18 approx, 128 missing.** Missing rose earlier, when buff effects started being counted.
+As of 2026-09-22 (after 71016's types, Stars starTypes 18, 2, 15 and 20, Sparks, Tracer5, Fire, Smoke, Spiral, Suns sunTypes 0 and 1, Shield's per-vertex alpha, Tracer3 with Nano0, ShockWave, VulcanRocks, VolGrid, Sprite and Stars #5), with the buff slot counted:
+**7,756 nanos have effects. 7,565 are verified, 45 unverified, 18 approx, 128 missing.** Missing rose earlier, when buff effects started being counted.
 
 **Ids that aren't in gfxtweak.bin count as Verified** (user's decision, 2026-09-22; it replaces the earlier
 rule that kept them Missing). Stock draws nothing for them, and the port draws nothing too:
@@ -1734,7 +1753,7 @@ rule that kept them Missing). Stock draws nothing for them, and the port draws n
     never appeared in stock either.
 
 Next targets, by nano count (the scratch coverage tool's `rank` mode counts each gap across all nanos):
-- Stars #5 (26 / 26), Stars #13 (15 / 15), Stars #9 (12 / 12)
+- Stars #13 (15 / 15), Stars #9 (12 / 12)
 - Trail2 (52 / 11), EffectMesh approx (48 / 17), Shield2 0xbda (25 / 4)
 - The other Stars starTypes (14 and 12: 6 each)
 - Deformer modes 0/4; Electra modes 0/2

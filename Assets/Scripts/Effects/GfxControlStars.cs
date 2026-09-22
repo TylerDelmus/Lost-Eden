@@ -5,8 +5,8 @@ using UnityEngine;
 /// typeCode 2004 — stock <c>_GfxControlStars_t</c> (ctor <c>Gamecode 100f74ad</c>, Process
 /// <c>FUN_100f8491</c>): up to 128 sprites drawn by one <c>GfxVisualDiaBill</c>.
 ///
-/// starTypes 2, 3, 4, 6, 10, 11, 15, 16, 17, 18, 19, 20 and 22 are recovered in full and replayed call-for-call by
-/// <see cref="StarsCase2"/>, <see cref="StarsCase3"/>, <see cref="StarsCase4"/>, <see cref="StarsSwirl"/> (6, 11), <see cref="StarsCase10"/>,
+/// starTypes 2, 3, 4, 5, 6, 10, 11, 15, 16, 17, 18, 19, 20 and 22 are recovered in full and replayed call-for-call by
+/// <see cref="StarsCase2"/>, <see cref="StarsCase3"/>, <see cref="StarsCase4"/>, <see cref="StarsSwirl"/> (5, 6, 11), <see cref="StarsCase10"/>,
 /// <see cref="StarsBodySparks"/> (15), <see cref="StarsLineSparks"/> (16 to 20) and <see cref="StarsLimbSparks"/> (22), and starTypes 7 and 8
 /// by <see cref="StarsRing"/>. Every other starType below is still the earlier approximation and has not
 /// been checked against FUN_100f8491.
@@ -37,7 +37,7 @@ public sealed class GfxControlStars : GfxControl, ICatVertexReader
     readonly StarsCase10 _case10;
     readonly StarsCase2 _case2;
 
-    // Cases stepped from the locator position alone (4, 6, 10, 11), and whether expiry drains them.
+    // Cases stepped from the locator position alone (4, 5, 6, 10, 11), and whether expiry drains them.
     readonly System.Action<float, Vector3> _originStep;
     readonly bool _originDrains;
     readonly StarsLineSparks _line;
@@ -58,7 +58,7 @@ public sealed class GfxControlStars : GfxControl, ICatVertexReader
     /// <summary>The replayed starType 4 state, or null for other starTypes. For debug tooling.</summary>
     public StarsCase4 StockCase4 => _case4;
 
-    /// <summary>The replayed starType 6/11 state, or null. For debug tooling.</summary>
+    /// <summary>The replayed starType 5/6/11 state, or null. For debug tooling.</summary>
     public StarsSwirl StockSwirl => _swirl;
 
     /// <summary>The replayed starType 10 state, or null. For debug tooling.</summary>

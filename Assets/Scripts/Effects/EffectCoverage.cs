@@ -120,7 +120,7 @@ public sealed class EffectCoverage
 
     /// <summary>
     /// The parts rebuilt from stock and checked live: Meta, Flare, Tracer1, Tracer4, Plasma, Deformer mode 1, Electra mode 1, Suns sunTypes 0, 1 and 4, Shield, Sequencer, Spell1 when field 33
-    /// skips its late windows, Stars starTypes 2, 3, 4, 6, 7, 8, 10, 11, 15, 16, 17, 18, 19, 20 and 22, BPHFSM, BuffPlaceHolder, BParticle2, TParticle, BParticle mode 8, GroundGrid mode 0, EffectMesh, MParticle, Sparks, Fire, Smoke, Spiral, Tracer5, Tracer3, Nano0, ShockWave, VulcanRocks, VolGrid, Sprite and Cord (a Cord
+    /// skips its late windows, Stars starTypes 2, 3, 4, 5, 6, 7, 8, 10, 11, 15, 16, 17, 18, 19, 20 and 22, BPHFSM, BuffPlaceHolder, BParticle2, TParticle, BParticle mode 8, GroundGrid mode 0, EffectMesh, MParticle, Sparks, Fire, Smoke, Spiral, Tracer5, Tracer3, Nano0, ShockWave, VulcanRocks, VolGrid, Sprite and Cord (a Cord
     /// without field 0 bit 1 never links, so it is invisible in stock and here).
     /// </summary>
     static bool IsVerified(GfxTweakRecord record)
@@ -161,7 +161,7 @@ public sealed class EffectCoverage
             case EffectTypeTags.Spell1:
                 return record.FieldInt(33, 0) != 0;
             case EffectTypeTags.Stars:
-                return record.FieldInt(10, 0) is 2 or 3 or 4 or 6 or 7 or 8 or 10 or 11 or 15 or 16 or 17 or 18 or 19 or 20 or 22;
+                return record.FieldInt(10, 0) is 2 or 3 or 4 or 5 or 6 or 7 or 8 or 10 or 11 or 15 or 16 or 17 or 18 or 19 or 20 or 22;
             default:
                 return false;
         }

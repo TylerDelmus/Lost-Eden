@@ -1,7 +1,7 @@
 using Xunit;
 
 /// <summary>
-/// Locks <see cref="StarsSwirl"/> and <see cref="StarsCase10"/> to stock _GfxControlStars_t cases 6
+/// Locks <see cref="StarsSwirl"/> and <see cref="StarsCase10"/> to stock _GfxControlStars_t cases 5 (<c>100f8e71</c>), 6
 /// (<c>100f90d7</c>), 11 (<c>100f9800</c>) and 10 (<c>100f9615</c>), with the records of nano 223386's hit
 /// 47175: 43372 (type 6), 43318 (type 11) and 43258 (type 10).
 /// </summary>
@@ -35,6 +35,38 @@ public class StarsSwirlTests
         Assert.Equal(0.8f + vx * 0.1f, s.Sprites[0].X, 5);
         Assert.Equal(vy * 0.1f, s.Sprites[0].Y, 5);
         Assert.Equal(vz * 0.1f, s.Sprites[0].Z, 5);
+    }
+
+    [Fact]
+    public void Case5_ThrowsSidewaysFrom1Point2Below_AndPullsInThreeDimensions()
+    {
+        // 43000 (hit of 152418 Imprisoned): life 1.3 s, size 3.5, radius 0.3, spring 1 (k = 0.01).
+        var s = new StarsSwirl(5, 1.3f, 3.5f, 0.3f, 1, Start, End, Xz);
+        s.Step(0f, 0f, 1f, 0f);
+        Assert.Equal(2, s.LastCount);
+        Assert.False(s.Sprites[0].Visible);
+
+        // p0 = (0, 1 - 1.2, 0), v0 = (0.3, 0, 0); then v += 0.01 * (o - p), p += 0.2 * v.
+        s.Step(Step, 0f, 1f, 0f);
+        float vx = 0.3f + 0.01f * -0f, vy = 0.01f * 1.2f;
+        Assert.Equal(vx * 0.2f, s.Sprites[0].X, 5);
+        Assert.Equal(-0.2f + vy * 0.2f, s.Sprites[0].Y, 5);
+        Assert.Equal(0f, s.Sprites[0].Z, 5);
+        Assert.Equal(0f, s.Linger(3));
+    }
+
+    [Fact]
+    public void Case5_FrameAndSize_AreCase11s()
+    {
+        var five = new StarsSwirl(5, 1.3f, 3.5f, 0.3f, 1, Start, End, Xz);
+        var eleven = new StarsSwirl(11, 1.3f, 3.5f, 0.3f, 1, Start, End, Xz);
+        five.Step(0f, 0f, 1f, 0f);
+        eleven.Step(0f, 0f, 1f, 0f);
+        five.Step(0.65f, 0f, 1f, 0f);
+        eleven.Step(0.65f, 0f, 1f, 0f);
+        Assert.Equal(eleven.Sprites[0].Frame, five.Sprites[0].Frame);
+        Assert.Equal(eleven.Sprites[0].Size, five.Sprites[0].Size);
+        Assert.Equal(eleven.Sprites[0].Argb, five.Sprites[0].Argb);
     }
 
     [Fact]
