@@ -249,6 +249,7 @@ nano's `timeexist` standing in for the server's time.
 | 266281 | 46240 Spell1 | 45502 Tracer4 (3 lightning ribbons, 1 s) | hit 45057 Deformer mode 1 (the body ripples ~3 s) | — |
 | 150501 Nullity Sphere | 46188 Spell1 | 45597 Stars #19 (red spark trail, 1 s) | hit 49999 = nothing | 43452 Electra mode 1 (orange spark bubble, 18 s + 0.5) |
 | 43878 Lifegiving Elixir | 46262 Spell1 | 17100 Stars #16 (sparks along the whole line, 1 s) | hit 43426 Stars #22 (sparks pulled onto the limbs, 5 s + drain) | — |
+| 56213 Greater Hold Victim | 46136 Spell1 | 17800 Meta: Suns #4 17000 (sparks on the line) + Plasma 17600, 1 s | hit 43608 Shield (cyan scrolling shell over the body, 3 s) | 43613 Sequencer → Shield 43608 for 60 s, looping until the buff ends |
 
 ---
 
@@ -266,7 +267,7 @@ Status legend (matches `EffectCoverage` and the GfxTest window):
 | typeCode | Stock class | Port | Status |
 |---|---|---|---|
 | 0x7d7 | `_GfxControlMeta_t` | `GfxControlMeta` | Verified |
-| 0xbbc | `_GfxControlSequencer_t` | `GfxControlSequencer` | Unverified |
+| 0xbbc | `_GfxControlSequencer_t` | `GfxControlSequencer` | Verified |
 | 0xbc5 | `_GfxControlDelay_t` | `GfxControlDelay` | Unverified |
 | 0xbd5 | `GfxControlScatter_t` | `GfxControlScatter` + `ScatterSchedule` | Unverified |
 | 0x3ed | `_GfxControlFlare_t` | `GfxControlFlareType0` + `FlareType0Sim` | Verified |
@@ -282,9 +283,10 @@ Status legend (matches `EffectCoverage` and the GfxTest window):
 | 0xbb9 | `_GfxControlDeformer_t` | `GfxControlDeformer` + `DeformerSim` + `CatMeshDeformHost` | Verified mode 1; modes 0/4 Missing |
 | 0x7d6 | `_GfxControlElectra_t` | `GfxControlElectra` + `ElectraSim` | Verified mode 1; modes 0/2 Missing |
 | 0x7db | `_GfxControlHighlight_t` | `GfxControlHighlight` | Unverified |
-| 0x7d5 | `_GfxControlSuns_t` | — | Missing |
+| 0x7d5 | `_GfxControlSuns_t` | `GfxControlSuns` + `SunsSim` | Verified sunType 4; others Missing |
 | 0x7d1 | `_GfxControlSpiral_t` | — | Missing |
-| 0xbbb / 0xbda | `_GfxControlShield_t` / `Shield2_t` | — | Missing |
+| 0xbbb | `_GfxControlShield_t` | `GfxControlShield` + `ShieldSim` | Verified; Approx with flags 0x800 / 0x2000 / 0x10000 |
+| 0xbda | `GfxControlShield2_t` | — | Missing |
 | others | see `EffectTypeCatalog` | — | Missing / Approx |
 | 0xfa0, 0x3e9, 0x3ea, 0 | audio, buff placeholders, none | — | stock draws nothing |
 
@@ -449,7 +451,62 @@ vftable `1016c6bc`, loader `100d823f`, Process `100d7caa`, vertex callback `FUN_
     BakeMesh works on the non-readable CAT meshes.
   - Bind positions come from `CatMeshSourceVertices`, added by `CatMeshLoader`.
 
-### 5.10 Electra (0x7d6) mode 1: `ElectraSim`
+### 5.10 Suns (0x7d5) sunType 4: `SunsSim`
+vftable `1016de8c`, loader around `100fd16a`, Process `100fc425` (type switch on field 10; type 4 at
+`100fc48b`), visual **GfxVisualSol** (32 sprites of 0x28 bytes, additive).
+- Fields: 0 flags, 9 material, 10 sunType, 18-25 ramp, 26 duration, 28 size, 29 frame scale, 30 life ms.
+  sunTypes above 4 get duration 0.
+- Type 4, per call (so it's replayed at 30 Hz):
+  - up to 3 spawns, each still at `start·(1−q) + end·q` (`q = rand()/32768`, from the hit location)
+  - life `f30/1000`
+  - size `f28`
+  - frame `15 − _ftol(f29·t)`
+  - colour is the ramp at t
+  - screen angle `(slot % 7)·0.3`
+- On expiry it's just ready (no drain). Slot 6 stops the spawns; a call with nothing alive then readies it.
+- GfxVisualSol (`10020831`) draws a camera-facing quad per sprite: `A = (sin a·w/2, cos a·h/2)` and
+  `B = (−cos a·h/2, sin a·w/2)` in screen axes, corners `P ± A ± B`, texture u along A and v up along B.
+  The port uses `Quad.UseAxes`.
+
+### 5.11 Shield (0xbbb): `ShieldSim`, `GfxControlShield`
+vftable `1016d9a4`, loader `100edeed`, visual build `100edf78`, Process `100edcf4`, slot 6 `100edc9c`.
+DisplaySystem **GfxVisualShield**: ctor `1001ce93`, vertex callback `1001cd09`, vertex build `1001c94f`,
+draw `1001c8a5`.
+- A shell over the host's own skinned CAT mesh. The visual registers a CATRender vertex callback, copies
+  the skinned vertices and indices, and draws them as a triangle list with the field 9 material.
+- Fields:
+  - 0 flags, 8 duration, 9 material
+  - 10 colour, 11 normal offset, 12-14 / 15-17 wave point / direction
+  - 18 UV mode, 19/20 UV scale, 21 fade-in rate, 22 wave speed, 23 fade-in limit, 24/25 UV scroll
+  - 26 pulse mode, 27/28 pulse range, 29 fade mode, 30 fade time, 31
+- Flags: 0x400 blend (passed to the base visual at +0x190; read as additive), 0x800 / 0x1000 wave,
+  0x2000 ripple, 0x8000 render priority, 0x10000 the host mesh's own material.
+- Per vertex:
+  - position `p + n·f11`
+  - UV mode 0 `((u + f24·T)·f19, (v + f25·T)·f20)`; 1 cylindrical `atan2(x, z)`, where v also scrolls by f24; 2 planar
+  - alpha `A·fade·sin²(clamp(f21·T, 0, f23))`
+- T is the age, bent by the pulse modes. The control terminates itself at `duration − f30`. Fade mode 1
+  scales alpha by `1 − d/f30`; modes 2 and 3 run T backwards; it's ready at `d ≥ f30`. It's hidden
+  while the host is below 0.95 opacity (not ported).
+- Port: the control bakes each SkinnedMeshRenderer every frame, offsets it, sets the UVs and draws it
+  through `EffectBillboardBatch.MeshDraw` in one colour.
+  - Per-vertex alpha (flags 0x800 wave, 0x2000 ripple) isn't supported: 11 of 69 records use them, and
+    they're drawn with the uniform fade (coverage: Approx).
+  - The shield texture is set to Repeat.
+
+### 5.12 Sequencer (0xbbc)
+Process `100ecb95`, slot 6 `100ecb55`.
+- Entries are `{id, start, end}` from field 2. It runs off `t = age − cycle start`.
+- An entry spawns once `t ≥ start` and (`t < end` or `end ≤ start`), using the Sequencer's own locator
+  kind. Then, if `end > 0`, **`SetDuration(end − start)`** on the child.
+- A child that's ready is deleted.
+- Process **clears the Sequencer's own ready flag every call**, so a duration never ends it. It ends when
+  every entry is done; with flag 0x400 it restarts instead.
+- Slot 6 clears 0x400 and terminates the children gracefully.
+- The port's `GfxControlSequencer` follows this. It ignores SetDuration and passes `IgnoreWatchdog` on to
+  its children.
+
+### 5.13 Electra (0x7d6) mode 1: `ElectraSim`
 vftable `1016cbbc`, loader `100d97ba`, visual build `100d98e0`, Process `100d9de5` (mode dispatch:
 0 → `100da452`, 1 → `100da0c0`, 2 inline).
 - Fields:
@@ -480,10 +537,10 @@ vftable `1016cbbc`, loader `100d97ba`, visual build `100d98e0`, Process `100d9de
 | Area | Files |
 |---|---|
 | Handler, creation, nano flow | `EffectHandler.cs` (`CreateControl` switch, `Create*` builders, cast/tracer/hit/buff flow, `IsStockTracer`), `EffectHandle.cs` |
-| Base control | `GfxControl.cs`. The first `Process` only arms (**the body is skipped on that call**), age += dt, the locator is resolved into `WorldMatrix`, and after `OnProcess` it readies at `age ≥ duration`. Controls with stock expiry quirks keep their own duration and set the base one to `InfiniteDuration`. |
+| Base control | `GfxControl.cs`. The first `Process` only arms (**the body is skipped on that call**), age += dt, the locator is resolved into `WorldMatrix`, and after `OnProcess` it readies at `age ≥ duration`. Controls with stock expiry quirks keep their own duration and set the base one to `InfiniteDuration`.<br>A port-only 60 s watchdog readies anything older; buff trees are exempt (`IgnoreWatchdog`, set by `EffectHandler.AddNanoBuff` and passed on by Meta/Sequencer). |
 | Locators / hit locations | `EffectLocator.cs` (`OnDynel`, `OnVisual`, `OnHitLocation`, `WorldPoint`, `Beam`, `TryGetHighlightRoot`), `EffectHitLocation.cs`, `EffectAttachIds.cs` |
-| Stock sims (Unity-free, unit-tested) | `FlareType0Visual`, `FlareType0Sim`, `Tracer1Sim`, `PlasmaSim`, `Tracer4Sim`, `Cord4Strip`, `StarsCase3`, `StarsRing`, `StarsLineSparks`, `StarsLimbSparks` (behind `IStarsStockCase`), `DeformerSim`, `ElectraSim`, `StockColorRamp`, `Spell1Trail`, `ScatterSchedule`, `SpriteEmitterMath`, `TracerMath`, `EffectFrameRate`, `EffectTypeCatalog`, `EffectCoverage`, `AnimNoteIds` |
-| Drawing | `EffectBillboardBatch.cs`:<br>• `Quad`: camera-facing, one texture per frame via `EffectAtlasFrames.GetFrame`.<br>• `Strip`: a dynamic mesh, one colour, one texture with UVs, both windings.<br>• `Strip.Quads = true`: every 4 vertices form an independent quad.<br>Controls hand geometry over in `CollectBillboards` / `CollectStrips`. |
+| Stock sims (Unity-free, unit-tested) | `FlareType0Visual`, `FlareType0Sim`, `Tracer1Sim`, `PlasmaSim`, `Tracer4Sim`, `Cord4Strip`, `StarsCase3`, `StarsRing`, `StarsLineSparks`, `StarsLimbSparks` (behind `IStarsStockCase`), `SunsSim`, `ShieldSim`, `DeformerSim`, `ElectraSim`, `StockColorRamp`, `Spell1Trail`, `ScatterSchedule`, `SpriteEmitterMath`, `TracerMath`, `EffectFrameRate`, `EffectTypeCatalog`, `EffectCoverage`, `AnimNoteIds` |
+| Drawing | `EffectBillboardBatch.cs`:<br>• `Quad`: camera-facing, one texture per frame via `EffectAtlasFrames.GetFrame`.<br>• `Strip`: a dynamic mesh, one colour, one texture with UVs, both windings.<br>• `Strip.Quads = true`: every 4 vertices form an independent quad.<br>• `MeshDraw`: a whole mesh in one colour (Shield shells).<br>Controls hand geometry over in `CollectBillboards` / `CollectStrips` / `CollectMeshes`. |
 | Mesh deform | `Rendering/CatMesh/CatMeshDeformHost.cs`, `CatMeshSourceVertices.cs` |
 | Anim notes | `Rendering/CatMesh/AnimNoteIds.cs`, `CatAnimRuntimeClip.Notes`, `CatAnimPlayer.NoteReached` |
 | Network hooks | `Playfield/PlayfieldFactory.cs`: `OnCharacterAction` (FinishNanoCasting, SetNanoDuration), `OnBuff`, `OnCastNanoSpell` |
@@ -563,15 +620,15 @@ spawn them). A tree is as good as its worst record. Two scan pitfalls that have 
 Stars field 30 is the spark life, not a child id; and Spell1 spawns fields 31/32 only when field
 33 == 0.
 
-As of 2026-09-22 (after Stars 16/22), with the buff slot counted: **7,756 nanos have effects. 2,297
-are verified, 3,526 unverified, 179 approx, 1,754 missing.** Missing rose when buff effects started
+As of 2026-09-22 (after 56213: Suns 4, Shield, Sequencer), with the buff slot counted: **7,756 nanos
+have effects. 2,793 are verified, 3,934 unverified, 233 approx, 796 missing.** Missing rose when buff effects started
 being counted.
 
 Next targets, by nano count:
 - Stars starTypes 17 / 18 (tracers, ~1k each) and 6 / 10 / 11 (hits)
-- Suns 0x7d5 (~378)
+- Suns sunTypes other than 4
 - Spiral 0x7d1 (~282)
-- Shield 0xbbb (~206)
+- Shield per-vertex alpha (flags 0x800 / 0x2000), Shield2 0xbda
 - Deformer modes 0/4; Electra modes 0/2
 - The buff-slot gaps, which haven't been ranked yet: sort the Nanos tab by the B dot.
 
@@ -591,4 +648,5 @@ Next targets, by nano count:
 | **Random tables** | `100d3005`'s shared unit-vector table and walk are replaced by fresh draws with the same distribution. |
 | **Deformer source positions** | Stock feeds the wave the CATTriVertex (0x44-byte) source position from randy31.dll; the port uses mesh bind positions (believed equal, unconfirmed). |
 | **Spell1 windows 3/4** | Still the earlier model (only matters when field 33 == 0). |
+| **Shield blend flag** | Flag 0x400 goes to the base GfxVisual (+0x190), read by randy31 (not in the Ghidra project). The port treats it as additive, like the Electra/Sol ctor flag; unconfirmed. |
 | **Game path untested live** | The FinishNanoCasting / SetNanoDuration / Buff handlers compile and follow stock, but have only been exercised through GfxTest, not against a server. |

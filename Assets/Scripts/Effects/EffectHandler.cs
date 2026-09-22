@@ -56,6 +56,7 @@ public sealed class EffectHandler : IEffectSpawnFactory
     readonly List<EffectHandle> _sweep = new List<EffectHandle>(64);
     readonly List<EffectBillboardBatch.Quad> _quads = new List<EffectBillboardBatch.Quad>(128);
     readonly List<EffectBillboardBatch.Strip> _strips = new List<EffectBillboardBatch.Strip>(8);
+    readonly List<EffectBillboardBatch.MeshDraw> _meshes = new List<EffectBillboardBatch.MeshDraw>(4);
     readonly Dictionary<int, Texture2D> _materialTextures = new Dictionary<int, Texture2D>();
     readonly HashSet<EffectHandle> _handleSet = new HashSet<EffectHandle>();
     readonly List<EffectHitLocation> _hitLocations = new List<EffectHitLocation>(16);
@@ -463,9 +464,27 @@ public sealed class EffectHandler : IEffectSpawnFactory
         }
 
         handle.SetDuration((uint)centiseconds / 100u);
+        MarkPersistent(handle);
         _buffEffects[(host, nanoId)] = handle;
         Debug.Log($"[Effects] nano buff nano={nanoId} effectId={buffFx.EffectId} seconds={(uint)centiseconds / 100u}");
         return handle;
+    }
+
+    /// <summary>
+    /// Exempts a buff's control tree from the port's watchdog (<see cref="GfxControl.IgnoreWatchdog"/>).
+    /// A Sequencer passes it on to the children it spawns later.
+    /// </summary>
+    static void MarkPersistent(EffectHandle handle)
+    {
+        GfxControl control = handle?.Control;
+        if (control == null)
+            return;
+        control.IgnoreWatchdog = true;
+        if (control is GfxControlMeta meta)
+        {
+            foreach (EffectHandle child in meta.Children)
+                MarkPersistent(child);
+        }
     }
 
     /// <summary>
@@ -850,6 +869,7 @@ public sealed class EffectHandler : IEffectSpawnFactory
         _batch.Clear();
         _quads.Clear();
         _strips.Clear();
+        _meshes.Clear();
         for (int i = 0; i < _tick.Count; i++)
         {
             GfxControl control = _tick[i];
@@ -857,12 +877,15 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 continue;
             control.CollectBillboards(_quads, camera);
             control.CollectStrips(_strips, camera);
+            control.CollectMeshes(_meshes, camera);
         }
 
         for (int i = 0; i < _quads.Count; i++)
             _batch.Add(_quads[i]);
         for (int i = 0; i < _strips.Count; i++)
             _batch.Add(_strips[i]);
+        for (int i = 0; i < _meshes.Count; i++)
+            _batch.Add(_meshes[i]);
 
         _batch.Submit(camera);
     }
@@ -929,6 +952,12 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 if (record.FieldInt(10, 0) == ElectraSim.ShellMode)
                     return CreateElectra(record, locator);
                 return new GfxControlUnsupported(record, locator);
+            case EffectTypeTags.Suns:
+                if (record.FieldInt(10, 0) == SunsSim.SparkLineType)
+                    return CreateSuns(record, locator);
+                return new GfxControlUnsupported(record, locator);
+            case EffectTypeTags.Shield:
+                return CreateShield(record, locator);
             default:
                 // Tracers are strips between two points, so they get the stretched control.
                 // Remaining sprite-family types fall back to the generic billboard stand-in.
@@ -1172,12 +1201,65 @@ public sealed class EffectHandler : IEffectSpawnFactory
         return new GfxControlElectra(record, locator, texture, slot.Cols, slot.Rows);
     }
 
-    /// <summary>Tracers stock builds from its own data and lets run their course (no SetDuration, no cut-off).</summary>
+    /// <summary>
+    /// Shield's visual (100edf78): GfxVisualShield over the host's CAT mesh with the field 9 material,
+    /// whose texture tiles and scrolls (D3D wraps by default).
+    /// </summary>
+    GfxControl CreateShield(GfxTweakRecord record, EffectLocator locator)
+    {
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 13, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        if (texture != null)
+            texture.wrapMode = TextureWrapMode.Repeat;
+        return new GfxControlShield(record, locator, texture);
+    }
+
+    /// <summary>
+    /// Suns' visual (around 100fd276): GfxVisualSol(material from field 9, 0, additive), sized by the
+    /// material's columns and rows. Type 4 reads its hit location on every spawn.
+    /// </summary>
+    GfxControl CreateSuns(GfxTweakRecord record, EffectLocator locator)
+    {
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 2, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        EffectHitLocation hitLoc = null;
+        locator?.TryGetHitLocation(out hitLoc);
+        return new GfxControlSuns(record, locator, hitLoc, texture, _atlasFrames, slot.Cols, slot.Rows);
+    }
+
+    /// <summary>
+    /// Tracers stock builds from its own data and lets run their course (no SetDuration, no cut-off).
+    /// Stock's launch (FUN_1004f989) never sets a tracer's duration; the port only does so for the
+    /// earlier stand-ins, so a Meta counts as stock-built when every child it spawned is.
+    /// </summary>
     static bool IsStockTracer(EffectHandle handle)
-        => handle?.Control is GfxControlTracer1
-           || handle?.Control is GfxControlPlasma
-           || handle?.Control is GfxControlTracer4
-           || handle?.Control is GfxControlStars { IsHitLocationTracer: true };
+    {
+        GfxControl control = handle?.Control;
+        if (control is GfxControlTracer1
+            || control is GfxControlPlasma
+            || control is GfxControlTracer4
+            || control is GfxControlStars { IsHitLocationTracer: true }
+            || control is GfxControlSuns { IsHitLocationTracer: true })
+        {
+            return true;
+        }
+
+        if (control is not GfxControlMeta meta)
+            return false;
+
+        bool any = false;
+        foreach (EffectHandle child in meta.Children)
+        {
+            if (child == null)
+                continue;
+            if (!IsStockTracer(child))
+                return false;
+            any = true;
+        }
+        return any;
+    }
 
     GfxControl CreateTracer(GfxTweakRecord record, EffectLocator locator, Color tint)
     {

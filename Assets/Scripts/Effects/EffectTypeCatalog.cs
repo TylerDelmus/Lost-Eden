@@ -109,7 +109,7 @@ public static class EffectTypeCatalog
         // Process is FUN_100f8491 (vftable 1016ddac slot 1), not FUN_100f826a. Only starType 3 is
         // recovered call-for-call (StarsCase3); every other starType is still an approximation.
         Add(EffectTypeTags.Stars, "_GfxControlStars_t", EffectCategory.PointCloud, EffectSupport.Ported);
-        Add(0x7d5, "_GfxControlSuns_t", EffectCategory.PointCloud, EffectSupport.Missing);
+        Add(EffectTypeTags.Suns, "_GfxControlSuns_t", EffectCategory.PointCloud, EffectSupport.Ported);
 
         // ---- Sprite family ----------------------------------------------------
         // Flare: GfxControlFlareType0 / FlareType0Sim, from Process 100ddc6d, spawn 100dd2eb and
@@ -146,7 +146,7 @@ public static class EffectTypeCatalog
 
         // ---- Mesh / geometry --------------------------------------------------
         Add(EffectTypeTags.Highlight, "_GfxControlHighlight_t", EffectCategory.Mesh, EffectSupport.Ported);
-        Add(EffectTypeTags.Shield, "_GfxControlShield_t", EffectCategory.Mesh, EffectSupport.Missing);
+        Add(EffectTypeTags.Shield, "_GfxControlShield_t", EffectCategory.Mesh, EffectSupport.Ported);
         Add(EffectTypeTags.Shield2, "GfxControlShield2_t", EffectCategory.Mesh, EffectSupport.Missing);
         Add(0xbc2, "_GfxControlMesh_t", EffectCategory.Mesh, EffectSupport.Missing);
         Add(0xbd1, "GfxControlEffectMesh_t", EffectCategory.Mesh, EffectSupport.Missing);

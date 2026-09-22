@@ -76,12 +76,26 @@ public sealed class EffectBillboardBatch
         public bool Quads;
     }
 
+    /// <summary>
+    /// A whole mesh drawn with an effect material in one colour, for stock visuals that redraw a
+    /// model's own geometry (GfxVisualShield). The owner keeps the mesh.
+    /// </summary>
+    public sealed class MeshDraw
+    {
+        public Mesh Mesh;
+        public Matrix4x4 Matrix;
+        public Texture Texture;
+        public Color Color;
+        public bool Additive;
+    }
+
     readonly Mesh _quad;
     readonly Material _additive;
     readonly Material _alpha;
     readonly List<Quad> _additiveQuads = new List<Quad>(32);
     readonly List<Quad> _alphaQuads = new List<Quad>(16);
     readonly List<Strip> _strips = new List<Strip>(8);
+    readonly List<MeshDraw> _meshes = new List<MeshDraw>(4);
     readonly List<Mesh> _stripMeshes = new List<Mesh>(8);
     readonly Dictionary<int, int[]> _stripTriangles = new Dictionary<int, int[]>();
     readonly Dictionary<int, int[]> _quadTriangles = new Dictionary<int, int[]>();
@@ -136,6 +150,13 @@ public sealed class EffectBillboardBatch
         _additiveQuads.Clear();
         _alphaQuads.Clear();
         _strips.Clear();
+        _meshes.Clear();
+    }
+
+    public void Add(MeshDraw draw)
+    {
+        if (draw != null && draw.Mesh != null)
+            _meshes.Add(draw);
     }
 
     public void Add(Strip strip)
@@ -162,6 +183,36 @@ public sealed class EffectBillboardBatch
         SubmitList(_additiveQuads, _additive, camera);
         SubmitList(_alphaQuads, _alpha, camera);
         SubmitStrips(camera);
+        SubmitMeshes(camera);
+    }
+
+    void SubmitMeshes(Camera camera)
+    {
+        for (int i = 0; i < _meshes.Count; i++)
+        {
+            MeshDraw draw = _meshes[i];
+            Material template = draw.Additive ? _additive : _alpha;
+            if (template == null)
+                continue;
+
+            Color drawColor = draw.Color;
+            if (draw.Additive)
+            {
+                float boost = AdditiveHdrBoost;
+                drawColor = new Color(drawColor.r * boost, drawColor.g * boost, drawColor.b * boost, drawColor.a);
+            }
+
+            Material material = ResolveMaterial(template, draw.Texture);
+            _mpb.Clear();
+            if (material.HasProperty(_unlitColorId))
+                _mpb.SetColor(_unlitColorId, drawColor);
+
+            for (int s = 0; s < draw.Mesh.subMeshCount; s++)
+            {
+                Graphics.DrawMesh(
+                    draw.Mesh, draw.Matrix, material, 0, camera, s, _mpb, ShadowCastingMode.Off, receiveShadows: false);
+            }
+        }
     }
 
     void SubmitStrips(Camera camera)

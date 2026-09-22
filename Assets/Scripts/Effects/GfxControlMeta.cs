@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -11,6 +12,9 @@ public sealed class GfxControlMeta : GfxControl
     readonly IEffectSpawnFactory _factory;
     readonly Color _tint;
     readonly EffectHandle[] _children = new EffectHandle[SlotCount];
+
+    /// <summary>The spawned children, by slot (null where a slot is empty).</summary>
+    public IReadOnlyList<EffectHandle> Children => _children;
 
     public GfxControlMeta(
         GfxTweakRecord record,

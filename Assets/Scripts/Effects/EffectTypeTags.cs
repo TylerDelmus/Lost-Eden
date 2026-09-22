@@ -20,6 +20,7 @@ public static class EffectTypeTags
     public const int Tracer4 = 0x400;    // 1024 — _GfxControlTracer4_t, three twisting ribbons
     public const int Deformer = 0xbb9;   // 3001 — _GfxControlDeformer_t, moves the host's mesh vertices
     public const int Electra = 0x7d6;    // 2006 — _GfxControlElectra_t, shell of flat sparks
+    public const int Suns = 0x7d5;       // 2005 — _GfxControlSuns_t, GfxVisualSol sparks
 
     // Legacy aliases used by older call sites
     public const int NanoSprite = Nano0;

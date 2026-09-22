@@ -99,6 +99,12 @@ public sealed class EffectCoverage
                     return EffectStatus.Missing;
                 if (record.TypeCode == EffectTypeTags.Electra && record.FieldInt(10, 0) != ElectraSim.ShellMode)
                     return EffectStatus.Missing;
+                if (record.TypeCode == EffectTypeTags.Suns && record.FieldInt(10, 0) != SunsSim.SparkLineType)
+                    return EffectStatus.Missing;
+                // Per-vertex alpha (wave, ripple) and the host's own material are drawn approximately.
+                if (record.TypeCode == EffectTypeTags.Shield
+                    && (record.FieldInt(0, 0) & (ShieldSim.FlagWavePoint | ShieldSim.FlagRipple | ShieldSim.FlagHostMaterial)) != 0)
+                    return EffectStatus.Approximated;
                 return IsVerified(record) ? EffectStatus.Verified : EffectStatus.Unverified;
             default:
                 return record.TypeCode == 0 ? EffectStatus.Verified : EffectStatus.Missing;
@@ -106,7 +112,7 @@ public sealed class EffectCoverage
     }
 
     /// <summary>
-    /// The parts rebuilt from stock and checked live: Meta, Flare, Tracer1, Tracer4, Plasma, Deformer mode 1, Electra mode 1, Spell1 when field 33
+    /// The parts rebuilt from stock and checked live: Meta, Flare, Tracer1, Tracer4, Plasma, Deformer mode 1, Electra mode 1, Suns sunType 4, Shield, Sequencer, Spell1 when field 33
     /// skips its late windows, Stars starTypes 3, 7, 8, 16, 19 and 22, and a Cord that cannot link (field 0 bit 1 clear,
     /// invisible in stock).
     /// </summary>
@@ -121,6 +127,9 @@ public sealed class EffectCoverage
             case EffectTypeTags.Tracer4:
             case EffectTypeTags.Deformer:
             case EffectTypeTags.Electra:
+            case EffectTypeTags.Suns:
+            case EffectTypeTags.Shield:
+            case EffectTypeTags.Sequencer:
                 return true;
             case EffectTypeTags.Spell1:
                 return record.FieldInt(33, 0) != 0;

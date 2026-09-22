@@ -148,7 +148,7 @@ public abstract class GfxControl
         if (!ReadyFlag && _duration >= 0f && _age >= _duration)
             ReadyFlag = true;
 
-        if (!ReadyFlag && _age > WatchdogSeconds)
+        if (!ReadyFlag && !IgnoreWatchdog && _age > WatchdogSeconds)
             ReadyFlag = true;
 
         return !ReadyFlag && !_released;
@@ -163,6 +163,17 @@ public abstract class GfxControl
     public virtual void CollectStrips(List<EffectBillboardBatch.Strip> dest, Camera camera)
     {
     }
+
+    /// <summary>Collect whole meshes for this frame, for visuals that redraw a model (GfxVisualShield).</summary>
+    public virtual void CollectMeshes(List<EffectBillboardBatch.MeshDraw> dest, Camera camera)
+    {
+    }
+
+    /// <summary>
+    /// Port-only: exempt from <see cref="WatchdogSeconds"/>. Buff effects legitimately run for minutes,
+    /// or until the buff wears off.
+    /// </summary>
+    public bool IgnoreWatchdog { get; set; }
 
     protected virtual void OnProcess(float dt) { }
     protected virtual void OnTerminateGracefully() => ReadyFlag = true;
