@@ -12,7 +12,12 @@ public static class EffectAttachIds
     public const int BoneMax = 1018;
     public const int AttractorMin = 2000;
     public const int AttractorMax = 2023;
+    /// <summary>A weapon's muzzle (stock <c>10105ea1</c>): only a WeaponItem_t has one (<c>1009c337</c>); on a character the
+    /// lookup fails and the locator keeps the mesh frame.</summary>
     public const int Muzzle = 3000;
+
+    /// <summary>What a missing attractor or bone falls back to (stock <c>0x102c6400</c>).</summary>
+    public const string HeadAttractorName = "Attractor01_head";
 
     // Stock attractor jump table (attachId - 2000).
     public const int RightHand = 2000; // Attractor02_righthand
@@ -122,39 +127,4 @@ public static class EffectAttachIds
         return true;
     }
 
-    /// <summary>Map stock attractor attachId to <see cref="AttractorPlace"/> when the name has a known place.</summary>
-    public static bool TryGetAttractorPlace(int attachId, out AttractorPlace place)
-    {
-        place = default;
-        if (!TryGetAttractorName(attachId, out string name))
-            return false;
-        return AttractorPlaceUtil.TryParse(name, out place);
-    }
-
-    public static string[] BoneTokens(int attachId)
-    {
-        switch (attachId)
-        {
-            case BonePelvis: return new[] { "pelvis_ac", "pelvis", "hip", "root", "body" };
-            case BoneSpine: return new[] { "spine_ac", "bip01 spine_ac", "spine" };
-            case BoneSpine1: return new[] { "spine1_ac", "spine1" };
-            case BoneSpine2: return new[] { "spine2_ac", "spine2", "chest" };
-            case BoneSpine3: return new[] { "spine3_ac", "spine3" };
-            case BoneNeck: return new[] { "neck_ac", "neck" };
-            case BoneHead: return new[] { "head_ac", "head" };
-            case BoneLUpperArm: return new[] { "l upperarm_ac", "lupperarm", "leftarm", "l_upperarm" };
-            case BoneRUpperArm: return new[] { "r upperarm_ac", "rupperarm", "rightarm", "r_upperarm" };
-            case BoneLForearm: return new[] { "l forearm_ac", "lforearm", "leftforearm" };
-            case BoneRForearm: return new[] { "r forearm_ac", "rforearm", "rightforearm" };
-            case BoneLThigh: return new[] { "l thigh_ac", "lthigh", "leftthigh" };
-            case BoneRThigh: return new[] { "r thigh_ac", "rthigh", "rightthigh" };
-            case BoneLCalf: return new[] { "l calf_ac", "lcalf", "leftcrus", "lcrus" };
-            case BoneRCalf: return new[] { "r calf_ac", "rcalf", "rightcrus", "rcrus" };
-            case BoneLFoot: return new[] { "l foot_ac", "lfoot", "leftfoot" };
-            case BoneRFoot: return new[] { "r foot_ac", "rfoot", "rightfoot" };
-            case BoneLHand: return new[] { "l hand_ac", "lhand", "lefthand" };
-            case BoneRHand: return new[] { "r hand_ac", "rhand", "righthand" };
-            default: return null;
-        }
-    }
 }

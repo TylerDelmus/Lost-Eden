@@ -1277,15 +1277,10 @@ public sealed class EffectHandler : IEffectSpawnFactory
         if (attachOverride != 0 || record == null || locator == null || record.FieldCount <= 7)
             return locator;
 
+        // Stock takes any non-zero field 7 as the attach; one it can't resolve leaves the mesh frame.
         int templateAttach = record.FieldInt(7, 0);
         if (templateAttach == 0)
             return locator;
-        if (!EffectAttachIds.IsBone(templateAttach)
-            && !EffectAttachIds.IsAttractor(templateAttach)
-            && !EffectAttachIds.IsMuzzle(templateAttach))
-        {
-            return locator;
-        }
 
         return locator.WithAttach(templateAttach);
     }

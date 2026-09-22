@@ -112,6 +112,32 @@ holds `Gamecode.dll`).
   (bones are `1000 + n`), 1003 = Bip01 Spine2_ac, 1006 = Bip01 Head_ac, 2000 = right hand
   attractor, 2001 = left hand attractor (`Attractor03_lefthand`), 2002 = head attractor. The string
   tables are at `0x102c63f8` / `0x102c63a8` (`FUN_10105c44`).
+- How stock resolves an attach id (`10105e6d`, called from the locator update at `1010673f`):
+  - Attractors (2000 + n) and bones (1000 + n) are looked up by name; a missing one falls back to
+    `Attractor01_head` (`10105f93`, `1010601b`).
+  - 3000 is a weapon's muzzle. It casts the host to `WeaponItem_t` and asks it (`1009c337`), so it
+    resolves only on a weapon item. 3001 asks an `n3VisualDynel_t`.
+  - When the lookup fails, the locator keeps the mesh frame, attach 0 (`10106744`).
+  - Names are compared exactly (randy31 `RCATMesh_t::GetAttractor` / `GetBoneMatrix`, a case-sensitive
+    strcmp). The port's two name tables match stock's `0x102c63f8` / `0x102c63a8` entry for entry.
+  - The port (`VisualDynel.TryGetAttachMatrix`, 2026-09-22) follows these rules as written:
+    - It finds a bone or attractor by its exact CAT name, and falls back to `Attractor01_head`.
+    - 3000, 3001 and any other id fail on a character. The locator then keeps the mesh frame
+      (`EffectLocator`), and a point getter fails.
+    - Any non-zero template field 7 is used.
+    - `CatMeshLoader` now keeps every CAT attractor, including ones like Attractor30_beam whose name
+      maps to no `AttractorPlace`, so name lookups can find them.
+    - Spell1's attach test uses the same resolver (stock has only one).
+  - What the port did before (all invented, none of it stock):
+    - 3000 was the right-hand attractor, which put 43607 on the hand instead of between the feet.
+    - Bones were matched by loose tokens ("hip", "body", "chest" ...), attractors by substring and by
+      the number in their name (Attractor07_special became the hip).
+    - A missing bone fell back to the hip attractor, a missing attractor to the hip and then the head,
+      and unknown ids to the hip.
+    - Template attach ids other than bones, attractors and 3000 were ignored.
+  - Weapon muzzle effects (2000-2009 on a WeaponItem) aren't played yet; they'll need `1009c337`.
+    3001's static-mesh attribute matrix (`VisualMesh_t::GetAttrMatrix`) isn't ported: no effect host in
+    the port is a static mesh.
 - Template field 7 is the template's own attach id. `CreateEffect2(id, dynel, 0)` leaves it to the
   template.
 
@@ -347,7 +373,7 @@ nano's `timeexist` standing in for the server's time.
 | 125772 Stunned by Brawl | 49999 | 49999 | hit 43461 | 43307 Suns #1: a ring of 18 soft coloured lights circling the head, opening and fading over the buff |
 | 25994 Hostile Hatchling | 46133 | 17300 Stars #18 | hit 43010 Spiral: a white smoke double helix winding up the target to 2.1 m in 2 s, spinning, then unwinding from the base (4 s) | — |
 | 83943 Claw Eyes | 46133 | 17300 Stars #18 | 49999 = nothing | 43657 Smoke: still, black 2 m puffs half a metre in front of the target's face (§5.26) |
-| 210484 Sanctifier (and 18 other Sanctifier / Reaper nanos) | 46142 | 45551 | hit 43187 | 43607 Sprite: an orange glow (0x7ffc8900) on the right hand, about 1 m across, breathing ±0.125 m over 6.7 s (§5.33) |
+| 210484 Sanctifier (and 18 other Sanctifier / Reaper nanos) | 46142 | 45551 | hit 43187 | 43607 Sprite: an orange glow (0x7ffc8900) between the feet, about 1 m across, breathing ±0.125 m over 6.7 s (§5.33) |
 | 201723 Spawn Entrance Nano | 49999 = nothing | 49999 | 49999 | 80006 Sprite: a red dot at the head, shrinking from 0.5 m to nothing and fading in each 0.5 s, forever (§5.33) |
 | 269534 Blessing of the Ancient Form | 72362 VolGrid on the hand | 72362 | hit 72362 (and buff 413 = 72362): a green light pillar, 3.6 m square, shooting up to 80 m in 0.3 s and sinking to 20 m as it fades over 3 s (§5.32) | 72362 |
 | 157988 Fiery Breath | 46256 | 45712 | hit Meta 47400: Stars #7 45001, 43713-43715 and VulcanRocks 45060: tiny rocks thrown ~16 m up from the target's feet, bouncing up to 4 times and coming to rest ~20 m round; gone at ~6.9 s (§5.31) | — |
@@ -1580,7 +1606,8 @@ DisplaySystem's `GfxVisualSprite2` (ctor `10023c6a`, draw `10023ea4`) or `GfxVis
     DestColor/SrcColor; neither multiply is ported, and only record 7100 (no nano) uses one.
 - Records and nanos:
   - 16 records; 27 nanos reach them, all through the buff slot:
-    - 43607 (Sprite2, attach 3000): 19 Sanctifier/Reaper nanos.
+    - 43607 (Sprite2, attach 3000): 19 Sanctifier/Reaper nanos. On a character 3000 fails, so the sprite
+      sits on the mesh frame, between the feet (§3.2).
     - 80006-80009 (Sprite2, head attractors): the Spawn Entrance and Halo nanos.
     - 61085-61087 (Sprite3, attach 2023 Attractor30_beam, 1.5 × 70 m, offset 29.7 m up): the Clan,
       Omni and Neutral Beam nanos.
@@ -1593,7 +1620,8 @@ DisplaySystem's `GfxVisualSprite2` (ctor `10023c6a`, draw `10023ea4`) or `GfxVis
   - The body runs every frame (§3.7 group A). Quads go through `EffectBillboardBatch` with explicit axes.
   - A Sprite3 draws with vertex alpha 1, so the texture alone sets its alpha.
 - Seen live:
-  - 43607 (on 210484): an orange sprite on the right hand, breathing between 0.88 and 1.13 m.
+  - 43607 (on 210484): an orange sprite between the target's feet, breathing between 0.88 and 1.13 m.
+    It first showed on the right hand, until attach 3000 was fixed (§3.2).
   - 80006 (made directly, since GfxTest skips nanos with only a buff): a red dot at the head that shrinks
     and fades each 0.5 s.
   - 61085 on a world point: a pink vertical beam, 70 m tall, turning to face the camera.

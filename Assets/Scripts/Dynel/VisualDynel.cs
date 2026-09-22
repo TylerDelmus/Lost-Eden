@@ -1169,11 +1169,17 @@ public class VisualDynel : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// Stock <c>10105e6d</c>: attach 0 is the mesh frame; an attractor (2000 + n) or a bone (1000 + n) is
+    /// looked up by its exact name (randy31 <c>RCATMesh_t::GetAttractor</c> / <c>GetBoneMatrix</c>, a
+    /// case-sensitive strcmp) and, when the model doesn't have it, <c>Attractor01_head</c> instead
+    /// (<c>10105f93</c>, <c>1010601b</c>); 3000 needs a <c>WeaponItem_t</c> and 3001 a static mesh, so both
+    /// fail on a character, as does any other id. False when it fails: the locator then keeps the mesh
+    /// frame (<c>10106744</c>), a point getter fails (<c>10106128</c>).
+    /// </summary>
     public bool TryGetAttachMatrix(int attachId, out UnityEngine.Matrix4x4 matrix)
     {
         matrix = default;
-
-        // Stock FUN_10106368 / FUN_10105c44: attach 0 keeps the mesh's own RRefFrame world matrix.
         if (attachId == 0)
             return TryGetMeshFrameMatrix(out matrix);
 
@@ -1216,189 +1222,55 @@ public class VisualDynel : MonoBehaviour
         return false;
     }
 
-    /// <summary>Resolve attach without Hip/Head fallback (Spell1 AND-chain).</summary>
+    /// <summary>
+    /// Spell1's attach test. Stock has one resolver (<c>10105e6d</c>), so this is <see cref="TryGetAttachMatrix"/>.
+    /// </summary>
     public bool TryGetAttachMatrixStrict(int attachId, out UnityEngine.Matrix4x4 matrix)
-    {
-        matrix = default;
-        if (EffectAttachIds.IsMuzzle(attachId))
-        {
-            if (TryGetAttractor(AttractorPlace.RightHand, out Attractor muzzle) && muzzle != null)
-            {
-                matrix = muzzle.transform.localToWorldMatrix;
-                return true;
-            }
-            return false;
-        }
-
-        if (EffectAttachIds.IsAttractor(attachId))
-        {
-            if (EffectAttachIds.TryGetAttractorPlace(attachId, out AttractorPlace place)
-                && TryGetAttractor(place, out Attractor attractor)
-                && attractor != null)
-            {
-                matrix = attractor.transform.localToWorldMatrix;
-                return true;
-            }
-
-            if (EffectAttachIds.TryGetAttractorName(attachId, out string attractorName)
-                && TryFindAttractorByName(attractorName, out Transform named)
-                && named != null)
-            {
-                matrix = named.localToWorldMatrix;
-                return true;
-            }
-
-            return false;
-        }
-
-        if (EffectAttachIds.IsBone(attachId))
-        {
-            if (!TryGetBones(out Transform[] bones))
-                return false;
-            if (TryFindBoneByAttachId(bones, attachId, out Transform bone) && bone != null)
-            {
-                matrix = bone.localToWorldMatrix;
-                return true;
-            }
-
-            if (EffectAttachIds.TryGetBoneName(attachId, out string boneName)
-                && TryFindBoneByExactName(bones, boneName, out Transform namedBone)
-                && namedBone != null)
-            {
-                matrix = namedBone.localToWorldMatrix;
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => TryGetAttachMatrix(attachId, out matrix);
 
     bool TryResolveAttachTransform(int attachId, out Transform bone)
     {
         bone = null;
-        if (EffectAttachIds.IsMuzzle(attachId))
-            return TryGetAttractor(AttractorPlace.RightHand, out Attractor muzzle) && Assign(muzzle, out bone);
-
         if (EffectAttachIds.IsAttractor(attachId))
         {
-            if (EffectAttachIds.TryGetAttractorPlace(attachId, out AttractorPlace place)
-                && TryGetAttractor(place, out Attractor attractor)
-                && Assign(attractor, out bone))
-                return true;
-
-            if (EffectAttachIds.TryGetAttractorName(attachId, out string attractorName)
-                && TryFindAttractorByName(attractorName, out bone))
-                return true;
-
-            return TryGetAttractor(AttractorPlace.Hip, out Attractor hip) && Assign(hip, out bone)
-                || TryGetAttractor(AttractorPlace.Head, out Attractor head) && Assign(head, out bone);
+            return EffectAttachIds.TryGetAttractorName(attachId, out string name) && TryFindAttractorByName(name, out bone)
+                || TryFindAttractorByName(EffectAttachIds.HeadAttractorName, out bone);
         }
 
         if (EffectAttachIds.IsBone(attachId))
         {
-            Transform[] bones;
-            if (TryGetBones(out bones))
-            {
-                if (TryFindBoneByAttachId(bones, attachId, out bone))
-                    return true;
-                if (EffectAttachIds.TryGetBoneName(attachId, out string boneName)
-                    && TryFindBoneByExactName(bones, boneName, out bone))
-                    return true;
-            }
+            return EffectAttachIds.TryGetBoneName(attachId, out string name) && TryFindBoneByName(name, out bone)
+                || TryFindAttractorByName(EffectAttachIds.HeadAttractorName, out bone);
         }
 
-        return TryGetAttractor(AttractorPlace.Hip, out Attractor body) && Assign(body, out bone);
+        return false;
     }
 
-    bool TryFindAttractorByName(string stockName, out Transform bone)
+    /// <summary>An attractor of the model by its exact CAT name (case-sensitive, as randy31 compares it).</summary>
+    bool TryFindAttractorByName(string stockName, out Transform attractor)
     {
-        bone = null;
+        attractor = null;
         if (string.IsNullOrEmpty(stockName) || _visualRoot == null)
             return false;
         if (!_visualRoot.TryGetComponent(out AttractorCollection collection))
             return false;
+        return collection.TryGetByName(stockName, out attractor);
+    }
 
-        foreach (KeyValuePair<AttractorPlace, Attractor> pair in collection.ByPlace)
+    /// <summary>A bone of the model by its exact CAT name.</summary>
+    bool TryFindBoneByName(string stockName, out Transform bone)
+    {
+        bone = null;
+        if (string.IsNullOrEmpty(stockName) || !TryGetBones(out Transform[] bones))
+            return false;
+        for (int i = 0; i < bones.Length; i++)
         {
-            Attractor a = pair.Value;
-            if (a == null || a.transform == null)
-                continue;
-            string n = a.transform.name;
-            if (string.IsNullOrEmpty(n))
-                continue;
-            if (string.Equals(n, stockName, System.StringComparison.OrdinalIgnoreCase)
-                || n.IndexOf(stockName, System.StringComparison.OrdinalIgnoreCase) >= 0
-                || stockName.IndexOf(n, System.StringComparison.OrdinalIgnoreCase) >= 0)
+            if (bones[i] != null && string.Equals(bones[i].name, stockName, System.StringComparison.Ordinal))
             {
-                bone = a.transform;
+                bone = bones[i];
                 return true;
             }
         }
-
-        return false;
-    }
-
-    static bool TryFindBoneByExactName(Transform[] bones, string stockName, out Transform bone)
-    {
-        bone = null;
-        if (bones == null || string.IsNullOrEmpty(stockName))
-            return false;
-
-        for (int i = 0; i < bones.Length; i++)
-        {
-            Transform candidate = bones[i];
-            if (candidate == null)
-                continue;
-            string name = candidate.name;
-            if (string.IsNullOrEmpty(name))
-                continue;
-            if (string.Equals(name, stockName, System.StringComparison.OrdinalIgnoreCase)
-                || name.IndexOf(stockName, System.StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                bone = candidate;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    static bool Assign(Attractor attractor, out Transform bone)
-    {
-        bone = attractor != null ? attractor.transform : null;
-        return bone != null;
-    }
-
-    static bool TryFindBoneByAttachId(Transform[] bones, int attachId, out Transform bone)
-    {
-        bone = null;
-        if (bones == null)
-            return false;
-
-        string[] tokens = EffectAttachIds.BoneTokens(attachId);
-        if (tokens == null)
-            return false;
-
-        for (int i = 0; i < bones.Length; i++)
-        {
-            Transform candidate = bones[i];
-            if (candidate == null)
-                continue;
-
-            string name = candidate.name;
-            if (string.IsNullOrEmpty(name))
-                continue;
-
-            for (int t = 0; t < tokens.Length; t++)
-            {
-                if (name.IndexOf(tokens[t], System.StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    bone = candidate;
-                    return true;
-                }
-            }
-        }
-
         return false;
     }
 

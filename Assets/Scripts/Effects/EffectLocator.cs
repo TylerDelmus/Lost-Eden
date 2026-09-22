@@ -317,7 +317,8 @@ public sealed class EffectLocator
         if (visual == null)
             return false;
 
-        if (visual.TryGetAttachMatrix(attachId, out matrix))
+        // 10106744: an attach that can't be found leaves the locator on the mesh frame (attach 0).
+        if (visual.TryGetAttachMatrix(attachId, out matrix) || visual.TryGetAttachMatrix(0, out matrix))
             return true;
 
         Transform t = visual.VisualRoot != null ? visual.VisualRoot.transform : visual.transform;
@@ -332,7 +333,7 @@ public sealed class EffectLocator
             return false;
 
         if (dynel is Character character && character.Visual != null
-            && character.Visual.TryGetAttachMatrix(attachId, out matrix))
+            && (character.Visual.TryGetAttachMatrix(attachId, out matrix) || character.Visual.TryGetAttachMatrix(0, out matrix)))
             return true;
 
         matrix = Matrix4x4.TRS(dynel.transform.position, dynel.transform.rotation, Vector3.one);
