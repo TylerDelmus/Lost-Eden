@@ -103,4 +103,84 @@ public class ShieldSimTests
         tri.Step(1.5f);
         Assert.Equal(0.5f, tri.Time, 5);
     }
+
+    // 43722 (the hit shield of 28609 Freezing Surge and 59 more): additive + ripple, dark blue.
+    static float[] Fields43722()
+    {
+        var f = new float[32];
+        f[0] = Bits(0x2400);
+        f[8] = 0.7f;
+        f[9] = Bits(30);
+        f[10] = Bits(unchecked((int)0xff001166));
+        f[11] = 0.285f;
+        f[19] = 2f;
+        f[20] = 2f;
+        f[21] = 1.57f;
+        f[22] = 15f;
+        f[23] = 1.57f;
+        return f;
+    }
+
+    [Fact]
+    public void Ripple_ScalesEachAlphaBySineSquaredOverTheSourcePosition()
+    {
+        var sim = new ShieldSim(Fields43722());
+        Assert.True(sim.Ripple);
+        Assert.False(sim.Wave);
+        Assert.False(sim.UniformColour);
+        sim.Step(0.5f);
+        int alpha = sim.UniformAlpha();
+        float s0 = (float)Math.Sin((float)(1.57 * 0.5));
+        Assert.Equal((int)(255.0 * s0 * s0), alpha);
+
+        // w = 10x + 10y + 10z + 3T.
+        float w = (float)(0.1 * 10.0 + 0.2 * 10.0 + 0.3 * 10.0 + 0.5 * 3.0);
+        float s = (float)Math.Sin(w);
+        Assert.Equal((int)((double)s * s * alpha), sim.RippleAlpha(alpha, 0.1f, 0.2f, 0.3f));
+        // A zero of the sine blanks the vertex.
+        Assert.Equal(0, sim.RippleAlpha(alpha, -0.15f, 0f, 0f));
+    }
+
+    [Fact]
+    public void Wave_FromAPoint_RunsOutwardAtField21OverField22()
+    {
+        var f = Fields43722();
+        f[0] = Bits(0xc00); // 32201: a wave from a point
+        f[12] = 0f; f[13] = 1f; f[14] = 0f;
+        f[21] = 10f;
+        f[22] = 20f;
+        f[23] = 314157.69f;
+        var sim = new ShieldSim(f);
+        sim.Step(0.5f);
+        float dist = sim.WaveDistance(0f, 1f, 0.1f);
+        Assert.Equal(0.1f, dist, 6);
+        float x = (float)(10.0 * 0.5 - (double)dist * 20.0);
+        float s = (float)Math.Sin(x);
+        Assert.Equal((int)(255.0 * s * s), sim.WaveAlpha(dist));
+        // Beyond the front (x < 0) nothing shows yet.
+        Assert.Equal(0, sim.WaveAlpha(0.3f));
+    }
+
+    [Fact]
+    public void Wave_AlongADirection_UsesTheOffsetAlongItsUnitVector()
+    {
+        var f = Fields43722();
+        f[0] = Bits(0x1800);
+        f[12] = 0f; f[13] = 1f; f[14] = 0f;
+        f[15] = 0f; f[16] = 2f; f[17] = 0f;
+        var sim = new ShieldSim(f);
+        Assert.True(sim.WaveAlongDirection);
+        Assert.Equal(1f, sim.WaveDirY);
+        Assert.Equal(-0.5f, sim.WaveDistance(3f, 0.5f, -2f), 6);
+    }
+
+    [Fact]
+    public void HostMaterial_IsFlag0x10000()
+    {
+        var f = Fields43722();
+        f[0] = Bits(0x1a400); // 12351
+        var sim = new ShieldSim(f);
+        Assert.True(sim.HostMaterial);
+        Assert.True(sim.Ripple);
+    }
 }

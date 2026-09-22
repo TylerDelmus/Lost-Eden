@@ -35,9 +35,11 @@ public class EffectTypeCatalogTests
     }
 
     [Fact]
-    public void OnlyAudioBuffAndNullTypeAreIntentionallyNotRendered()
+    public void OnlyAudioAndNullTypeAreIntentionallyNotRendered()
     {
-        int[] expected = { 0, 0x3e9, 0x3ea, 0xfa0 };
+        // The buff controls 0x3e9 / 0x3ea draw nothing themselves but spawn effects that do
+        // (100d411d / 100d58f8), so they are ported, not skipped.
+        int[] expected = { 0, 0xfa0 };
         int[] actual = EffectTypeCatalog.All
             .Where(i => i.Support == EffectSupport.NotRendered)
             .Select(i => i.TypeCode)
@@ -62,8 +64,8 @@ public class EffectTypeCatalogTests
     {
         int[] spriteFamily =
         {
-            EffectTypeTags.Cord, EffectTypeTags.SpriteAlt, EffectTypeTags.Flare, EffectTypeTags.FlareAlt,
-            EffectTypeTags.Nano0, EffectTypeTags.Nano1, EffectTypeTags.Nano2, EffectTypeTags.Nano3,
+            EffectTypeTags.Cord, EffectTypeTags.Fire, EffectTypeTags.Flare, EffectTypeTags.FlareAlt,
+            EffectTypeTags.Nano0, EffectTypeTags.Nano1, EffectTypeTags.Smoke, EffectTypeTags.Nano3,
             EffectTypeTags.Sprite, EffectTypeTags.Sparks,
         };
 
@@ -71,8 +73,9 @@ public class EffectTypeCatalogTests
         {
             Assert.True(EffectTypeCatalog.TryGet(typeCode, out EffectTypeInfo info),
                 $"sprite-family 0x{typeCode:X} missing from catalog");
-            // Sparks is an emitter even though the tag list groups it with sprites.
-            EffectCategory expected = typeCode == EffectTypeTags.Sparks
+            // Sparks, Fire and Smoke are emitters even though the tag list groups them with sprites.
+            EffectCategory expected = typeCode == EffectTypeTags.Sparks || typeCode == EffectTypeTags.Fire
+                                      || typeCode == EffectTypeTags.Smoke
                 ? EffectCategory.Particle
                 : EffectCategory.Sprite;
             Assert.Equal(expected, info.Category);
@@ -103,7 +106,10 @@ public class EffectTypeCatalogTests
             EffectTypeTags.Stars, EffectTypeTags.Highlight, EffectTypeTags.Spell1,
             EffectTypeTags.Flare, EffectTypeTags.FlareAlt, EffectTypeTags.Sparks,
             EffectTypeTags.Scatter, EffectTypeTags.Cord, EffectTypeTags.Tracer1, EffectTypeTags.Plasma,
-            EffectTypeTags.Tracer4, EffectTypeTags.Deformer, EffectTypeTags.Electra, EffectTypeTags.Suns, EffectTypeTags.Shield,
+            EffectTypeTags.Tracer4, EffectTypeTags.Deformer, EffectTypeTags.Electra, EffectTypeTags.Suns, EffectTypeTags.Shield, EffectTypeTags.BuffFsm, EffectTypeTags.BuffPlaceHolder,
+            EffectTypeTags.TParticle, EffectTypeTags.BParticle2, EffectTypeTags.BParticle, EffectTypeTags.GroundGrid,
+            EffectTypeTags.EffectMesh, EffectTypeTags.MParticle, EffectTypeTags.Tracer5, EffectTypeTags.Fire,
+            EffectTypeTags.Smoke, EffectTypeTags.Spiral,
         };
         int[] actual = EffectTypeCatalog.All
             .Where(i => i.Support == EffectSupport.Ported)

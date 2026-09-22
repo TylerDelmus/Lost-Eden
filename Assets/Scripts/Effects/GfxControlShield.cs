@@ -9,9 +9,12 @@ using UnityEngine;
 /// along their normals, sets their UVs and draws the result with the shield's material in the
 /// renderer's frame.
 ///
-/// Every vertex takes the one colour when the template has no wave or ripple (flags 0x800 / 0x2000),
-/// which is what the port supports; those two need per-vertex alpha and are drawn with the uniform
-/// fade-in instead.
+/// Every vertex takes the one colour when the template has no wave or ripple (flags 0x800 / 0x2000).
+/// With either, each vertex gets its own alpha (<c>1001cbca</c> / <c>1001cc7d</c>) and the shell is drawn
+/// with the vertex-colour effect shader. The renderers sit in the dynel's own frame, so their baked
+/// positions are stock's model space. With flag 0x10000 the shell takes the host's material 0 instead
+/// of field 9's (<c>100edfd6</c>): the texture of the submesh that uses entry 0 of the CAT file's
+/// material table.
 /// </summary>
 public sealed class GfxControlShield : GfxControl
 {
@@ -25,6 +28,8 @@ public sealed class GfxControlShield : GfxControl
         public readonly List<Vector3> Normals = new List<Vector3>(1024);
         public readonly List<Vector2> SourceUvs = new List<Vector2>(1024);
         public readonly List<Vector2> Uvs = new List<Vector2>(1024);
+        public readonly List<Color32> Colors = new List<Color32>(1024);
+        public Vector3[] Source;
         public readonly EffectBillboardBatch.MeshDraw Draw = new EffectBillboardBatch.MeshDraw();
     }
 
@@ -38,7 +43,6 @@ public sealed class GfxControlShield : GfxControl
         : base(record, locator)
     {
         _sim = new ShieldSim(record?.Fields);
-        _texture = texture;
         // Stock expiry, with its fade, is replayed here.
         base.SetDuration(InfiniteDuration);
 
@@ -52,11 +56,41 @@ public sealed class GfxControlShield : GfxControl
         foreach (SkinnedMeshRenderer renderer in root.GetComponentsInChildren<SkinnedMeshRenderer>(false))
         {
             if (renderer != null && renderer.sharedMesh != null)
-                _shells.Add(new Shell { Renderer = renderer });
+            {
+                renderer.TryGetComponent(out CatMeshSourceVertices source);
+                _shells.Add(new Shell { Renderer = renderer, Source = source != null ? source.Positions : null });
+            }
         }
+
+        _texture = _sim.HostMaterial ? HostMaterialTexture(_shells) ?? texture : texture;
 
         if (_shells.Count == 0)
             ReadyFlag = true;
+    }
+
+    /// <summary>
+    /// The texture of the host's material 0 (CATRender +0x1d8, kept by material index): the submesh that
+    /// uses entry 0 of the CAT file's material table. A body where no submesh uses entry 0 takes the
+    /// lowest entry it has, since the port only keeps the materials its submeshes use.
+    /// </summary>
+    static Texture HostMaterialTexture(List<Shell> shells)
+    {
+        Texture best = null;
+        int bestId = int.MaxValue;
+        for (int i = 0; i < shells.Count; i++)
+        {
+            SkinnedMeshRenderer renderer = shells[i].Renderer;
+            if (!renderer.TryGetComponent(out CatMeshSourceVertices source) || source.MaterialId < 0
+                || source.MaterialId >= bestId)
+                continue;
+            Material material = renderer.sharedMaterial;
+            Texture texture = material != null ? material.mainTexture : null;
+            if (texture == null)
+                continue;
+            best = texture;
+            bestId = source.MaterialId;
+        }
+        return best;
     }
 
     /// <summary>Stock slot 8: +0x10 = seconds (a Sequencer sets its window this way).</summary>
@@ -78,23 +112,26 @@ public sealed class GfxControlShield : GfxControl
         if (!IsAlive || dest == null || _texture == null)
             return;
 
+        bool perVertex = !_sim.UniformColour;
         int alpha = _sim.UniformAlpha();
-        if (alpha <= 0)
+        if (alpha <= 0 && !perVertex)
             return;
 
         uint rgb = _sim.Colour;
-        var colour = new Color(
-            ((rgb >> 16) & 0xff) / 255f,
-            ((rgb >> 8) & 0xff) / 255f,
-            (rgb & 0xff) / 255f,
-            (alpha & 0xff) / 255f);
+        var colour = perVertex
+            ? Color.white
+            : new Color(
+                ((rgb >> 16) & 0xff) / 255f,
+                ((rgb >> 8) & 0xff) / 255f,
+                (rgb & 0xff) / 255f,
+                (alpha & 0xff) / 255f);
 
         for (int i = 0; i < _shells.Count; i++)
         {
             Shell shell = _shells[i];
             if (shell.Renderer == null || !shell.Renderer.gameObject.activeInHierarchy)
                 continue;
-            if (!Build(shell))
+            if (!Build(shell, perVertex, alpha))
                 continue;
 
             Transform t = shell.Renderer.transform;
@@ -102,12 +139,13 @@ public sealed class GfxControlShield : GfxControl
             shell.Draw.Matrix = Matrix4x4.TRS(t.position, t.rotation, Vector3.one);
             shell.Draw.Texture = _texture;
             shell.Draw.Color = colour;
+            shell.Draw.VertexColors = perVertex;
             shell.Draw.Additive = (_sim.Flags & ShieldSim.FlagAdditive) != 0;
             dest.Add(shell.Draw);
         }
     }
 
-    bool Build(Shell shell)
+    bool Build(Shell shell, bool perVertex, int uniformAlpha)
     {
         if (shell.Baked == null)
         {
@@ -147,8 +185,40 @@ public sealed class GfxControlShield : GfxControl
         shell.Mesh.Clear();
         shell.Mesh.SetVertices(shell.Positions, 0, count);
         shell.Mesh.SetUVs(0, shell.Uvs, 0, count);
+        if (perVertex)
+        {
+            BuildColours(shell, count, uniformAlpha);
+            shell.Mesh.SetColors(shell.Colors, 0, count);
+        }
         shell.Mesh.SetTriangles(shell.Triangles, 0, calculateBounds: true);
         return true;
+    }
+
+    /// <summary>
+    /// <c>1001cab2</c>..<c>1001cd00</c>: field 10's RGB on every vertex; the alpha is the wave's at the
+    /// pushed-out position (0x800) or the uniform fade-in, then rippled over the source position (0x2000).
+    /// </summary>
+    void BuildColours(Shell shell, int count, int uniformAlpha)
+    {
+        uint rgb = _sim.Colour;
+        byte r = (byte)(rgb >> 16), g = (byte)(rgb >> 8), b = (byte)rgb;
+        bool ripple = _sim.Ripple && shell.Source != null;
+        shell.Colors.Clear();
+        for (int v = 0; v < count; v++)
+        {
+            int alpha = uniformAlpha;
+            if (_sim.Wave)
+            {
+                Vector3 p = shell.Positions[v];
+                alpha = _sim.WaveAlpha(_sim.WaveDistance(p.x, p.y, p.z));
+            }
+            if (ripple && v < shell.Source.Length)
+            {
+                Vector3 s = shell.Source[v];
+                alpha = _sim.RippleAlpha(alpha & 0xff, s.x, s.y, s.z);
+            }
+            shell.Colors.Add(new Color32(r, g, b, (byte)alpha));
+        }
     }
 
     protected override void OnReleased(bool immediate)

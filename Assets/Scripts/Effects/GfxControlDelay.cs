@@ -32,6 +32,15 @@ public sealed class GfxControlDelay : GfxControl
         SetDuration(InfiniteDuration);
     }
 
+    /// <summary>Stock slot 11 (<c>100d8961</c>): forward to the child, if it has spawned.</summary>
+    public override void SetStartColor(float a, float r, float g, float b) => _child?.SetStartColor(a, r, g, b);
+
+    /// <summary>Stock slot 12 (<c>100d899a</c>).</summary>
+    public override void SetStopColor(float a, float r, float g, float b) => _child?.SetStopColor(a, r, g, b);
+
+    /// <summary>Stock slot 13 (<c>100d89d3</c>).</summary>
+    public override void SetColor(uint argb) => _child?.SetColor(argb);
+
     protected override void OnProcess(float dt)
     {
         if (!_spawned)

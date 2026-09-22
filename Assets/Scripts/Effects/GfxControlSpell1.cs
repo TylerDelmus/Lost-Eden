@@ -184,6 +184,21 @@ public sealed class GfxControlSpell1 : GfxControl
     {
     }
 
+    /// <summary>Stock slot 11 (<c>100f2660</c>): colour A (+0x44, fields 10-13), for what reads it later.</summary>
+    public override void SetStartColor(float a, float r, float g, float b)
+    {
+        _colorA[0] = a; _colorA[1] = r; _colorA[2] = g; _colorA[3] = b;
+    }
+
+    /// <summary>Stock slot 12 (<c>100f267f</c>): colour B (+0x54, fields 14-17).</summary>
+    public override void SetStopColor(float a, float r, float g, float b)
+    {
+        _colorB[0] = a; _colorB[1] = r; _colorB[2] = g; _colorB[3] = b;
+    }
+
+    /// <summary>Stock slot 13 (<c>100f269e</c>).</summary>
+    public override void SetColor(uint argb) => SetColorAsStartAndFadeOut(argb);
+
     /// <summary>
     /// Stock slot 10 (<c>100f2617</c>). With field 33 clear and window 1 not yet over, pull the
     /// timeline to now: f20 = f19 + age - f20, then f19 = f21 = age, f22 = age + 0.5,

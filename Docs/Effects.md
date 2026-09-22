@@ -89,7 +89,7 @@ holds `Gamecode.dll`).
   | 8 | **SetDuration** (`+0x10 = seconds`; a no-op stub `10079931` on some classes) |
   | 10 | **NextState** (base `100a76f9` = TerminateGracefully; Spell1 overrides) |
   | 11 / 12 | SetStartColor / SetStopColor (A,R,G,B floats) |
-  | 13 | set colour from packed ARGB |
+  | 13 | **SetColor** from packed ARGB (handler `100ce34e`, port `EffectHandle.SetColor`). Base `10079931` does nothing. Fire, Smoke, Sparks, BuffPlaceHolder, BPHFSM and Spell1 take it as start = the colour, stop = the colour at alpha 0 (`GfxControl.SetColorAsStartAndFadeOut`). Meta, MetaStatic and Delay forward 11, 12 and 13 to their children. Stock's senders are game code (effect 2000 with fixed colours, colour tables, item effects), none of it ported yet. |
 
 - Common control fields: `+0x0c` age, `+0x10` duration, `+0x14` ready flag, `+0x2c`/`+0x30`
   locator or visual pointers (varies by class).
@@ -132,10 +132,11 @@ texture × vertex colour.
 |---|---|---|
 | `GfxVisualDiaBill` | Stars | 0x20-byte `Sprite_t` (pos, w, h, D3DCOLOR, frame, visible). A camera-facing quad of full size w×h, atlas cell `frame % cols, frame / cols` from the top-left. Additive unless starType 25. Build `FUN_1001105e`. |
 | `GfxVisualFlareType0` | Flare, Tracer1 | Sprite pool: `Init 10013c2b`, `InitSpriteDefault 10012fd0`, `NewSprite 100130a4`, `ProcessSprites 100131f3`, quad `1001364b`. Sprites are segments with two ends. |
-| `GfxVisualSprite2Type0` | Sparks, Nano0/1 | Pooled sprite emitter visual. |
+| `GfxVisualSpiral` | Spiral | A 12-segment ribbon round one turn (§5.27): ctor `10021eb4`, draw `10021924`. White vertices, faded at both ends of the kept range; the texture wraps along it. |
+| `GfxVisualSprite2Type0` | Sparks, Fire, Smoke, Nano0/1 | Sprite pool (§5.22, `Sprite2Type0Visual`): ctor `1002646b`, `InitSpriteDefault 10025844`, `NewSprite 100261de` (every value) / `10025be0` (the defaults plus position, velocity and wind), `ProcessSprites 100267c1`, quad `10025391`. Gravity is +0x22c, 0 from the ctor. 0x78-byte sprite; an upright camera-facing quad of width × height. Blend from the third ctor argument: SRCALPHA/ONE when true, SRCALPHA/INVSRCALPHA when false. The atlas row is `cell / rows`, not `cell / cols`. |
 | `GfxVisualSprite2Type2` | Spell1 window 2 | Clears its list after drawing (`10027df8`), so it is rebuilt every frame. |
 | `GfxVisualPlasma` | Plasma | ctor `1001b8f7`, render `1001bbf2`. A 75-segment camera-facing strip. |
-| `GfxVisualCord4` | Cord, Tracer4 | A link ribbon: render `1000f072`, geometry `1000f040`, side vector `1000ee68`. See `Cord4Strip`. |
+| `GfxVisualCord4` | Cord, Tracer4, Tracer5 | A link ribbon: render `1000f072`, geometry `1000f040`, side vector `1000ee68`. See `Cord4Strip`. |
 | `GfxVisualElectra` | Electra | ctor `100116ba`, `Init 10011cd5`, build `100118d3`. 0x30-byte sprite: pos, axis A, axis C, D3DCOLOR, frame, visible. Quad at `pos ± A/2 ± C/2` (oriented in 3D, not camera-facing). Its third ctor argument picks the blend: true gives SRCALPHA/ONE, false gives SRCALPHA/INVSRCALPHA. |
 
 **UVs:** D3D's `v` runs down from the top row; Unity's runs up. An atlas cell (col, row) is
@@ -176,8 +177,86 @@ template field 9; −1 = untextured).
   `TakeFixedSteps` (carry, cap at 8 steps per frame). This rate is **UNVERIFIED** (§9).
 - The drawing is **interpolated between the last two replayed steps** (`StarsCase3.Blend`: position
   and size, not when a slot was recycled). Without it, a 30 Hz swarm looks steppy at 140 fps.
-- Bodies driven by age (Flare, Electra spawn counts, Tracer1, Plasma) just run every frame with
-  the real age.
+- Bodies driven only by age (Flare, Tracer1, Plasma) just run every frame with the real age. Electra
+  looked age-driven (its spawn count is owed by age) but caps spawns per call, so it's replayed too (§3.7).
+
+### 3.7 Timing model by control (to revisit)
+Stock calls every control's Process once per engine frame (`_EffectHandler_t::RunFunction`
+`100d2423`), with the real frame delta and no time gate. So in the original client, effects with per-call
+maths looked different at different frame rates.
+
+**Our client unifies this (your rule, 2026-09-22): an effect must look the same at any frame rate.** The
+maths is stock's; the clock is ours. The only exception left is MParticle (group C), kept by your call.
+
+**The rule for choosing a model** (apply it to every new port):
+- **Age-driven body** (every value is a function of age or dt, nothing counted per call): run it every
+  Unity frame (group A). That gives stock's exact value at every frame, at any frame rate. Don't put
+  these on the 30 Hz replay with `Blend`:
+  - `Blend` only interpolates position and size, so turns, colours and frames would still step.
+  - The straight-line interpolation cuts corners on anything moving in a circle.
+  - Suns sunType 1 was moved off the replay for exactly this reason.
+- **Per-call body** (spawn budgets, springs, per-call steps, anything that would run faster at a higher
+  frame rate): replay it at 30 Hz (group B). If its sprites move, draw them between the last two steps
+  with `Blend`.
+- **Neither fits** (a stock formula that is unstable at the replay rate): sub-step it and say so (group C).
+- Known exception: Stars starType 2 is age-driven but still on the replay (item 3 below).
+
+The port uses four models:
+
+**A. Every Unity frame, with the real dt and age.** This is stock at whatever frame rate the port
+runs.
+- FlareType0, Tracer1, Tracer4, Tracer5, Plasma, Spell1
+- Shield, Deformer
+- Sparks, Fire, Smoke, Spiral
+- BParticle, TParticle, GroundGrid, EffectMesh
+- Stars starTypes 7/8 (`StarsRing`, computed from age at draw time)
+- Suns sunTypes 0 and 1, since 2026-09-22 (type 1 was on the 30 Hz replay and spun in 18° steps)
+
+**B. Replayed at a fixed 30 Hz** (`EffectFrameRate.StockProcessHz`, `TakeFixedSteps`, at most 8 steps
+a frame). For bodies with per-call spawn budgets, springs or step counts.
+- Stars starTypes 2, 3, 4, 6, 10, 11, 15, 16-20 and 22. They're drawn between the last two steps with
+  `StarsCase3.Blend`, which interpolates position and size only.
+- Suns sunType 4. It isn't interpolated, but its sparks don't move.
+- Electra, since 2026-09-22: its spawn cap (≤ 2 a call) made the shell fill faster at high fps. The
+  sparks are put back on the locator every frame (`ElectraSim.Place`), so the shell doesn't lag a moving
+  host.
+- BParticle2, since 2026-09-22: the respawn cap (field 15 a call), the bounce and the drag are per call.
+  Particles are drawn between their last two steps (position, size, angle); one that was dead on the
+  previous step is drawn where it is.
+- Cord, since 2026-09-22: stock's step is the frame delta clamped to [0.01, 0.025], so links drifted
+  1.44× fast at 144 fps and 0.75× at 30. Each step is now one 1/30 s call (clamped step 0.025). The links
+  aren't interpolated; they drift a few millimetres a step.
+- Checked live at 30 fps and at ~150 fps: Electra 43452 (24 / 28 / 30 sparks at 0.5 / 1 / 2 s) and Cord
+  20071 (13 / 15 links, same spread) are identical; BParticle2 in 71016 matches in count (20 / 60 / ~220)
+  and differs only in its random layout.
+- The wind (`EffectWind`, at most 4 steps a frame).
+- BuffPlaceHolder's children: `ChildDt` = one stock frame per 0.45 rad step. This is a deliberate
+  deviation, kept by your decision (§9).
+
+**C. Sub-stepped at ≤ 1/60 s.** MParticle (`GfxControlMParticle.MaxStep`). Stock's bounce is
+`100·b·dt`, which is unstable at 30 fps. This was reported as a decision when it was ported (§5.21).
+It still depends on fps above 60 (each frame is then one step). Left as is by your call (2026-09-22).
+
+**D. Per-call constants scaled by dt.** The unverified Stars starTypes that still run the earlier
+stand-in (`FrameSteps`, `TakeBudget`).
+
+To revisit:
+1. **Measure the stock client's frame rate** (`/framerate`). Group B assumes stock ran at 30 fps; if it
+   ran faster, those effects spawn and move faster in stock than here.
+2. ~~Group A controls with per-call caps.~~ Done 2026-09-22: Electra, BParticle2 and Cord moved to
+   group B.
+3. **Stars starType 2 depends only on age** but sits in group B, which breaks the rule above. Positions
+   are interpolated, but size, colour and frame change 30 times a second. Move it to group A, as Suns
+   sunType 1 was, when that's convenient.
+4. **Group B's drawn state updates at 30 Hz** apart from Stars' interpolated position and size.
+   Colours and frames step visibly at high fps.
+5. **MParticle's 1/60 sub-step** is a stability choice, not stock. It keeps its bounces close to what
+   stock produces at 60 fps, but above 60 fps it still changes with the frame rate. The unified fix is
+   fixed 1/60 s steps with the remainder carried; held back by your call.
+6. **BuffPlaceHolder's child delta** (§9) makes the trail length frame-rate dependent in stock; the port
+   fixes it at the 30 fps look.
+7. **Controls not in these lists are older stand-ins** (Flare1, Nano0/1, Sprite, Highlight, Scatter,
+   Delay); their timing hasn't been checked.
 
 ---
 
@@ -249,6 +328,21 @@ nano's `timeexist` standing in for the server's time.
 | 266281 | 46240 Spell1 | 45502 Tracer4 (3 lightning ribbons, 1 s) | hit 45057 Deformer mode 1 (the body ripples ~3 s) | — |
 | 150501 Nullity Sphere | 46188 Spell1 | 45597 Stars #19 (red spark trail, 1 s) | hit 49999 = nothing | 43452 Electra mode 1 (orange spark bubble, 18 s + 0.5) |
 | 43878 Lifegiving Elixir | 46262 Spell1 | 17100 Stars #16 (sparks along the whole line, 1 s) | hit 43426 Stars #22 (sparks pulled onto the limbs, 5 s + drain) | — |
+| 75347 Wooden Skin | 46236 Spell1 | 17200 Meta: 3× Stars #17 helix strands, 1 s | hit 43029 Stars #8 | 1060 BPHFSM: every ~5 s two BuffPlaceHolders swing a Flare spark with a Cord trail round the spine for 1.5 s |
+| 25988 Enhanced Senses | 46146 Spell1 | 17300 Stars #18 (as 26355) | hit 43447 (not checked) | 1020 BPHFSM (white): every ~5 s BuffPlaceHolder 20071 swings Flare 6203 with Cord 20072's trail round the head, 1.5 s (20076 has rate −4π and never steps) |
+| 269470 Fists of the Winter Flame | 46145 Spell1 | 17200 (Stars #17, as 75347) | hit 43029 Stars #8 | 72381 Sequencer (loops, 0x400) → Meta 72390 for 30 s → Stars #4 72391 / 72392 on the left / right hand (blue flames) |
+| 26355 Augment Agility | 46107 | 17300 Stars #18: a gold spark cloud riding the head of the hit line, ~90 alive | hit 43029 Stars #8 | 1050 |
+| 45889 Smiting Missile Mk II | 46123 | 45708 Tracer5: a white streak (s_bullet) flying hand → target | hit 2710 Sparks: 16 red sprites burst, fall and fade in 0.25–0.5 s | — |
+| 269708 Blessed by the Ancients | 14400 | 14400 | 14400 | 14400 Suns #0: a bright layered glow 2 m over the pelvis, each layer spinning its own way, swelling and fading over 10 s |
+| 28597 Burning Bones | 46256 | 45686 Stars #20: a white fire puff (~120 full-size sparks, 64-frame burn) flying hand → target in 1 s, gone at once | hit 2710 Sparks | — |
+| 28604 Electrifying Containment | 46136 | 17800 | hit 43723 Stars #15: 70 big blue sparks thrown off the target's skin in 0.2 s, flying ~6 m out and shrinking, gone at 1.1 s | — |
+| 29645 Immolation Shield | 46102 | 17000 | hit 43029 Stars #8 | 43618 BuffPlaceHolder → Meta 47001: Stars #15 43048 (orange sparks drifting ~0.4 m off the skin, ~110 alive) and Shield 43054 |
+| 125772 Stunned by Brawl | 49999 | 49999 | hit 43461 | 43307 Suns #1: a ring of 18 soft coloured lights circling the head, opening and fading over the buff |
+| 25994 Hostile Hatchling | 46133 | 17300 Stars #18 | hit 43010 Spiral: a white smoke double helix winding up the target to 2.1 m in 2 s, spinning, then unwinding from the base (4 s) | — |
+| 83943 Claw Eyes | 46133 | 17300 Stars #18 | 49999 = nothing | 43657 Smoke: still, black 2 m puffs half a metre in front of the target's face (§5.26) |
+| 246033 Fountain of Life | 19400 | 45662 | hit 43220 Stars #2: a ball of 128 many-coloured sparkles round the pelvis that spreads to 1.3 m, shrinks and fades to grey-white in 1.5 s | 1000 |
+| 100250 Berserk Rage | 46123 | 17300 Stars #18 (as 26355) | — | 2200 Fire: 16 flame sprites a second off the feet, streaming out behind the character (§5.25) |
+| 223386 Composite Nano Expertise | 46209 Spell1 | 45613 Stars #19 | hit 47175 Meta: Stars #10 sparkle shell + #11 and #6 rising swirls (violet, ~6 s + drain) | 1010 BPHFSM: the 25988 halo in yellow |
 | 56213 Greater Hold Victim | 46136 Spell1 | 17800 Meta: Suns #4 17000 (sparks on the line) + Plasma 17600, 1 s | hit 43608 Shield (cyan scrolling shell over the body, 3 s) | 43613 Sequencer → Shield 43608 for 60 s, looping until the buff ends |
 
 ---
@@ -273,26 +367,38 @@ Status legend (matches `EffectCoverage` and the GfxTest window):
 | 0x3ed | `_GfxControlFlare_t` | `GfxControlFlareType0` + `FlareType0Sim` | Verified |
 | 0x3ee | `_GfxControlFlare1_t` | `GfxControlFlare` | Unverified |
 | 0x3f2 | `_GfxControlSpell1_t` | `GfxControlSpell1` + `Spell1Trail` | Verified when field 33 ≠ 0 |
-| 0x3eb | `_GfxControlCord_t` | `GfxControlCord` | Verified only when it can't link (field 0 bit 1 clear, invisible in stock) |
-| 0x3fa | `_GfxControlSparks_t` | `GfxControlSparks` | Unverified |
+| 0x3eb | `_GfxControlCord_t` | `GfxControlCord` | Verified (§5.14) |
+| 0x3ec | `_GfxControlFire_t` | `GfxControlFire` + `FireSim` + `Sprite2Type0Visual` | Verified (§5.25) |
+| 0x3f1 | `_GfxControlSmoke_t` (the port once called it Nano2) | `GfxControlSmoke` + `SmokeSim` + `Sprite2Type0Visual` | Verified (§5.26), wind mode 7 included (80011) |
+| 0x3fa | `_GfxControlSparks_t` | `GfxControlSparks` + `SparksSim` | Verified (§5.22), wind modes included (§5.24) |
 | 0x3ef/0x3f0 | `_GfxControlNano0_t` / `Nano1_t` | `GfxControlNano` | Approx |
 | 0x3fb | `_GfxControlTracer1_t` | `GfxControlTracer1` + `Tracer1Sim` | Verified |
 | 0x400 | `_GfxControlTracer4_t` | `GfxControlTracer4` + `Tracer4Sim` + `Cord4Strip` | Verified |
+| 0x401 | `_GfxControlTracer5_t` | `GfxControlTracer5` + `Tracer5Sim` + `Cord4Strip` | Verified (§5.23) |
 | 0x7d2 | `_GfxControlPlasma_t` | `GfxControlPlasma` + `PlasmaSim` | Verified |
-| 0x7d4 | `_GfxControlStars_t` | `GfxControlStars` + `StarsCase3` / `StarsRing` / `StarsLineSparks` / `StarsLimbSparks` | Verified for starTypes 3, 7, 8, 16, 19, 22; others Unverified |
+| 0x7d4 | `_GfxControlStars_t` | `GfxControlStars` + `StarsCase2` / `StarsCase3` / `StarsCase4` / `StarsSwirl` / `StarsCase10` / `StarsRing` / `StarsBodySparks` / `StarsLineSparks` / `StarsLimbSparks` | Verified for starTypes 2, 3, 4, 6, 7, 8, 10, 11, 15, 16, 17, 18, 19, 20, 22; others Unverified |
 | 0xbb9 | `_GfxControlDeformer_t` | `GfxControlDeformer` + `DeformerSim` + `CatMeshDeformHost` | Verified mode 1; modes 0/4 Missing |
 | 0x7d6 | `_GfxControlElectra_t` | `GfxControlElectra` + `ElectraSim` | Verified mode 1; modes 0/2 Missing |
 | 0x7db | `_GfxControlHighlight_t` | `GfxControlHighlight` | Unverified |
-| 0x7d5 | `_GfxControlSuns_t` | `GfxControlSuns` + `SunsSim` | Verified sunType 4; others Missing |
-| 0x7d1 | `_GfxControlSpiral_t` | — | Missing |
-| 0xbbb | `_GfxControlShield_t` | `GfxControlShield` + `ShieldSim` | Verified; Approx with flags 0x800 / 0x2000 / 0x10000 |
+| 0x7d5 | `_GfxControlSuns_t` | `GfxControlSuns` + `SunsSim` | Verified sunTypes 0, 1 and 4; others Missing |
+| 0x7d1 | `_GfxControlSpiral_t` | `GfxControlSpiral` + `SpiralSim` / `SpiralRibbon` | Verified (§5.27) |
+| 0xbbb | `_GfxControlShield_t` | `GfxControlShield` + `ShieldSim` | Verified (wave, ripple and host material included) |
 | 0xbda | `GfxControlShield2_t` | — | Missing |
+| 0xbd4 | `GfxControlBParticle2_t` | `GfxControlBParticle2` + `BParticle2Sim` + `StockColorCurve` | Verified (§5.16); flags 0x400000 / 0x1000000 not modelled |
+| 0xbcc | `GfxControlTParticle_t` | `GfxControlTParticle` + `TParticleSim` | Verified (§5.17) |
+| 0xbd0 | `GfxControlBParticle_t` | `GfxControlBParticle` + `BParticleSim` | Verified particle mode 8 (16 of 33 records, §5.18); other modes Missing |
+| 0xbd6 | `GfxControlGroundGrid_t` | `GfxControlGroundGrid` + `GroundGridSim` | Verified visual mode 0 (§5.19); modes 1/2 Missing |
+| 0xbd1 | `GfxControlEffectMesh_t` | `GfxControlEffectMesh` + `EffectMeshSim` | Verified (§5.20); Approx with the unmodelled flags, effects 1/2/7, or effect 4 on a model that isn't emissive white |
+| 0xbd3 | `GfxControlMParticle_t` | `GfxControlMParticle` + `MParticleSim` | Verified (§5.21) |
 | others | see `EffectTypeCatalog` | — | Missing / Approx |
-| 0xfa0, 0x3e9, 0x3ea, 0 | audio, buff placeholders, none | — | stock draws nothing |
+| 0x3e9 | `_GfxControlBPHFSM_t` | `GfxControlBuffFsm` | Verified |
+| 0x3ea | `_GfxControlBuffPlaceHolder_t` | `GfxControlBuffPlaceHolder` | Verified |
+| 0xfa0, 0 | audio, none | — | stock draws nothing |
 
 ### 5.2 Meta (0x7d7)
 Up to 10 child ids in fields 0-9, all spawned at construction. Field 9 = −1 means no child and an
-infinite parent.
+infinite parent. Slots 11, 12 and 13 (`100e5e4a` / `100e5e92` / `100e5eda`) forward the colour to every
+child, as Delay's (`100d8961` / `100d899a` / `100d89d3`) do to its one child.
 
 ### 5.3 Flare (0x3ed): `FlareType0Sim`
 ctor `100dd63c`, Process `100ddc6d`, loader `FUN_100dcedb`.
@@ -380,6 +486,22 @@ ctor `100f74ad`, Process `FUN_100f8491`, loader `FUN_100f72a9`, lazy init `FUN_1
 - Shared tail `100fc2f0`: terminating with nothing alive → ready.
 - Stars never creates a light.
 
+**Case 2** (`100f8864`, `StarsCase2`): a ball of 128 sparkles round the locator that spreads, shrinks
+and fades over 1.5 s, each in one of eight hues (hit 43220 of nano 246033).
+- Fields: 18-25 ramp, 28 size. Field 26 is loaded, but the lazy init (`100f80ba`) sets the duration to
+  **1.5 s** on the first call; a later SetDuration still lands.
+- Lazy init: each slot keeps a random point in the unit ball (`100d316a`, +0x48), sits at the locator
+  with size 1, and is visible for good.
+- Per call, `p = age/dur`:
+  - `k = √p·0.7 + 0.6`, and slot i sits at `locator + dir[i]·k` (it follows the locator)
+  - `n = _ftol((1−p)·15)` clamped 1..15; size `f28·(1−p)·20/span[n]` (ints at `0x102c5fa8`: 10, 6, 7, 7,
+    9, 11, 16, 19, 22…29); slot i shows frame `n − (i & 1)`
+  - colour j is the ramp at p with its start R, G, B replaced by palette j (floats at `0x102c5ee8`: pink,
+    yellow, magenta, cyan, blue, green, red, pale green); slot i takes colour `i & 7`
+- Expiry readies it at once. Terminating readies it after its next call (the tail at `100f8622`).
+- 18 records (13000, 25003, 43216–43231), all world mode, material 33, size 2.1; they differ only in the
+  end colour and attach (1000, or 3001 for 25003).
+
 **Case 3** (`100f89dd`, `StarsCase3`): the orbiting swarm.
 - Fields: 18-25 ramp, 28 size curve, 29 X/Z radius, 30 life ms.
 - Per call:
@@ -390,12 +512,49 @@ ctor `100f74ad`, Process `FUN_100f8491`, loader `FUN_100f72a9`, lazy init `FUN_1
 - The spawn call leaves the sprite record as it was.
 - Replayed at 30 Hz and interpolated.
 
+**Case 4** (`100f8c39`, `StarsCase4`): rising sparks, e.g. flames on the fists (nano 269470's buff).
+- Fields: 18-25 ramp, 28 size, 29 launch speed, 30 life ms. Timers start at -100 (lazy init shared
+  with case 3).
+- Per call, per slot:
+  - alive (`age < timer`): `v = v·0.95 − (0, −0.1, 0)`, then `p += v·0.1`
+  - frame `_ftol((timer−age)·64/life)`, clamped 0..63
+  - size `(2 − t)·f28`, colour the ramp at t
+- Spawn: ≤ 2 per call, not while terminating. `p` = locator (`1010640a`),
+  `v = f29·((0, 3, 0) + ball)`. The spawn call leaves the sprite record as it was.
+- On expiry it drains like case 3 (terminating + 5 s).
+- 38 records, 32 in world mode. At 30 Hz and 285 ms life that's ~18 sparks per locator, rising ~0.35 m.
+
+**Cases 6 and 11** (`100f90d7` / `100f9800`, `StarsSwirl`): sparks launched round a ring a metre below
+the locator that circle and climb (hit 47175 of nano 223386).
+- Fields: 18-25 ramp, 28 size curve, 29 ring radius, 30 life ms, 31 spring in hundredths (int).
+- Spawn: ≤ 2 per call. `r` = XZ unit vector (`100d3215`)·f29, `p = locator + r + (0, −1, 0)`,
+  `v = (r.z, 0.5, −r.x)`. The spawn call leaves the record as it was.
+- Alive, with `k = f31/100`:
+  - `v += k·(locator − p)`; case 6 zeroes the pull's y, so nothing slows the climb
+  - `p += v·step`, step 0.15 (case 6) or 0.1 (case 11)
+- Size `(t+0.2)·f28·(1−t²)`, frame `15 − _ftol(16t)` clamped 0..15, colour the ramp at t.
+- Case 6 keeps slot i alive `(i & 7)/9.5` s past its timer, with `t = (life + age − timer)/(life + that)`.
+- Both drain on expiry. All 204 type-6 and 80 type-11 records are world mode.
+- At 30 Hz case 6 climbs 2.25 m/s: 43372's column tops out ~3.5 m above the pelvis.
+
+**Case 10** (`100f9615`, `StarsCase10`): still sparkles on a sphere shell that swell and shrink, the
+whole cloud fading in and out over the duration.
+- Fields:
+  - 11 base size, 18-25 ramp, 26 duration
+  - **28 spark life in seconds** (copied over +0x16cc every call), 29 shell radius
+  - 30 non-zero → the 8-colour palette at `0x102c5f48`, 31 size swing in hundredths
+- Spawn: ≤ 5 per call. `p = locator + unit(100d3005)·f29`, still.
+- Per call, `p' = age/dur` and `e = 1 − (2p'−1)²`. Colour is the ramp at p' with alpha `_ftol(e·255)`,
+  or the palette entry for `(slot & 7)` under the same alpha.
+- Alive: `u = 2(timer−age)/life − 1`, size `(1−u²)·f31/100 + f11`, frame 0.
+- Ready at once on expiry (no drain).
+
 **Cases 7/8** (`100f9371`, `StarsRing`): 128 fixed directions.
 - Type 7 is a flat ring `(sin a, 0, cos a)`. Type 8 spirals over a sphere `(sin 30t·sin t, cos t, cos 30t·sin t)`.
 - `u = f31·age/dur`, `frac = u − floor u`, `s = √frac`.
 - Size `f28·s + f29`. Position `locator + dir·f30·0.01·s`. Colour is the ramp at frac.
 
-**Cases 16 and 19** (`100fa20f` / `100fa9e4`, `StarsLineSparks`): tracer spark lines. They're built
+**Cases 16, 18, 19 and 20** (`100fa20f` / `100fa781` / `100fa9e4` / `100fac3e`, `StarsLineSparks`): tracer spark lines. They're built
 from a hit location (ctor `100f7d4a` stores the hitloc id at +0x34 and a locator at the world origin).
 - Per call:
   - 15 spawns
@@ -405,10 +564,70 @@ from a hit location (ctor `100f7d4a` stores the hitloc id at +0x34 and a locator
   - colour is the ramp at t
 - Case 19 (the trail's head): `q = age/dur`, life `f30/1000·((rand()&0x7ff)·1e-4 + 0.9)`.
 - Case 16 (the whole line at once): `q = (rand()&0x7fff)/32768`, life exactly `f30/1000`.
-- No hit location → no spawns. On expiry both are just ready, with no drain.
-- Every record of both types has field 0 = 5 (world mode): 173 of type 19, 1 of type 16 (17100, the
-  tracer of ~1k nanos).
+- Case 18 (`100fa781`, 17300, the tracer of ~750 nanos): case 19 with a life of exactly `f30/1000` and
+  **10** spawns per call. It writes the life as `f30/1000·(1 − (i%17)/34)` for slot i, but the division
+  is an integer one, so the factor is always 1. At 30 Hz and 300 ms that's ~90 sparks at the head.
+- Case 20 (`100fac3e`, 45686, the tracer of 28597 Burning Bones): case 19's spawn with a life of exactly
+  `f30/1000` and 15 spawns per call. While alive the size is **f28 throughout** and the frame counts
+  **up**, `_ftol(t·63.99)` (64 cells, no clamp). Colour is the ramp at t.
+- No hit location → no spawns. On expiry all four are just ready, with no drain.
+- Every record of these types has field 0 = 5 (world mode): 173 of type 19, 1 of type 16 (17100, the
+  tracer of ~1k nanos), 1 of type 18 (17300), 19 of type 20 (17900-17911, 45680-45688, 45710-45717;
+  life 250 or 450 ms, material 9 or 33/39).
 - Handled as stock tracers (no SetDuration).
+
+**Case 17** (`100fa44b`, in `StarsLineSparks`): a helix of sparks round the hit-location line.
+- Spawn:
+  - 15 per call; `q = rand()/32768`
+  - `D = end − start` (x nudged by 0.001 under 1e-5); `a = FindPerpendicular(D)`, `b = unit(a × D)`
+  - `θ = √|D|·2q + 4·age/dur + f29`
+  - spark at `start + D·q + (b cos θ + a sin θ)·2q(1−q)`
+- Life `f30/1000`. Colour is the ramp at **age/dur**. Size and frame as case 19.
+- Three records with f29 = 0 / 2 / 4.1 make the three strands of nano 75347's tracer.
+
+**Case 15** (`100f9f5f`, `StarsBodySparks`): sparks thrown off the host's skin along its normals (43723,
+the hit of 28604 Electrifying Containment; 43618, the damage-shield buffs).
+- Fields: 18-25 ramp, 26 duration, 28 size (+0x16d4), 29 speed (+0x16d8), 30 life ms. Field 31 is loaded
+  but unused.
+- Lazy init (`100f811f`):
+  - The locator's dynel is cast to `n3VisualDynel_t` and asked for `GetCatMesh()`. With no CATRender
+    (+0x90), +0x16f0 is cleared and Process returns before the age moves; it tries again next call.
+  - Otherwise it keeps the render's +0x78 as a scale (+0x16ec) and registers the vertex callback
+    `100f740b` on the render (`CATRender_t::RegisterVertexProcessCallback`, the same hook the Deformer uses).
+  - Every timer is set to −100. The 30-entry tables are filled with position (0, 0, 0) (+0x48) and normal
+    (0, 1, 0) (+0x1b0), and the next entry (+0x16e8) is set to 0.
+- Vertex callback `100f740b`:
+  - randy31 (`100546a9`) calls it once per CAT group as the mesh is drawn, with the group's vertex count
+    and its base index in the mesh.
+  - Stride n = `GetTotalVertexCount() / 31`, at least 1. It walks the group from vertex `rand() % 30` in
+    steps of n. Each vertex is copied (skinned position and normal) into entry `(base + index) / n`
+    while that is below 30.
+- Per call:
+  - P = `Vehicle_t::GetGlobalPos` less the locator's local-mode position (`10106306`; zero in world
+    mode, which every record uses). Q = `n3Dynel_t::GetGlobalRot`.
+  - Alive (`age < timer`): `v *= 0.96`, `p += v·0.1`. The record takes p, and with
+    t = (life + age − timer)/life, size `(1.1 − t)·f28`, colour the ramp at t, frame 0.
+  - Due: up to **10** per call, none while terminating. From entry k = +0x16e8:
+    `p = P + Q(pos[k]·scale)`, `v = Q(normal[k]·f29)`, then k = (k + 1) mod 30. The record is left as it
+    was.
+  - The tables are only as fresh as the last draw, so the first call spawns from the defaults: 10 sparks
+    leave P (the dynel's feet) straight up.
+- Expiry drains like case 3 (terminating + 5 s). Terminating with nothing alive readies it (`100f90c1`).
+- Port:
+  - `CatMeshDeformHost` also takes readers (`ICatVertexReader`). In LateUpdate it bakes each CAT
+    SkinnedMeshRenderer and hands it over as one group, in renderer order.
+  - `GfxControlStars` keeps each sample in the dynel's frame (attach 0, without the template), so the next
+    call places it with the frame it has then, as stock does. Scale is 1: the baked vertices already
+    include the renderer's scale.
+  - Replayed at 30 Hz (§3.7 group B).
+- 14 records, all world mode, attach 2000, material 8:
+  - 43047-43052, 43627, 43628, 14800, 97023: 10-20 s, size 0.2-0.5, speed 0.5, life 350 ms. These are the
+    damage-shield buffs (29645 Immolation Shield, 29781 Spike Armor, …), under a Shield.
+  - 43723, 43726, 43759, 43766: 0.2-0.54 s, size 0.7-2.9, speed 4.2-8.2, life 850-1150 ms. These are
+    hits (28604, 28609 Freezing Surge, 45224 Lesser Coronet of Frost, …).
+- Seen live:
+  - 43723 on the target: 70 sparks in 0.2 s, flying out to ~6 m as they shrink, gone at 1.09 s.
+  - 43048 on the caster: ~110 orange sparks drifting about 0.4 m off the skin.
 
 **Case 22** (`100fb299`, `StarsLimbSparks`): sparks drawn onto the host's limbs (e.g. 43426, a heal hit).
 - Each call reads 12 attach points on the locator's dynel (`10106078`, ids at `0x102c5fe8`:
@@ -429,8 +648,8 @@ from a hit location (ctor `100f7d4a` stores the hitloc id at +0x34 and a locator
 - The lazy init sets the timers to 0. On expiry it drains like case 3.
 - All 37 records are world mode, attach 1000.
 
-Other starTypes are still the previous developer's approximations. By nano count, the biggest are:
-tracer types 17/18 (~1k nanos each) and hit types 6/10/11.
+Other starTypes are still the previous developer's approximations. By nanos they hold back (2026-09-22):
+5 (26), 13 (15), 9 (12), 14 and 12 (6 each).
 
 ### 5.9 Deformer (0xbb9) mode 1: `DeformerSim`, `CatMeshDeformHost`
 vftable `1016c6bc`, loader `100d823f`, Process `100d7caa`, vertex callback `FUN_100d776f`, slot 6 `100d7742`.
@@ -445,7 +664,7 @@ vftable `1016c6bc`, loader `100d823f`, Process `100d7caa`, vertex callback `FUN_
   vertex's source position.
 - Port:
   - Stock skins on the CPU and exposes a vertex callback (`CATRender_t::RegisterVertexProcessCallback`).
-    Unity skins on the GPU.
+    Unity skins on the GPU. Stars case 15 reads the same callback (§5.8).
   - So `CatMeshDeformHost` (`[DefaultExecutionOrder(20300)]`) BakeMeshes each SkinnedMeshRenderer,
     pushes the vertices, draws with `Graphics.DrawMesh` and sets `forceRenderingOff` on the original.
     BakeMesh works on the non-readable CAT meshes.
@@ -468,6 +687,53 @@ vftable `1016de8c`, loader around `100fd16a`, Process `100fc425` (type switch on
   `B = (−cos a·h/2, sin a·w/2)` in screen axes, corners `P ± A ± B`, texture u along A and v up along B.
   The port uses `Quad.UseAxes`.
 
+**Suns sunType 0** (`100fcea7`, `SunsSim.StepHalo`): 8 sprites stacked 2 above the locator, e.g. the glow over
+a blessed character.
+- Per call, q = age/dur and envelope e = 1 − (2q − 1)⁴ (0 at both ends, 1 in the middle).
+- Sprite i (0..7) sits at `locator + (0, 2, 0)`:
+  - size `(f28 + i·f29)·e`, width and height alike
+  - turned by `(i − 4)·age/2`, so the layers spin at different rates and in both directions
+  - colour: its entry of the D3DCOLORs at `0x102c60a0` (the same 8 as Stars case 10's palette),
+    with alpha cut to 0xc0
+  - frame 0
+- Terminating readies it after the call. It depends on age alone, so it runs every frame (§3.7).
+- 2 records:
+  - 43768: pelvis attach, 180 s, sizes 0.6 + 0.25i. It's the buff of 166 nanos: the Blessed by the
+    Firefly / Wolf / Spirits / Phoenix / Frog / Bear / Eagle lines, and Saved from False Redemption's hit.
+  - 14400: 10 s, sizes 1 + 0.25i. All four slots of 269708 Blessed by the Ancients, and NCU Overload's hit.
+- Seen live on 269708: a bright layered glow 2 m above the pelvis (y 2.95), growing to 1–2.75 m.
+
+**Suns sunType 1** (`100fcbeb`, `SunsSim.StepRing`): a ring of 18 sprites round the locator, e.g. the
+lights circling a stunned head.
+- Dynel ctor `100fd851`. The locator takes fields 1-7 through the shared `100d2f58` (see §9).
+- Loader offsets: 26 duration, 28 size (+0x62c), 29 spin (+0x630), and fields 30/31 (+0x634 / +0x638)
+  read as flags.
+- Per call, q = age/dur:
+  - x = q, or 1 − q with field 30 set. In that case, below 0.2 it's eased to x = 1 − (1 − x)·(5x)²⁷.
+  - w = 1 − x before the easing.
+  - Alpha `_ftol((1 − x²)·255)`, radius `s = 1 − w²`.
+  - Sizes 0.9 and 1.1 × f28 × s. With field 31, both also gain f28·(1 − x)⁸, and the radius stays ≥ 0.3.
+  - Pair k = 0..8: θ = 2k·6.28/18 + age·f29, at `locator + s·(sin θ, 0.1·sin(4·age + 3θ), cos θ)`.
+    - The first sprite is turned by 2·age.
+    - The second is turned by −1.5·age and shifted 0.05·s along the screen's x.
+    - Each takes palette colour 2k or 2k + 1 (8 D3DCOLORs at `0x102c60c0`) under that alpha, frame 0.
+- It follows the locator's world-mode position every call. A lost locator, or slot 6, terminates it,
+  and the tail (`100fcfae`) readies it after that call. Expiry readies it at once.
+- It depends on the age alone, so the port runs it every frame, including the arming call at age 0
+  (§3.7), rather than on type 4's 30 Hz replay.
+- Slot 13 (`100fd09c`) sends the packed colour to both slots 11 and 12, unlike Fire's fade to alpha 0.
+- 2 records, both used as buffs or hits:
+  - 43307: head attach 1006, 6 s, size 1.8, spin 9.25, field 31. It's the buff of 17 nanos
+    (125772 Stunned by Brawl, Power Bolt, Massive Detonation, …).
+  - 43068: pelvis attach, offset x −0.6, 4 s, size 1.3, fields 30 and 31. All four slots of
+    276012 Butterfly Kick.
+- Seen live on 276012 Butterfly Kick (43068): the ring closes from 1.0 to 0.3 m, and alpha rises then
+  drops to 0 in the last fifth. It sits 0.6 m above the pelvis, because the −0.6 x offset runs along
+  the pelvis bone's x axis, which points down.
+- Seen live on 125772 (3 s buff):
+  - The ring sits on the head at 1.5 m and opens from 0.3 to 0.98 m while fading from alpha 248 to 63.
+  - The colours are soft, and it's gone when the buff ends.
+
 ### 5.11 Shield (0xbbb): `ShieldSim`, `GfxControlShield`
 vftable `1016d9a4`, loader `100edeed`, visual build `100edf78`, Process `100edcf4`, slot 6 `100edc9c`.
 DisplaySystem **GfxVisualShield**: ctor `1001ce93`, vertex callback `1001cd09`, vertex build `1001c94f`,
@@ -480,7 +746,8 @@ draw `1001c8a5`.
   - 18 UV mode, 19/20 UV scale, 21 fade-in rate, 22 wave speed, 23 fade-in limit, 24/25 UV scroll
   - 26 pulse mode, 27/28 pulse range, 29 fade mode, 30 fade time, 31
 - Flags: 0x400 blend (passed to the base visual at +0x190; read as additive), 0x800 / 0x1000 wave,
-  0x2000 ripple, 0x8000 render priority, 0x10000 the host mesh's own material.
+  0x2000 ripple, 0x8000 render priority, 0x10000 the host mesh's own material. Nothing in the Shield reads
+  0x4000 (set on 12350).
 - Per vertex:
   - position `p + n·f11`
   - UV mode 0 `((u + f24·T)·f19, (v + f25·T)·f20)`; 1 cylindrical `atan2(x, z)`, where v also scrolls by f24; 2 planar
@@ -490,9 +757,34 @@ draw `1001c8a5`.
   while the host is below 0.95 opacity (not ported).
 - Port: the control bakes each SkinnedMeshRenderer every frame, offsets it, sets the UVs and draws it
   through `EffectBillboardBatch.MeshDraw` in one colour.
-  - Per-vertex alpha (flags 0x800 wave, 0x2000 ripple) isn't supported: 11 of 69 records use them, and
-    they're drawn with the uniform fade (coverage: Approx).
   - The shield texture is set to Repeat.
+- **Per-vertex alpha** (vertex build `1001cab2`..`1001cd00`), ported 2026-09-22:
+  - Wave, 0x800 (visual +0x1ac; the Gamecode build `100ee0e3` sets it with the point, fields 12-14, at
+    +0x1b0): the fade-in's sine takes `x = f21·T − dist·f22` instead of `f21·T`, still clamped to
+    [0, f23]. dist is measured from the pushed-out position: `|p − point|`, or with 0x1000 (+0x1ad) the
+    offset along fields 15-17 set to length 1 (+0x1bc, `100439aa`), `d.y·dir.y + dir.x·d.x + d.z·dir.z`.
+  - Ripple, 0x2000 (+0x1ec, the ctor's 5th argument): after the fade-in, each vertex's alpha byte is
+    scaled by `sin²(10x + 10y + 10z + 3T)` over its source position (the CATTriVertex_t, stride 0x44).
+    The port uses the bind positions (`CatMeshSourceVertices`), the same assumption as the Deformer.
+  - The shell's renderers sit in the dynel's own frame (checked live), so baked positions are stock's
+    model space.
+  - Drawn with the vertex-colour effect shader (`Hidden/LostEden/EffectVertexColor`, §6): field 10's RGB
+    and the per-vertex alpha on each vertex.
+- **Host material**, 0x10000 (`100edfd6`): the shell takes `CATRender +0x1d8[0]` instead of field 9's
+  material. randy31 keeps that list by the CAT file's material index (`10057a30`, sized from the mesh's
+  material count), so it's material 0. The loader now records each submesh's `MaterialId` on
+  `CatMeshSourceVertices`; the shell takes the texture of the submesh using material 0 (on the GfxTest
+  body, texture 8850). A body where no submesh uses entry 0 takes its lowest entry.
+- 0x8000 only calls `RVisual_t::SetRenderPriority(3)` and sets +0x1a4 = −1 (else 1). Not ported; it
+  changes draw order only.
+- The records that use them: 43722 (0x2400, ripple, dark blue, 0.7 s: the hit shield of 60 nano uses,
+  e.g. 28609 Freezing Surge), 43761 (the same, 3), 12351 (0x1a400, host material + ripple + 0x8000, 18)
+  and 12350 (0x16400, 7). The wave records (32201-32204, 0xc00) are used by no nano.
+- Seen live:
+  - 43722 on 28609's target: a pale icy shell ~0.3 m out, fading in over 0.7 s, patchy where the
+    ripple bands cross it.
+  - 12351 on the caster: a ghost outline in the host's own texture. Its 615 vertices carry alpha from 0 up
+    to the uniform value, averaging about half.
 
 ### 5.12 Sequencer (0xbbc)
 Process `100ecb95`, slot 6 `100ecb55`.
@@ -506,7 +798,70 @@ Process `100ecb95`, slot 6 `100ecb55`.
 - The port's `GfxControlSequencer` follows this. It ignores SetDuration and passes `IgnoreWatchdog` on to
   its children.
 
-### 5.13 Electra (0x7d6) mode 1: `ElectraSim`
+### 5.13 Buff FSM (0x3e9) and BuffPlaceHolder (0x3ea)
+The catalog used to call these "not rendered". They draw nothing themselves, but they spawn effects that do.
+- **BPHFSM** (`GfxControlBuffFsm`; vftable `1016c444`, loader `100d3f12`, Process `100d4066`)
+  - Fields: 10/11 effects A/B, 12-15 / 16-19 start/stop colour, 20 interval, 21 count.
+  - A countdown runs out every f20 seconds. Then, if 5 s of game time have passed since any BPHFSM
+    fired on this host (a shared per-dynel map, `0x102ea67c`), it creates A and B on the host with the
+    colours pushed in. Otherwise it retries in `rand()/16384` s.
+  - The count counts down and it's ready at 0.
+  - Slot 6 readies it. Slot 8 alternates between setting the duration and the interval.
+- **BuffPlaceHolder** (`GfxControlBuffPlaceHolder`; vftable `1016c4fc`, loader `100d54ca`, dynel ctor
+  `100d5d20`, init `100d5834`, Process `100d52c3`, colour push `100d55d9`)
+  - Fields: 1-7 locator, 10 point child, 11 dynel child, 12-19 colours, 21 radius, 22 start phase,
+    23 rate, 26 per-body table.
+  - Per-body table (`EffectBodyTable`): on a character host, the (offset z, radius) pair at
+    `(Breed−1)·12 + (Sex==3 ? 6 : 0) + Fatness·2` replaces field 3 and field 21. The ctor also takes
+    Scale (stat 360) / 100. Radii run 0.09 (female heads) to 0.13 (Nanomage, Atrox).
+  - Both children belong to the BuffPlaceHolder (`CreateGfxControl`, not the handler).
+  - Child A (a point effect) starts at `pos + Z·sin·R + X·cos·R`. Child B is created with `(id, dynel, 0)`.
+  - Process: `acc += rate·dt`, and the phase follows in 0.45 rad steps. Each step:
+    - child B gets `UpdatePosition((cos, sin, 0)·R·scale)` and runs its Process
+    - then child A gets `pos + Y·sin·R + X·cos·R` and runs its Process
+    - So the children advance once per step, each by a whole frame's delta. The port uses one stock
+      frame (`StockProcessHz`), by decision; see §9 "BuffPlaceHolder child delta".
+    - A negative rate never steps (`_ftol` gives a negative count).
+  - Slots 11/12 store the colour and push it into both children. A BPHFSM's colours therefore replace
+    the record's: nano 25988's buff is white, not the record's violet.
+  - Slot 6 readies it. Release deletes both children.
+- Coverage walks fields 10/11 of both.
+
+### 5.14 Cord (0x3eb): `GfxControlCord`
+vftable `1016c564`, loader `100d60d5`, dynel ctor `100d67b1`, visual build `100d627a`, Process `100d5f5a`,
+slot 4 `100d69d8`, link append `100d6323`. DisplaySystem **GfxVisualCord4** `(material f9, null,
+additive, no life-v)`, with a 32-link `Cord4CircularLinkList` (`GetNew 1000e9b7`, `GetFirst`/`GetNext`
+newest→oldest, purge `1000e9f9` after the render).
+- Fields: 0 flags, 8 duration, 9 material, 12 link width, 16-19 start colour (A,R,G,B), 20-23 stop colour
+  (stored, never read), 35 link life, 36 per-body table (offset z only). Rate, cone and magnitudes go
+  unread.
+- **Links come only from slot 4, in local mode (field 0 bit 1).** While `duration < 0` or
+  `age < duration − life`, `UpdatePosition(p)` appends a link with:
+  - point = velocity = p (the same pointer is pushed twice)
+  - width f12, the start colour packed as `fistp(c·255 − 0.49999)`, life f35
+  - Without bit 1, slot 4 is the locator's `101064f7`, which does nothing on an attach, so the Cord
+    never draws. RunFunction never calls slot 4, so a Cord draws only when its owner feeds it; all 21
+    local Cords sit under BuffPlaceHolders, except one under Nano3 9010.
+- **Process** (the arming call too):
+  - The visual takes the locator's position and turn, so link points are in the locator's frame and
+    ride along with the head.
+  - Each link, newest first:
+    - `p += v·clamp(dt, 0.01, 0.025)`, so the trail spreads outward
+    - `life −= dt`
+    - alpha byte = `_ftol(life / f35 · 254)`
+- Slot 6 sets duration = age + life. If the locator is lost, it does the same.
+- Drawing is `Cord4Strip` with v = 0.25; vertices carry each link's ARGB. The port draws the whole
+  ribbon as one strip with those vertex colours (vertices 2k and 2k + 1 are link k's).
+- `_GfxLocator_t` notes (`10106be2`, dynel kind 4):
+  - `+0` = field 0 bit 0 (update each frame); `+8` = bit 1 (local mode)
+  - Local-mode accessors (`10106306` pos, `10106346`/`377`/`3a8` axes, `101062d5` matrix) return the
+    locator's own values, or zero/identity without bit 1.
+  - World-mode accessors (`1010640a`, `10106439`/`46a`/`49b`, `101063d9`) are the reverse.
+  - The template rotation (fields 4-6) and offset (fields 1-3) apply on every update (`10106193`).
+    The port applies them (`EffectLocator.WithTemplate`) to every ported type whose dynel ctor passes them
+    (`EffectHandler.TakesLocatorTemplate`, §9).
+
+### 5.15 Electra (0x7d6) mode 1: `ElectraSim`
 vftable `1016cbbc`, loader `100d97ba`, visual build `100d98e0`, Process `100d9de5` (mode dispatch:
 0 → `100da452`, 1 → `100da0c0`, 2 inline).
 - Fields:
@@ -530,6 +885,435 @@ vftable `1016cbbc`, loader `100d97ba`, visual build `100d98e0`, Process `100d9de
   the second ends it. Slot 6 only stops the spawns.
 - All 21 Electra records sit at attach 1000 (pelvis) in world mode; 19 are mode 1.
 
+### 5.16 BParticle2 (0xbd4): `BParticle2Sim`, `GfxControlBParticle2`
+vftable `1016effc`, loader `1010b196`, init `1010bf63`, Process `1010b499`, slot 6 `1010af68`. Each particle
+owns a DisplaySystem **GfxVisualBParticle2** (ctor `1000b432`, geometry `1000b4fc`). The base is the
+"B" particle family: `+0x8c` locator, `+0x94` emitter, `+0x20` visible, `+0x28` terminate.
+- Fields (read in order from 9):
+  - 0 flags, 8 duration, 9 mode (0 burst / 1 emitter), 10 material, 11 count
+  - 12 emit interval, 13 spawn cube half-size, 14 drag, 15 spawns per interval, 16 gravity y
+  - 17/18, 19/20, 21/22 velocity ranges; 23/24 spin range in degrees (stored as radians)
+  - 25/26 life range, 27/28 size range, 29 bounce, 30 growth, 31 frame speed, 32 frame mode (1 loop,
+    2 hold, 3 ping-pong, sharing one speed across particles), 33 aspect, 34 → visual +0x1a4
+  - 35.. a keyed colour curve (`StockColorCurve`: count, then (time, D3DCOLOR) pairs; `1011678b` blends
+    with randy31 `Color_t::Interpolate`, w = `(int)(f·256)`, bytes `(a·(256−w) + b·w) >> 8`; t before the
+    first key or at/after the last gives the last key)
+- Flags:
+  - 0x100 swaps the quad's UVs, 0x200 additive, 0x400 emitter on the ground
+  - 0x4000 no random start angle, 0x8000 bounce
+  - 0x10000 respawn at ground + locator offset y, 0x20000 random start frame, 0x100000 stick to the emitter
+  - 0x200000 live until terminated, 0x800000 fade 3-6 m above the ground
+  - 0x400000 time-of-day fade and 0x1000000 host body scale are not modelled.
+- Spawn draws, in order: size, life, frame, position (emitter ± cube·f13), velocity, then
+  acceleration (0, f16, 0), angle (r·2π), spin. Velocity and acceleration go through the locator's turn
+  (`1013bc38` inverse, times the scale, then `1010aef4` rows·v). Draws come from the client's shared R250
+  (`1013dec9` on `0x102ead20`); the port uses any uniform.
+- Per call: `life −= dt`; dead particles hide.
+  - Otherwise:
+    - bounce
+    - `p += v·dt`, `v += a·dt`
+    - `angle += spin·dt`
+    - `size += (f30−1)·size·dt·100`, `v += v·(f14−1)·dt·100`
+    - colour = curve(1 − life/total)
+    - frame advance
+  - Mode 0 is ready when nothing is alive. Mode 1 respawns up to f15 dead particles once f12 seconds have
+    gathered, while `age < duration − f26`.
+- Emitter and turn come from the local-mode accessors (field 0 bit 1): without it the world origin. Slot 6
+  only raises the flag; without 0x200000 the next Process ends it. At the duration everything goes at once.
+- Visual: a quad on the camera's right/up turned by the angle about the view axis, half-width size,
+  half-height size/f33. u runs from the right edge to the left and v top to bottom (0x100 swaps them).
+- Ground height (`100d33f3`, the playfield under a point) is a downward raycast in the port
+  (`EffectGround`), NaN when there's nothing.
+- The base control ctor `100d2a4b` defaults the duration to **60 s**. Its `+0x20` flag is visibility,
+  starting 1; the base Process's 60 s counter only runs while a control is hidden. The port's blanket
+  60 s watchdog is its own.
+
+### 5.17 TParticle (0xbcc): `TParticleSim`, `GfxControlTParticle`
+vftable `1016f9dc`, loader `10112ccd`, visual build `10112b4e`, Process `10113101`; DisplaySystem
+**GfxVisualTParticle** (ctor `10029de9` with 21 arguments, ProcessParticles `10029c81`, geometry
+`1002a350`). The particles live in the visual; the control only animates colours and widths.
+- Fields:
+  - 0 flags, 8 duration, 9 material, 10 mode, 11 count, 12 radius, 15 trail time, 16 gravity y
+  - 17/18, 19/20, 21/22 velocity ranges, 32 spin range (degrees; kept, never drawn)
+  - Colours: 23/25/27 tail at start / middle / end, 24/26/28 head.
+  - 34 = 4 eases the blends as t⁸ (`1003dfc0` integer power).
+  - Half-widths: 35/37/39 tail, 36/38/40 head.
+- Flags: 0x100 swaps UVs, 0x200 additive, bit 1 places the visual on the locator (else the origin).
+- Spawn by mode:
+  - 0: `p = unit(cube draw)·r·radius`, v in the box, `a = (0, g, 0)`
+  - 1: tails only at `(2r−1)·radius`
+  - 2: angle a, `p = (sin a·R, r·600, cos a·R)`, `v = (sin(a+2)·vx max, vy max, cos(a+2)·vz max)`
+  - 3: zero with `v.z = 1`
+- ProcessParticles: modes 0/2 `p += v·dt; v += a·dt`, then `tail = p − v·trail`.
+- The control: with `u = time/duration` (ready past 1), colours and half-widths blend start→middle over
+  `2u` and middle→end over `2u − 1`.
+- Drawing: two crossed quads per streak, on `side2 = |side1 × d|` then `side1 = |d × up|`, where
+  `d = tail − head`. Head pair in the head colour and width, tail pair in the tail's.
+- The port draws each streak as one quad with the head and tail colours on its vertices, all streaks
+  in one draw.
+
+### 5.18 BParticle (0xbd0) mode 8: `BParticleSim`, `GfxControlBParticle`
+vftable `1016efa4`, loader `1010a644`, visual build `1010a412`, Process `1010a909`. The particles live in
+DisplaySystem's **GfxVisualBParticle** (27-argument ctor `10009938`, ProcessParticles(dt, u) `10008bce`,
+per-particle draw `1000a70f`).
+- The control:
+  - It keys colour (fields 25/26/27) and width/height (31-36) over `u = time/duration`: start→middle
+    before field 40 (0.5 when negative), middle→end after field 41, stored as `1 − f41`.
+  - With no duration u is −1 and it holds the middle key.
+  - Field 13 = 4 eases the sizes as t⁸.
+  - Ready past u = 1.
+- Visual fields: 12 spawn cube, 13 motion (0 ballistic, 1 orbit), 14 quad shape, 15 life policy,
+  16 delay rate, 17 life rate, 28-30 camera-distance fade, 38/39 frame speed/mode, 42/43.
+- **Mode 8** (the only one ported). All 16 records have motion 0, quad 0, policy 0, frame mode 1.
+  - Spawned with life 999 (a sentinel) and delay `r·0.2` (particle 0: 0).
+  - A particle still at 999 loses `f17·dt` off its life, so it leaves the sentinel on the first call.
+    Otherwise the delay drops by `f16·dt`; below 0 the particle pops with life `r·0.5 + 0.5`, delay 999,
+    angle `r·360` and a new cube point. From then the life runs down at `f17` per second.
+  - Drawn while `0 < life ≠ 999`, size and alpha × `sin(life·π/2)`. The first call's `999 − f17·dt` gives a
+    one-frame glitch in stock, which the port keeps.
+  - It never ends by itself, only by the duration or TerminateGracefully (base slot 6: ready).
+- The other modes (0-7, 9-13; ctor table `0x1000a6db`) are not ported.
+
+### 5.19 GroundGrid (0xbd6) mode 0: `GroundGridSim`, `GfxControlGroundGrid`
+vftable `1016f5ac`, loader `1010ebbd`, init `1010e951`, Process `1010e704`; DisplaySystem
+**GfxVisualGroundGrid** (Update `100164b4`, SetAlpha `1001692d` → D3D texture factor).
+- An N×N grid (field 10) at spacing f18, laid over the ground under the emitter plus f19. With flag 0x800
+  it is laid once, otherwise every call. Flag 0x20000 picks a random turn after the first lay, so a
+  once-laid grid never uses it.
+- Alpha: `age/f14` while fading in, `1 − (age − (dur − f15))/f15` while fading out, else 1.
+- UV: `(j+c)/(N−1)·uScale + uOff` and `(i+c)/(N−1)·vScale + vOff`, with `c = −(N−1)/2` under flag
+  0x8000. Scale and offset change at fields 21/22/25/26 per second.
+- Visual mode 0 is a uniform colour (f16). Modes 1 (diamond fall-off) and 2 (per-vertex table), and the
+  flag 0x2000/0x4000 waves, are not ported.
+- 71370 (in 71016) is a 200 × 200 m `groundhit.png` scorch, 60 s.
+
+### 5.20 EffectMesh (0xbd1): `EffectMeshSim`, `GfxControlEffectMesh`, `EffectModels`
+vftable `1016f0d4`, loader `1010caf8`, init `1010d457`, Process `1010ce9c`. One ABIFF model drawn by a
+DisplaySystem `VisualMesh_t` (imports `SetMesh`, `SetPosition`, `SetRotation`, `SetScale`,
+`SetTransparency`, `SetRenderingEffect`).
+- Fields: 0 flags, 8 duration, 9 motion, 10 model, 16-18 velocity, 19-21 acceleration, 22-24 spin axis
+  (zero = up, then normalised), 25 angle, 26 spin, 27 spin acceleration (radians), 28 scale, 29 its rate,
+  30 that rate's rate, 31 rendering effect, 32.. a float curve (`StockFloatCurve`: the colour curve's
+  loader `101166f2` in mode 0, evaluated by `1011689d`, linear, out of range = last key). Fields 11-15 are
+  loaded but unused: init zeroes the offset that 13-15 fill.
+- Model: a 28-name switch (`0x1010d7f6`), loaded as RDB mesh type 1010001 by name
+  (`InstanceManager_t::GetTypeInstance`). An index past 27, or a name the database doesn't have, is ready
+  at once. 1 (`EP03_mech_heal_effect.abiff`) is not in the database, so 71123 draws nothing in stock
+  either.
+- Per call: `time += dt`; alpha = curve(time / duration) when that is ≥ 0, else 1 (a negative duration
+  holds 1). Motion 1 bobs: `offset.y += sin(2π·age/duration)·v.y·dt`; otherwise `offset += v·dt`, then
+  `v += a·dt`. Angle, spin, scale and its rate step the same way, value before rate.
+- Placement: the locator's local-mode position (the ground under it with 0x100) plus the offset. The turn
+  is the axis-angle quaternion times the locator's turn (`1007ca22`). Every record spins about up on a
+  yaw-only host or not at all, so the order never shows. The port writes locator turn × spin.
+  - 0x400 turns the model's up axis to the camera instead (shortest arc, `100ad4f8`).
+  - 0x800 swaps the alpha for a camera-distance ramp: 0 under 5 m, (d−5)/10 to 10 m, the curve from 10 m.
+- Rendering (`VisualMesh_t::SetRenderingEffect`, DisplaySystem `1006ce7d`, per node `1006c61d`):
+  - 4/5/6 (TransparentDeltaState, Transparent2, Transparent4X) all blend SrcAlpha/One, with no Z-write,
+    no fog, no culling, and texture × diffuse. Nodes get render priority 6.
+  - 4 has D3D lighting on; 5 and 6 are unlit (their states are identical).
+  - Other effects keep the model's own material. 1 is Holo, 2 Space, 7 ZBias, 3 nothing.
+  - The port draws 4/5/6 as additive `MeshDraw`s of the model's diffuse texture. For 4 the colour is
+    clamp(emissive + diffuse) (full light); 5/6 are white. Alpha is transparency (× opacity for 4).
+  - Own-material models use `AbiffMaterialFactory`'s HDRP Lit material. Below full alpha they use a
+    transparent clone with `_BaseColor` alpha.
+- 71028 (in 71016, also 71113 and 97020): `EP03_blast_wave_effect.abiff`, a flat dome of radius 1.5
+  (the submesh base rotation lays it flat), effect 4, scale 1 + 120 t − 60 t² (~62× at 1 s), alpha
+  0 → 1 at 0.1 → 0 at 1 s. Its material is emissive (1,1,1), so full light is exact.
+- Not modelled (the records are Approx): host body scale 0x200 (`n3VisualDynel_t::GetBodyScale`),
+  Atrox models and ×1.45 size (0x10000 / 0x8000, breed stat 4 = 4), the vehicle-direction fade
+  0x2000/0x4000 (`Vehicle_t::GetDir`), animated models 0x1000, the dynel-bound variant
+  (+0xd4 = 2), and the model's own effect attractors (`n3GenericEffect_t`).
+
+### 5.21 MParticle (0xbd3): `MParticleSim`, `GfxControlMParticle`
+vftable `1016f674`, loader `1010f5ee`, init `10110229`, Process `1010f92b`. N debris models, each its
+own `VisualMesh_t` with no rendering effect (the model's own material).
+- Fields:
+
+  | Field | Meaning |
+  |---|---|
+  | 0 | flags |
+  | 8 | duration |
+  | 9 | mode: 0 one burst, 1 emitter |
+  | 10 | read and dropped |
+  | 11 | count N |
+  | 12 | emit interval |
+  | 13 | spawn cube half-size |
+  | 14 / 15 | fade-in / fade-out, fractions of life |
+  | 16 | gravity (y) |
+  | 17-22 | velocity x, y, z ranges |
+  | 23-25 | spin axis |
+  | 26 / 27 | spin range, degrees/s stored as radians |
+  | 28 / 29 | life range |
+  | 30 / 31 | scale range |
+  | 32 | bounce b |
+  | 33 | model count M |
+  | 34.. | models: indices into the first ten EffectMesh names (`1010f4c0`) |
+
+  A zero axis becomes three R250 draws at load, shared by every particle. Flags: 0x100 puts the emitter
+  on the ground, 0x800 enables the bounce.
+- Init: each particle takes model `rand() % M`, from msvcrt's rand. The first Process call spawns them
+  all in draw order: scale, life (= total), position (emitter + (2r−1)·f13 per axis), velocity, angle
+  (r·2π), spin. Acceleration is (0, f16, 0); there is no locator turn and alpha starts at 0. Mode 1 keeps
+  only particle 0, at life = f29.
+- Per call, for each particle: `life −= dt`; at ≤ 0 it's hidden. Then:
+  - With 0x800 and ground ≥ y: `v.x −= b·v.x·dt·100`, `v.y = −b·v.y·dt·100`, `v.z −= b·v.z·dt·100`,
+    and spin = r-spin·|0.1·v.y|·b.
+  - Then `p += v·dt`, `v += a·dt`, angle += spin·dt.
+  - Alpha with x = 1 − life/total: x/f14 below f14; 1 − (x − (1−f15))/f15 past 1 − f15; else 1.
+  - Mode 0 is ready once nothing is alive.
+  - Mode 1 respawns one dead particle per call, turned by the locator, once f12 seconds have gathered
+    while age < duration − f29 (never with a negative duration).
+- The bounce depends on the frame rate: restitution is 100·b·dt. See §9 "MParticle step".
+- 71045 (in 71016): 80 × `EP03_RUBIKA_asteroidbig2.abiff` (140 m across) at scale 0.006-0.012
+  (~1-1.7 m chunks). Velocity ±80 / 10-40 / ±80, gravity −50, life 3-4 s, fade over the last half.
+  Its duration is 1 s, so the base ends it (and hides every chunk) at 1 s, before any of them fade.
+
+### 5.22 Sparks (0x3fa): `SparksSim`, `GfxControlSparks`
+vftable `1016db8c`, loader `100f1758`, init `100f1939`, spawn `100f1bbe`, Process `100f24c8`. It drives
+DisplaySystem's **GfxVisualSprite2Type0**, not Flare's visual. The visual's pool and ProcessSprites are
+`Sprite2Type0Visual`, shared with Fire (§5.25).
+- Fields:
+  - 0 flags: 0x200 readies once the pool is empty; 0x800 alpha-blends instead of additive
+  - 8 duration, 9 material, 10 sprites per second
+  - 12/13 width start/end, 14/15 height start/end
+  - 16-19 / 20-23 start/end colour A,R,G,B
+  - 24 `rand()` mask gating a spawn call
+  - 25/26 angle a, 27/28 angle b, 29/30 speed
+  - 31 burst, 32 speed scale
+  - 34/35 life
+  - 36/37 wind band bottom/top above the emitter, 38 wind mode, 39 wind scale
+  - 40 gravity (y, m/s²)
+  - 11 and 33 are loaded but unused.
+- Init:
+  - The pool holds `max(_ftol(f10·1.5·f35), f31)` sprites, and the spawn counter starts at −f31.
+  - Blend comes from the ctor argument `!(flags & 0x800)`.
+  - Field 40 goes to the visual (+0x22c).
+- Per call:
+  - If `(rand() & f24) == 0` and (duration < 0 or age < duration − f35), it spawns until the counter
+    reaches `_ftol(f10·age)`. A rate-0 record is one burst of f31 on the first call.
+  - Then ProcessSprites(dt, the handler's wind).
+- Spawn draws from R250 in this order: a, b, speed s, life, wind scale `(0.9r + 0.1)·f39`.
+  - `v = (X·cos a·cos b + Y·sin b + Z·sin a·cos b)·s·f32`, where X/Y/Z are the locator's world axes
+    (`10106439` / `1010646a` / `1010649b`; unit axes in local mode).
+  - The sprite starts at the locator's world position (zero in local mode).
+  - Width, height and colour ramp to their end values over the life. The frame runs from the
+    material's first cell to its last.
+- ProcessSprites:
+  - `life −= dt`; below 0 the sprite dies.
+  - Wind by mode (field 38), with h = (y − bottom)/(top − bottom) clamped to 0..1 (the band is fixed at
+    spawn from the emitter's height). The drift is `wind·f·windScale·dt`, where f is 1 (mode 1), h (2),
+    h² (3), (h² + h)/2 (4), 1 with `y += 1.5·dt` (5), h with a random walk `x, y += (r − 0.5)·dt` (6),
+    or 0 (8+).
+  - Mode 7 (`1002682b` / `10026a03`) steers instead of drifting:
+    - Before the move, v = dir·(band top), with the band top acting as a speed.
+    - After gravity, dir = v at length 1.
+    - The sprite keeps a constant speed along a path that bends.
+    - dir (+0x18) is drawn by every NewSprite as (2r − 1, 0.89r + 0.1, 2r − 1) from the visual's own
+      random source. A mode-7 NewSprite sets the visual's gravity to its band bottom.
+    - 80011 (Smoke): band −8.8 / 10.5, so debris puffs fly at 10.5 m/s and arc back down.
+  - Then `p += v·dt`, `v.y += g·dt`.
+  - Colour, frame and size step, and the colour is FISTP-packed (`c·255` as a float, − 0.49999).
+- Slots: 6 sets duration = age + f35, 8 sets duration, 11/12 set start/end colour for later spawns.
+  Stock Sparks has no light (the old emitter port had one).
+- The wind is the effect handler's GetWind (§5.24). 14 of the 42 records use mode 4: black (43668,
+  43675–43680) and white (43689, 43696–43701) sprite plumes at 0.5–8 per second, e.g. the Omni-Tek
+  Rank 1–7 Effect buffs (one step per rank).
+- 2710 (nano 45889's hit): a burst of 16 red 0.3 m sprites at 1.5–3 m/s in every direction, falling at
+  9.8 m/s², fading out in 0.25–0.5 s, alpha-blended.
+
+### 5.23 Tracer5 (0x401): `Tracer5Sim`, `GfxControlTracer5`
+vftable `1016e0a4`, loader `101003f9`, init `1010077d`, build `101004b4`, Process `10100aa3` → update
+`1010065a`. It's built from a hit location (`10100b82`), with start and end read once.
+- Fields: 0 flags, 1-7 locator, 8 duration, 9 material, 10 speed, 11 streak length, 12 width, 13-16 colour
+  A,R,G,B (FISTP-packed). 17-19 are read but unused.
+- Init:
+  - A line shorter than 0.01 is ready at once.
+  - **Speed is capped at 5 × the length**, so the flight lasts at least 0.2 s.
+  - The locator matrix is the same as Tracer4's: rows cross(dir, p), dir, p, start.
+- Build: one GfxVisualCord4 (additive, life-v) of three links.
+  - All three have width f12 and the packed colour.
+  - Newest first, their lives are 1, 0.001, 0.001, with life scale 1, so v runs from 0 at the head to
+    ~1 at the tail.
+- Update:
+  - `tail = speed·age`, `head = f11 + tail`.
+  - The head is capped at the length, and the tail is kept ≥ 0.
+  - Once the tail reaches the length, it is set to the length and the control is ready.
+  - The links sit at (0, head, 0), (0, tail, 0) and the world-mode position (zero in local mode), along
+    local y (the flight direction). The first two make the drawn quad; the third only turns its side.
+- Slot 6 readies it; slot 8 is a no-op.
+- All 13 records are local mode (field 0 = 2).
+- The old `GfxControlTracer` stand-in still draws 0x3f5 and 0x402.
+- 45708 (nano 45889's tracer): speed 50, streak 4.5 m, width 0.225, colour (1, 1, 0.8, 0.8), s_bullet.png.
+  Over GfxTest's 2.6 m line the cap makes it 12.9 m/s.
+### 5.24 Wind: `EffectWindSim`, `EffectWind`
+The effect handler's wind (`_EffectHandler_t::ComputeWind` `100cdee7`, `GetWind` = +0x24,
+`GetSmoothWind` = +0x30) copies the weather controller's wind object (global `0x102e447c`, +0xc; read
+`100bfbf0`). Sparks reads the raw wind.
+- The wind object (0x58 bytes, ctor `100bfece`, created at `100b9090`) holds:
+  - W, the base wind (+0): starts (1, 0, 0)
+  - A, the output (+0xc)
+  - B and C, two gusts (+0x18, +0x24)
+  - D (+0x30): zeroed and never set again
+- Per frame, from the weather update (`100beacd`):
+  - **Strength** (`100bff68`, which also drives the wind sound):
+    - s = the weather state's wind speed (+0x1c), clamped to 0–33, and at least 0.001.
+    - W keeps its direction at length s.
+    - Gust weight g = 1 − (1 − s/33)³.
+  - **Update** (`100bfc80`, p = 0.9 and k = 0.5 from the weather controller), with m = 0.5g + 0.5 and
+    kicks of `(rand()%100 − 50)/450/0.016` (y: /800):
+    - 9 frames in 10, C += (kx, 0, kz)·k·m.
+    - Again 9 in 10, B += (kx, ky, kz)·k·m.
+    - Then A = W + B, B /= 1.02, C /= 1.02, and W += C/1000 while C ≠ 0, so the base direction wanders.
+  - The handler then copies A as the raw wind and blends smooth = 0.04·raw + 0.96·smooth.
+- The whole update is skipped while a display preference (`EnvironmentPreferences_t` byte +3) is off;
+  the port always runs it.
+- With no weather wind (s = 0.001), only the gusts blow: each axis wanders with a spread of ~2.5–5 m/s
+  and a correlation time of ~50 frames. `rand()%100 − 50` gives stock a small negative bias
+  (~−0.5 m/s on y).
+- Port:
+  - `EffectWind` (a static, like stock's singleton handler) steps the sim once per stock frame at
+    `StockProcessHz`, once per Unity frame. It's called from `EffectHandler.Tick`.
+  - `EffectWind.WeatherSpeed` is the weather input. It stays 0 because the port has no weather yet;
+    that's stock's own no-weather state.
+- Not traced: the weather controller itself, i.e. weather presets and blending (`100bd930` from the
+  playfield's +0xc8..+0xe4, blender `100bd3b3`), which is where the real speed comes from.
+### 5.25 Fire (0x3ec): `FireSim`, `GfxControlFire`
+vftable `1016ccdc`, factory case in `100d0656` (0xa4 bytes), ctor `100dcb72`, loader `100dc433`, init
+`100dc59c`, Process `100dbed5`. It drives the same **GfxVisualSprite2Type0** as Sparks (§5.22), through
+its defaults.
+- Fields:
+  - 0 flags: bits 0-2 are the locator's; 0x100 sends the sprites up the world y instead of down the
+    locator's z
+  - 1-6 locator offset and turn (the ctor passes them to `10106be2`, like Cord); 7 attach
+  - 2 is also a lift added to each sprite's y
+  - 8 duration, 9 material, 10 sprites per second
+  - 11/12 disc radius min/max, 13 speed
+  - 14/15 width start/end, 16/17 height start/end
+  - 18-21 / 22-25 start/end colour A,R,G,B
+  - 26 life
+  - 27/28 wind band bottom/top above each sprite's spawn height, 29 wind mode, 30 wind scale
+  - 31 `rand()` mask gating a spawn call
+- Init:
+  - GfxVisualSprite2Type0(material, null, **true**): always additive.
+  - The pool holds `_ftol(f10·1.5·f26)` sprites.
+  - `InitSpriteDefault` gives every sprite width f14 → f15, height f16 → f17 and colour f18-21 → f22-25
+    over f26, and the material's frames first → last. There's no gravity.
+- Per call:
+  - If the locator is lost, duration = age + f26.
+  - If `(rand() & f31) == 0` and (duration < 0 or age < duration − f26), it spawns until the counter
+    reaches `_ftol(f10·age)`.
+  - Then ProcessSprites(dt, the handler's wind).
+- Spawn:
+  - r from R250 in f11..f12, then a random unit d (`100d3005`).
+  - The point (d.x·r, d.z·r, 0) goes through the locator's world-mode matrix (`101063d9`: identity in
+    local mode), then y += f2.
+  - The velocity is |d.y|·f13/f26 down the locator's world-mode z (`1010649b`), or up the world y with
+    0x100.
+  - Default `NewSprite` (`10025be0`) with wind mode f29, band f27 + y .. f28 + y, and scale f30.
+- Slots:
+  - 6 sets duration = age + f26, 8 sets duration.
+  - 11/12 set the start/end colour and call `SetDefaultColor`, so they affect later spawns only.
+  - 13 (`100dc2ce`): packed ARGB, start = the colour, end = the same colour at alpha 0.
+- 17 records. Wind modes 4 (10), 1 (4), 0, 3, 5. No record uses 0x100 or mode 7. Six are local
+  (flags 6/7). Attaches: 0, muzzle 3000 (2008, 2204, 2209) and 2020 (80003).
+- 2200 (the buff of the Rage line: 100250 Berserk, 100251–100254, 275830, 304605; also every slot of
+  303345 Shroud of Lost Souls):
+  - Flags 5, offset z −0.25, attach 0.
+  - 16 per second off a 0–0.5 m disc, at up to 4 m/s.
+  - Sprites are 3 m square, narrowing to 1 m, white on material 9 (fire), and live 1 s.
+  - Wind mode 4, with a band 0–4 m above the spawn.
+- Attach 0 is the CAT mesh's root frame (`10106591`: `GetCatMesh()` +0x90 → +0x3c
+  `RRefFrame_t::GetWorldMatrix`). `VisualCATMesh_t::RunFunction` (`10074bb4`) sets that frame from the
+  dynel's position and quaternion only. The CAT bone data is y-up under an identity root in the port,
+  so stock's root frame must be upright too: its z is the character's forward.
+  - So 2200's disc stands upright at the feet, and the flames stream out behind the character,
+    horizontally. The floor hides the half below it.
+  - The world-mode sprites stay where they were emitted, so a running character leaves a fire trail.
+  - This follows stock's code, but it hasn't been compared with the live client (§9).
+### 5.26 Smoke (0x3f1): `SmokeSim`, `GfxControlSmoke`
+vftable `1016db34`, factory case in `100d0656` (0xa4 bytes), ctor `100f12bf`, loader `100f0b6b`, init
+`100f0cd4`, Process `100f04bd`. The same **GfxVisualSprite2Type0** as Sparks and Fire. The port used to
+call this type "Nano2" and drew a stand-in billboard.
+- Fields:
+  - 0 flags: bits 0-2 are the locator's; 0x400 keeps it running when the locator is lost
+  - 1-6 locator offset and turn (the ctor passes them to `10106be2`); 7 attach
+  - 8 duration, 9 material, 10 sprites per second
+  - 11/12 disc radius min/max, 13 speed
+  - 14/15 width start/end, 16/17 height start/end
+  - 18-21 / 22-25 start/end colour A,R,G,B
+  - 26 life
+  - 27/28 wind band bottom/top above each sprite's spawn height, 29 wind mode, 30 wind scale
+  - 31/32 height offset min/max
+- Init:
+  - GfxVisualSprite2Type0(material, null, `id == 80005`): **alpha-blended** except effect 80005.
+  - The pool holds `_ftol(f10·1.5·f26)` sprites.
+  - Its `InitSpriteDefault` computes the height rate as `f17 − f17` (a stock slip, `D9 C0 DE E1` at
+    `100f0ef2`). It doesn't matter: every spawn uses the full `NewSprite`.
+- Per call:
+  - If the locator is lost and 0x400 is clear, duration = age + f26.
+  - If duration < 0 or age < duration − f26, it spawns until the counter reaches `_ftol(f10·age)`.
+    There's no `rand()` gate.
+  - Then ProcessSprites(dt, the handler's **smoothed** wind, GetSmoothWind +0x30).
+- Spawn draws from R250 in this order:
+  - life `f26·(1 + 0.3r)`
+  - angle a ∈ [0, 2π), angle b ∈ [0, π/2)
+  - radius in f11..f12
+  - size scale `s = 1 + 0.3r`
+  - height in f31..f32
+  - wind scale `(0.9r + 0.1)·f30`
+- Local point `(cos a·cos b·r, height, sin a·cos b·r)`, through the locator's world-mode matrix
+  (`101063d9`; identity in local mode).
+- Velocity `(0.3x, 0.3z, −1)·f13/life`, through the same rotation (`100dcd23`).
+- Width `f14·s` → by `(f15 − f14)·s` over the life; height `f16·s` → by `(f17 − f16)·s`. The colour ramps
+  f18-21 → f22-25 and the frame runs first → last.
+- Slots: 6 sets duration = age + f26, 8 sets duration, 11/12 set the start/end colour for later spawns,
+  13 (`100f0a06`) is the packed ARGB as start and the same at alpha 0 as end.
+- 17 records: flags 5 (10), 0x1001 (4), 0x1403 (3). Wind modes 4 (9), 0 (3), 5 (3), 6, 7 (80011). Five
+  turn the locator 90° about x, which makes "down z" point up. 94 nano uses.
+- 43657 (the buff of 83943 Claw Eyes, 83950–83952, …):
+  - Attach 2002 (head attractor), offset 0.5 m along the turned y, i.e. in front of the face.
+  - 2.6 per second, speed 0.
+  - Black at alpha 1, 1.7–2 m wide and 1.5–2 m tall, life 2–2.6 s, material 31, 30 s.
+  - A still, opaque black cloud over the eyes: 5–6 of the 7 slots alive.
+### 5.27 Spiral (0x7d1): `SpiralSim`, `SpiralRibbon`, `GfxControlSpiral`
+vftable `1016dca4`, factory case in `100d0656` (0x98 bytes), ctor `100f53a8`, loader `100f4ef1`, init
+`100f4f45`, Process `100f4cb5`. DisplaySystem **GfxVisualSpiral**: ctor `10021eb4`, draw `10021924`.
+- Fields: 0 flags, 1-6 locator offset and turn (the ctor passes them to `10106be2`), 7 attach,
+  8 duration, 9 material, 10-17 a colour ramp.
+  - The ramp is set by slots 11/12, and slot 13 sets both of its ends to one colour. Nothing reads it.
+- Init: two GfxVisualSpiral(material, i·6.28/2, 6.28, 12), so two ribbons half a turn apart.
+- Per call (p = 2·age/dur):
+  - Both visuals sit at the locator's world-mode position (`1010640a`), turned about the world y by
+    age·3.7 rad (`100520d9`: (axis·sin(half), cos(half)), the angle wrapped into [0, 2π)).
+  - Each keeps a range: [0, p] while p < 1, [p − 1, 1] while p < 2, and the last range after.
+  - It also takes the age (+0x1c8), which scrolls the texture.
+  - A lost locator sets duration = age; so does slot 6.
+- GfxVisualSpiral:
+  - Ribbon: 12 segments round a turn of radius 0.6, climbing 0.3 per radian (1.884 over the turn),
+    0.3 tall.
+  - Vertices come in pairs, top then bottom: (cos a·0.6, 0.3h, sin a·0.6) and 0.3 lower, with
+    a = offset + h. The cos/sin table is built in the ctor.
+  - u = −age + i·(6.28·0.6/1.5/12) along the ribbon; v is 1 at the top, 0 at the bottom.
+  - Trimming:
+    - A start > 0 moves pair ⌊12·start⌋ part way (by the fraction) to the next pair.
+    - An end < 1 moves pair ⌈12·end⌉ back towards the previous one, which becomes the last pair.
+    - Stock resets a start above 1 to 0.
+  - The first and last kept pairs get colour 0, so both ends fade. Every other vertex is the visual's
+    +0x18c, white.
+  - Draw: FVF 0x142 triangle strip, SrcAlpha/One, no lighting, no Z-write, no culling, texture ×
+    diffuse. The texture wraps (D3D default).
+- Port:
+  - Each ribbon is one strip with stock's vertex colours: 0 on the end pairs, white elsewhere.
+  - The material's texture is set to Repeat, as for Shield.
+- 3 records, all flags 5:
+  - 43010: offset y 0.25, attach 0, 4 s, material 32 `thin_smoke.png`. It's the hit of 282 nanos,
+    e.g. 25994 Hostile Hatchling.
+  - 43011: the same, offset x 0.5.
+  - 11200: 32 Fire-style fields under this type (like 2200's, with material 32 and a y offset); Spiral
+    reads only 0-17.
+- Seen live: a white smoke double helix winding up the target from 0.25 to 2.1 m in 2 s, spinning,
+  then unwinding from its base, gone at 4 s.
 ---
 
 ## 6. Port architecture
@@ -539,16 +1323,16 @@ vftable `1016cbbc`, loader `100d97ba`, visual build `100d98e0`, Process `100d9de
 | Handler, creation, nano flow | `EffectHandler.cs` (`CreateControl` switch, `Create*` builders, cast/tracer/hit/buff flow, `IsStockTracer`), `EffectHandle.cs` |
 | Base control | `GfxControl.cs`. The first `Process` only arms (**the body is skipped on that call**), age += dt, the locator is resolved into `WorldMatrix`, and after `OnProcess` it readies at `age ≥ duration`. Controls with stock expiry quirks keep their own duration and set the base one to `InfiniteDuration`.<br>A port-only 60 s watchdog readies anything older; buff trees are exempt (`IgnoreWatchdog`, set by `EffectHandler.AddNanoBuff` and passed on by Meta/Sequencer). |
 | Locators / hit locations | `EffectLocator.cs` (`OnDynel`, `OnVisual`, `OnHitLocation`, `WorldPoint`, `Beam`, `TryGetHighlightRoot`), `EffectHitLocation.cs`, `EffectAttachIds.cs` |
-| Stock sims (Unity-free, unit-tested) | `FlareType0Visual`, `FlareType0Sim`, `Tracer1Sim`, `PlasmaSim`, `Tracer4Sim`, `Cord4Strip`, `StarsCase3`, `StarsRing`, `StarsLineSparks`, `StarsLimbSparks` (behind `IStarsStockCase`), `SunsSim`, `ShieldSim`, `DeformerSim`, `ElectraSim`, `StockColorRamp`, `Spell1Trail`, `ScatterSchedule`, `SpriteEmitterMath`, `TracerMath`, `EffectFrameRate`, `EffectTypeCatalog`, `EffectCoverage`, `AnimNoteIds` |
-| Drawing | `EffectBillboardBatch.cs`:<br>• `Quad`: camera-facing, one texture per frame via `EffectAtlasFrames.GetFrame`.<br>• `Strip`: a dynamic mesh, one colour, one texture with UVs, both windings.<br>• `Strip.Quads = true`: every 4 vertices form an independent quad.<br>• `MeshDraw`: a whole mesh in one colour (Shield shells).<br>Controls hand geometry over in `CollectBillboards` / `CollectStrips` / `CollectMeshes`. |
+| Stock sims (Unity-free, unit-tested) | `FlareType0Visual`, `FlareType0Sim`, `Tracer1Sim`, `PlasmaSim`, `Tracer4Sim`, `Tracer5Sim`, `SparksSim`, `FireSim`, `SmokeSim`, `SpiralSim`, `Sprite2Type0Visual`, `EffectWindSim`, `Cord4Strip`, `StarsCase2`, `StarsCase3`, `StarsRing`, `StarsLineSparks`, `StarsLimbSparks`, `StarsBodySparks` (behind `IStarsStockCase`), `SunsSim`, `ShieldSim`, `DeformerSim`, `ElectraSim`, `StockColorRamp`, `Spell1Trail`, `ScatterSchedule`, `SpriteEmitterMath`, `TracerMath`, `EffectFrameRate`, `EffectTypeCatalog`, `EffectCoverage`, `AnimNoteIds` |
+| Drawing | `EffectBillboardBatch.cs`:<br>• All effect draws go through `Hidden/LostEden/EffectVertexColor` (`Assets/Resources/Effects`): HDRP/Unlit's transparent forward pass with a vertex colour. It premultiplies and de-exposes as HDRP/Unlit does, blends One + One or One + OneMinusSrcAlpha, and linearises the vertex colour in the fragment with Unity's own curve (sRGB below 1, pow 2.2 from 1 up, as `Mathf.GammaToLinearSpace`), after multiplying in the additive boost (`_VertexGammaScale`), so a colour on the vertices comes out as the same colour on an HDRP/Unlit material. SRP Batcher-compatible. `VertexColorPath = false` falls back to HDRP/Unlit.<br>• `Quad`: camera-facing, one texture per frame via `EffectAtlasFrames.GetFrame`. Additive quads are batched into one mesh per texture per frame, colours on the vertices (Stars 2's 128 sparkles: 2 draws); alpha quads stay one draw each, back to front.<br>• `Strip`: a dynamic mesh with one texture and UVs, both windings, with a colour per vertex (`Colors`: Cord, Spiral, TParticle) or one colour (put on the vertices).<br>• `Strip.Quads = true`: every 4 vertices form an independent quad.<br>• `MeshDraw`: a whole mesh in one colour (Shield shells, GroundGrid, EffectMesh effects 4-6); with `VertexColors`, the mesh's own colours multiplied in (Shield wave and ripple); with `Material` set, a lit model material drawn as is, colour as `_BaseColor` (EffectMesh own material, MParticle).<br>• `EffectModels`: ABIFF models by file name, cached (submesh meshes, base transforms, textures, HDRP Lit materials).<br>Controls hand geometry over in `CollectBillboards` / `CollectStrips` / `CollectMeshes`. |
 | Mesh deform | `Rendering/CatMesh/CatMeshDeformHost.cs`, `CatMeshSourceVertices.cs` |
 | Anim notes | `Rendering/CatMesh/AnimNoteIds.cs`, `CatAnimRuntimeClip.Notes`, `CatAnimPlayer.NoteReached` |
 | Network hooks | `Playfield/PlayfieldFactory.cs`: `OnCharacterAction` (FinishNanoCasting, SetNanoDuration), `OnBuff`, `OnCastNanoSpell` |
 | Test scene / tool | `DEV/GfxTest_DEV.cs` (a caster/target duo, `SpawnNano`, `Handler`, `ClearEffects`) and the editor window **Lost Eden → GFX Test** (`Assets/Editor/GfxTest/GfxTestWindow.cs` + `.uss`: effects/nanos browser, status chips, C/T/I/H/B dots, click to select, double-click to spawn or cast) |
 | Tests | `Tests/Effects/*.cs` + `LostEden.Effects.Tests.csproj`, which **links** the Unity-free sources. Run `dotnet test` in `Tests/Effects`, then delete `bin/` and `obj/`. |
 
-Additive brightness: `EffectBillboardBatch.AdditiveHdrBoost = 3` multiplies additive RGB so HDRP
-bloom catches it. **Not stock** (§9).
+Additive brightness: `EffectBillboardBatch.AdditiveHdrBoost = 3` multiplies additive RGB so HDRP bloom
+has energy to catch. **Not stock**, kept by the user's choice (§9).
 
 ---
 
@@ -620,15 +1404,18 @@ spawn them). A tree is as good as its worst record. Two scan pitfalls that have 
 Stars field 30 is the spark life, not a child id; and Spell1 spawns fields 31/32 only when field
 33 == 0.
 
-As of 2026-09-22 (after 56213: Suns 4, Shield, Sequencer), with the buff slot counted: **7,756 nanos
-have effects. 2,793 are verified, 3,934 unverified, 233 approx, 796 missing.** Missing rose when buff effects started
-being counted.
+As of 2026-09-22 (after 71016's types, Stars starTypes 18, 2, 15 and 20, Sparks, Tracer5, Fire, Smoke, Spiral, Suns sunTypes 0 and 1, and Shield's per-vertex alpha), with the buff slot counted:
+**7,756 nanos have effects. 7,336 are verified, 70 unverified, 43 approx, 307 missing.** Missing rose earlier, when buff effects started being counted.
 
-Next targets, by nano count:
-- Stars starTypes 17 / 18 (tracers, ~1k each) and 6 / 10 / 11 (hits)
-- Suns sunTypes other than 4
-- Spiral 0x7d1 (~282)
-- Shield per-vertex alpha (flags 0x800 / 0x2000), Shield2 0xbda
+71016 itself still counts as Missing. The only gap is its Meta child 71025, which is not in gfxtweak.bin at
+all, so stock can't create it either. By decision (user, 2026-09-22), a child id absent from gfxtweak stays
+Missing rather than Verified. Such trees are documented, not counted as done.
+
+Next targets, by nano count (the scratch coverage tool's `rank` mode counts each gap across all nanos):
+- ShockWave (43, the only gap for 37), VulcanRocks (37 / 32), VolGrid (32 / 32), 0x3FE (27 / 27, e.g.
+  28609's tracer 2662), Sprite approx (27 / 26)
+- Trail2 (52 / 11), EffectMesh approx (48 / 15), Shield2 0xbda
+- The other Stars starTypes (5: 26, 13: 15, 9: 12, 14 and 12: 6 each)
 - Deformer modes 0/4; Electra modes 0/2
 - The buff-slot gaps, which haven't been ranked yet: sort the Nanos tab by the B dot.
 
@@ -639,7 +1426,8 @@ Next targets, by nano count:
 | Item | Detail |
 |---|---|
 | **Stock frame rate** | `EffectFrameRate.StockProcessHz = 30` is an assumption. Stock runs Process once per frame, uncapped. Get the number from `/framerate` (Ctrl+Alt+F) in the real client while 28612's hit plays. |
-| **Additive ×3** | `AdditiveHdrBoost = 3` is not stock (stock draws colour × texture unscaled, no bloom). At ×1 template colours read as intended. It's the user's call. HDRP also blends in linear space; D3D blended in gamma. |
+| **Vertex colour** | Since 2026-09-22 every effect quad and strip, and the Shield's per-vertex meshes, draw through the vertex-colour shader (§6). Checked against HDRP/Unlit on frozen frames: additive quads alone match within 3 levels (62 pixels over 2); with alpha Smoke among them, within 7 (28 pixels over 4), because a batch of additive quads now sorts against alpha draws as one object. Animated sprites still take one draw per frame texture (Fire 2200: 16 quads, 16 draws), since `EffectAtlasFrames` hands out each frame as its own texture; drawing from the atlas with UV rects would merge them. `EffectBillboardBatch.VertexColorPath = false` restores the old HDRP/Unlit path. |
+| **Additive brightness** | **Deliberate deviation (user's call, 2026-09-22).** `AdditiveHdrBoost = 3`; stock draws colour × texture unscaled (×1) with no bloom. At ×1 a sprite never exceeds 1.0, so a bloom threshold of 1 leaves effects unglowing; ×3 gives bloom energy at the cost of stock colours (pastels wash toward white). The alternative, not built, is an effects-only glow Custom Pass that keeps ×1 colours. The user tunes the bloom volume. HDRP also blends in linear space and doesn't clip overlaps at 1; D3D blended in gamma into an 8-bit buffer. |
 | **Buff message semantics vs the server** | Stock: CharacterAction 98 adds a buff, and a Buff message with `Unknown1 == 0` removes it. The previous code played the buff on Buff and treated 98 (`AnimKindIds.AttackSwingAction = 0x62`) as an attack swing. Not yet checked against what the server actually sends. |
 | **Buffs already running** | When a character appears with active nanos, stock recreates their effects (`FUN_1004f2bd` / `FUN_10051c0c`). Not ported. |
 | **Buff conflicts** | Stock's stacking rule (`FUN_1004e9cc`) is not traced; the port only replaces the same nano. |
@@ -648,5 +1436,11 @@ Next targets, by nano count:
 | **Random tables** | `100d3005`'s shared unit-vector table and walk are replaced by fresh draws with the same distribution. |
 | **Deformer source positions** | Stock feeds the wave the CATTriVertex (0x44-byte) source position from randy31.dll; the port uses mesh bind positions (believed equal, unconfirmed). |
 | **Spell1 windows 3/4** | Still the earlier model (only matters when field 33 == 0). |
+| **BuffPlaceHolder child delta** | **Deliberate deviation, kept for consistency with the rest of the port (user's call, 2026-09-22).** Stock runs the children once per 0.45 rad step (~28/s), each with the whole frame delta, so the Cord's trail depends on the client's frame rate. A point lives 0.5 s of summed deltas, and 32 points at most. At 30 fps that's ~15 points, ~1.1 turns: the tail fades just behind the spark. At 60 fps it's ~30 points, ~2.1 turns: the spark runs into its own trail and the overlap stacks brighter, as seen in the live client. At 100+ fps it's 32 points, ~2.3 turns, and the tail cuts off half bright. The outward drift (`v·clamp(dt, 0.01, 0.025)` per step) also grows with frame rate. The port feeds one stock frame per step (`EffectFrameRate.StockProcessSeconds`, `GfxControlBuffPlaceHolder.ChildDt`), so ours is the 30 fps look. To match a real client, feed the frame delta there instead. |
+| **MParticle step** | **Port decision (2026-09-22).** Stock's bounce restitution is 100·b·dt, which follows the frame rate. At 30 fps, 71045's b = 0.5 returns 165%: a chunk that ends a frame under the ground flips and grows every frame, and runs hundreds of metres off (seen live). At 60 fps it's 83%, and at 100 fps 50%, which looks like what the data was tuned for. `GfxControlMParticle` cuts each call into pieces of at most 1/60 s, so ours is stock as it runs at 60 fps or more. This is also evidence against `StockProcessHz = 30`. |
+| **Fire 2200 direction** | Stock's code sends the Rage flames down the attach-0 frame's z, i.e. out behind the character along the ground (§5.25). That's the port's result too. Not yet compared with the live client; if the client shows them rising, the attach-0 frame differs from the dynel frame somewhere in N3. |
+| **Weather wind speed** | `EffectWind.WeatherSpeed` is 0: the port has no weather system, so the wind is stock's no-weather gusts. The weather controller (presets, blending, per-zone wind speed) isn't traced (§5.24). |
+| **EffectMesh lighting** | Rendering effect 4 has D3D lighting on. The port takes full light (emissive + diffuse, clamped). That's exact for the blast wave (emissive white). For other models, e.g. 71224's EMP blast (emissive 0), it's Approx. Own-material models (effect 0) use the environment's HDRP Lit materials. |
+| **Locator template on other types** | Fields 1-6 are applied as the locator's offset and turn (`EffectHandler.TakesLocatorTemplate`) for every ported type whose dynel ctor was checked. Directly: BuffPlaceHolder, Cord, Fire, Smoke, Spiral. Through the shared `100d2f58` (fields 1-7 into `10106be2`): Electra, Stars, Suns, BParticle, BParticle2, EffectMesh, GroundGrid, MParticle, TParticle. The last group was added 2026-09-22; it moved 113 records (TParticle 46, Stars 28, BParticle2 26, EffectMesh 8, MParticle 2, BParticle 1) onto their offsets. Checked live on 28611 Hot Foot (Meta 47389): its four Stars #4 flames now stand round the left foot, not on one point. `100d2f58` is also called by 23 unported classes (Bubble, CrazyCone, Drips, Fence, Font, GlobalSmoke, GroundRing, Hexagram, LavaBall, Mesh, SkyFlash, SkyRise, Trail, Vein, AParticle, Beam, EnergyBall, GroundShake, Spiral2, TParticle2, Trail2, VolGrid, …); add each to the list when it's ported. Hit-location and point ctors don't use it. |
 | **Shield blend flag** | Flag 0x400 goes to the base GfxVisual (+0x190), read by randy31 (not in the Ghidra project). The port treats it as additive, like the Electra/Sol ctor flag; unconfirmed. |
 | **Game path untested live** | The FinishNanoCasting / SetNanoDuration / Buff handlers compile and follow stock, but have only been exercised through GfxTest, not against a server. |

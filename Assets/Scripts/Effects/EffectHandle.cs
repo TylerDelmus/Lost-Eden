@@ -55,6 +55,13 @@ public sealed class EffectHandle
             _control?.SetStopColor(a, r, g, b);
     }
 
+    /// <summary>Stock <c>_EffectHandler_t</c> <c>100ce34e</c>: slot 13 with a packed ARGB colour.</summary>
+    public void SetColor(uint argb)
+    {
+        if (!_dead)
+            _control?.SetColor(argb);
+    }
+
     public void Destroy()
     {
         if (_dead && _control == null)

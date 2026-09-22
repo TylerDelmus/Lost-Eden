@@ -18,6 +18,15 @@
     <Compile Include="..\..\Assets\Scripts\Effects\StarsRing.cs" Link="StarsRing.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\StockColorRamp.cs" Link="StockColorRamp.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\StarsCase3.cs" Link="StarsCase3.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\StarsCase4.cs" Link="StarsCase4.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\StarsCase10.cs" Link="StarsCase10.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\StarsCase2.cs" Link="StarsCase2.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\StarsSwirl.cs" Link="StarsSwirl.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\StockColorCurve.cs" Link="StockColorCurve.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\BParticle2Sim.cs" Link="BParticle2Sim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\TParticleSim.cs" Link="TParticleSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\BParticleSim.cs" Link="BParticleSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\GroundGridSim.cs" Link="GroundGridSim.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\FlareType0Sim.cs" Link="FlareType0Sim.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\FlareType0Visual.cs" Link="FlareType0Visual.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\Tracer1Sim.cs" Link="Tracer1Sim.cs" />
@@ -27,6 +36,7 @@
     <Compile Include="..\..\Assets\Scripts\Effects\IStarsStockCase.cs" Link="IStarsStockCase.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\StarsLineSparks.cs" Link="StarsLineSparks.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\StarsLimbSparks.cs" Link="StarsLimbSparks.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\StarsBodySparks.cs" Link="StarsBodySparks.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\SunsSim.cs" Link="SunsSim.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\ShieldSim.cs" Link="ShieldSim.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\ElectraSim.cs" Link="ElectraSim.cs" />
@@ -42,6 +52,16 @@
     <Compile Include="..\..\Assets\Scripts\Effects\TracerMath.cs" Link="TracerMath.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\ScatterSchedule.cs" Link="ScatterSchedule.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\EffectFrameRate.cs" Link="EffectFrameRate.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\StockFloatCurve.cs" Link="StockFloatCurve.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\EffectMeshSim.cs" Link="EffectMeshSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\MParticleSim.cs" Link="MParticleSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\SparksSim.cs" Link="SparksSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\Sprite2Type0Visual.cs" Link="Sprite2Type0Visual.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\FireSim.cs" Link="FireSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\SmokeSim.cs" Link="SmokeSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\SpiralSim.cs" Link="SpiralSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\Tracer5Sim.cs" Link="Tracer5Sim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\EffectWindSim.cs" Link="EffectWindSim.cs" />
   </ItemGroup>
 </Project>
 

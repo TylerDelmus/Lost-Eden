@@ -113,6 +113,48 @@ public abstract class GfxControl
     /// <summary>Stock slot 12: end colour A,R,G,B.</summary>
     public virtual void SetStopColor(float a, float r, float g, float b) { }
 
+    /// <summary>
+    /// Stock slot 13: a colour as packed ARGB (the effect handler's <c>100ce34e</c>). The base does
+    /// nothing (<c>10079931</c>); see <see cref="SetColorAsStartAndFadeOut"/> for what most overrides do.
+    /// </summary>
+    public virtual void SetColor(uint argb) { }
+
+    /// <summary>
+    /// Slot 13 in Fire (<c>100dc2ce</c>), Smoke (<c>100f0a06</c>), Sparks (<c>100f15f0</c>), BuffPlaceHolder
+    /// (<c>100d5744</c>), BPHFSM (<c>100d3e27</c>) and Spell1 (<c>100f269e</c>): each channel / 255 (at most
+    /// 1) is the start colour, and the same colour at alpha 0 the end colour, stored as slots 11 and 12
+    /// store them.
+    /// </summary>
+    protected void SetColorAsStartAndFadeOut(uint argb)
+    {
+        float a = UnpackChannel(argb >> 24);
+        float r = UnpackChannel((argb >> 16) & 0xff);
+        float g = UnpackChannel((argb >> 8) & 0xff);
+        float b = UnpackChannel(argb & 0xff);
+        SetStartColor(a, r, g, b);
+        SetStopColor(0f, r, g, b);
+    }
+
+    /// <summary>
+    /// Slot 13 in Suns (<c>100fd09c</c>) and Spiral (<c>100f4e3f</c>): each channel / 255 is both the start
+    /// and the stop colour, through slots 11 and 12.
+    /// </summary>
+    protected void SetColorAsStartAndStop(uint argb)
+    {
+        float a = (float)((argb >> 24) / 255.0);
+        float r = (float)(((argb >> 16) & 0xff) / 255.0);
+        float g = (float)(((argb >> 8) & 0xff) / 255.0);
+        float b = (float)((argb & 0xff) / 255.0);
+        SetStartColor(a, r, g, b);
+        SetStopColor(a, r, g, b);
+    }
+
+    static float UnpackChannel(uint c)
+    {
+        float v = (float)(c / 255.0);
+        return 1f < v ? 1f : v;
+    }
+
     public bool Process(float dt)
     {
         if (_released || ReadyFlag)
@@ -124,6 +166,7 @@ public abstract class GfxControl
             _armed = true;
             _dt = 0f;
             _age = 0f;
+            OnArmed();
             return true;
         }
 
@@ -176,6 +219,12 @@ public abstract class GfxControl
     public bool IgnoreWatchdog { get; set; }
 
     protected virtual void OnProcess(float dt) { }
+
+    /// <summary>
+    /// The arming call, where stock's subclass body still runs at dt 0. Only controls whose body does
+    /// something at dt 0 override this.
+    /// </summary>
+    protected virtual void OnArmed() { }
     protected virtual void OnTerminateGracefully() => ReadyFlag = true;
     protected virtual void OnReleased(bool immediate) { }
 

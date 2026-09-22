@@ -19,6 +19,9 @@ public sealed class GfxTweakCatalog
         }
     }
 
+    /// <summary>The database the templates come from; effects that load models share it.</summary>
+    public ResourceDatabase Database => _database;
+
     public GfxTweakCatalog(ResourceDatabase database)
     {
         _database = database;

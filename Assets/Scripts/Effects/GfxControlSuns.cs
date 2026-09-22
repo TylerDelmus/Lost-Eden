@@ -2,7 +2,9 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// typeCode 2005 (0x7d5), stock <c>_GfxControlSuns_t</c>, sunType 4: still sparks along a hit location.
+/// typeCode 2005 (0x7d5), stock <c>_GfxControlSuns_t</c>, sunType 4 (still sparks along a hit location) and
+/// sunTypes 0 and 1 (a glow over the locator and a ring round it, stepped every frame since they depend on
+/// the age alone).
 /// The mechanics are <see cref="SunsSim"/>, replayed call for call at
 /// <see cref="EffectFrameRate.StockProcessHz"/>. The sparks are drawn the way <c>GfxVisualSol</c> does
 /// (DisplaySystem <c>10020831</c>): a camera-facing quad per sprite, centre P plus Offset along the
@@ -24,6 +26,7 @@ public sealed class GfxControlSuns : GfxControl
     float _carry;
     float _age;
     bool _armed;
+    Vector3 _origin;
 
     public SunsSim Sim => _sim;
 
@@ -60,12 +63,37 @@ public sealed class GfxControlSuns : GfxControl
 
     public override void SetStopColor(float a, float r, float g, float b) => _sim.SetStopColor(a, r, g, b);
 
+    /// <summary>Stock slot 13 (<c>100fd09c</c>): the colour as both the start and the stop colour.</summary>
+    public override void SetColor(uint argb) => SetColorAsStartAndStop(argb);
+
+    /// <summary>Stock runs the body on the arming call too, at age 0.</summary>
+    protected override void OnArmed()
+    {
+        if (_sim.AgeDriven)
+            StepAgeDriven();
+    }
+
     protected override void OnProcess(float dt)
     {
+        if (_sim.AgeDriven)
+        {
+            // Types 0 and 1 depend on the age alone, so they run on every frame as stock's Process does,
+            // not on the 30 Hz replay type 4 needs for its per-call spawns (Docs §3.7).
+            if (0f <= _sim.Duration && _sim.Duration < Age)
+            {
+                ReadyFlag = true;
+                return;
+            }
+            StepAgeDriven();
+            return;
+        }
+
         if (!_armed)
         {
             _armed = true;
             StepOnce();
+            if (_sim.Done)
+                ReadyFlag = true;
             return;
         }
 
@@ -82,12 +110,28 @@ public sealed class GfxControlSuns : GfxControl
             }
 
             StepOnce();
-            if (_sim.Drained)
+            if (_sim.Done)
             {
                 ReadyFlag = true;
                 return;
             }
         }
+    }
+
+    void StepAgeDriven()
+    {
+        // 100fc440: a lost locator terminates it; the ring still runs this call at the last position.
+        if (Locator != null && Locator.TryResolve(out Matrix4x4 world))
+            _origin = (Record.FieldInt(0, 0) & 2) != 0 ? Vector3.zero : (Vector3)world.GetColumn(3);
+        else
+            _sim.Terminating = true;
+        if (_sim.SunType == SunsSim.RingType)
+            _sim.StepRing(Age, _origin.x, _origin.y, _origin.z);
+        else
+            _sim.StepHalo(Age, _origin.x, _origin.y, _origin.z);
+        // 100fcfae: terminating readies it after this call.
+        if (_sim.Done)
+            ReadyFlag = true;
     }
 
     void StepOnce()

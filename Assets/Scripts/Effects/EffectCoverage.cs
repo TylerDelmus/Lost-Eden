@@ -65,6 +65,7 @@ public sealed class EffectCoverage
         GfxTweakRecord record = _lookup(effectId);
         if (record == null)
         {
+            // Stock can't create it either, but by decision it stays Missing (Docs/Effects.md §8).
             gaps.Add($"{effectId} not in gfxtweak");
             return EffectStatus.Missing;
         }
@@ -99,11 +100,14 @@ public sealed class EffectCoverage
                     return EffectStatus.Missing;
                 if (record.TypeCode == EffectTypeTags.Electra && record.FieldInt(10, 0) != ElectraSim.ShellMode)
                     return EffectStatus.Missing;
-                if (record.TypeCode == EffectTypeTags.Suns && record.FieldInt(10, 0) != SunsSim.SparkLineType)
+                if (record.TypeCode == EffectTypeTags.Suns
+                    && record.FieldInt(10, 0) is not (SunsSim.SparkLineType or SunsSim.RingType or SunsSim.HaloType))
                     return EffectStatus.Missing;
-                // Per-vertex alpha (wave, ripple) and the host's own material are drawn approximately.
-                if (record.TypeCode == EffectTypeTags.Shield
-                    && (record.FieldInt(0, 0) & (ShieldSim.FlagWavePoint | ShieldSim.FlagRipple | ShieldSim.FlagHostMaterial)) != 0)
+                if (record.TypeCode == EffectTypeTags.BParticle && record.FieldInt(10, 0) != 8)
+                    return EffectStatus.Missing;
+                if (record.TypeCode == EffectTypeTags.GroundGrid && record.FieldInt(11, 0) != 0)
+                    return EffectStatus.Missing;
+                if (record.TypeCode == EffectTypeTags.EffectMesh && !EffectMeshSim.IsModelled(record.Fields))
                     return EffectStatus.Approximated;
                 return IsVerified(record) ? EffectStatus.Verified : EffectStatus.Unverified;
             default:
@@ -112,9 +116,9 @@ public sealed class EffectCoverage
     }
 
     /// <summary>
-    /// The parts rebuilt from stock and checked live: Meta, Flare, Tracer1, Tracer4, Plasma, Deformer mode 1, Electra mode 1, Suns sunType 4, Shield, Sequencer, Spell1 when field 33
-    /// skips its late windows, Stars starTypes 3, 7, 8, 16, 19 and 22, and a Cord that cannot link (field 0 bit 1 clear,
-    /// invisible in stock).
+    /// The parts rebuilt from stock and checked live: Meta, Flare, Tracer1, Tracer4, Plasma, Deformer mode 1, Electra mode 1, Suns sunTypes 0, 1 and 4, Shield, Sequencer, Spell1 when field 33
+    /// skips its late windows, Stars starTypes 2, 3, 4, 6, 7, 8, 10, 11, 15, 16, 17, 18, 19, 20 and 22, BPHFSM, BuffPlaceHolder, BParticle2, TParticle, BParticle mode 8, GroundGrid mode 0, EffectMesh, MParticle, Sparks, Fire, Smoke, Spiral, Tracer5 and Cord (a Cord
+    /// without field 0 bit 1 never links, so it is invisible in stock and here).
     /// </summary>
     static bool IsVerified(GfxTweakRecord record)
     {
@@ -130,13 +134,25 @@ public sealed class EffectCoverage
             case EffectTypeTags.Suns:
             case EffectTypeTags.Shield:
             case EffectTypeTags.Sequencer:
+            case EffectTypeTags.BuffFsm:
+            case EffectTypeTags.BuffPlaceHolder:
+            case EffectTypeTags.Cord:
+            case EffectTypeTags.BParticle2:
+            case EffectTypeTags.TParticle:
+            case EffectTypeTags.BParticle:
+            case EffectTypeTags.GroundGrid:
+            case EffectTypeTags.EffectMesh:
+            case EffectTypeTags.MParticle:
+            case EffectTypeTags.Sparks:
+            case EffectTypeTags.Fire:
+            case EffectTypeTags.Smoke:
+            case EffectTypeTags.Spiral:
+            case EffectTypeTags.Tracer5:
                 return true;
             case EffectTypeTags.Spell1:
                 return record.FieldInt(33, 0) != 0;
             case EffectTypeTags.Stars:
-                return record.FieldInt(10, 0) is 3 or 7 or 8 or 16 or 19 or 22;
-            case EffectTypeTags.Cord:
-                return (record.FieldInt(0, 0) & 2) == 0;
+                return record.FieldInt(10, 0) is 2 or 3 or 4 or 6 or 7 or 8 or 10 or 11 or 15 or 16 or 17 or 18 or 19 or 20 or 22;
             default:
                 return false;
         }
@@ -147,6 +163,16 @@ public sealed class EffectCoverage
     {
         switch (record.TypeCode)
         {
+            case EffectTypeTags.BuffFsm:
+            case EffectTypeTags.BuffPlaceHolder:
+                // Both spawn fields 10 and 11 (100d411d / 100d58f8).
+                for (int i = 10; i <= 11; i++)
+                {
+                    int id = record.FieldInt(i, 0);
+                    if (id > 0 && id != record.Id)
+                        yield return id;
+                }
+                break;
             case EffectTypeTags.Meta:
                 // GfxControlMeta: slots 0..9; slot 9 = -1 means "infinite", not a child.
                 for (int i = 0; i < 10; i++)

@@ -20,9 +20,13 @@ using System;
 ///
 /// Per vertex (the skinned position p, normal n and UV): position p + n * field 11; UV by mode (0: source
 /// UV scrolled then scaled, 1: cylindrical, 2: planar); colour field 10's RGB with alpha
-/// A * fade * sin²(clamp(field 21 * T, 0, field 23)). Flag 0x800 makes that a wave from the field
-/// 12-14 point (or along the 15-17 direction with 0x1000) moving at field 21 / field 22, and 0x2000
-/// ripples it by sin²(10 (x + y + z) + 3T) over the bind positions; both need per-vertex alpha.
+/// A * fade * sin²(clamp(field 21 * T, 0, field 23)). Flag 0x800 (visual +0x1ac) makes that a wave:
+/// the sine takes field 21 * T - dist * field 22, dist being the vertex's distance from the field 12-14
+/// point (+0x1b0), or with 0x1000 (+0x1ad) its offset along the field 15-17 direction set to length 1
+/// (+0x1bc), both measured from the pushed-out position (<c>1001cbca</c>). Flag 0x2000 (+0x1ec) then
+/// ripples each alpha by sin²(10x + 10y + 10z + 3T) over the vertex's source position
+/// (<c>1001cc7d</c>). Flag 0x10000 draws with the host render's first material (+0x1d8) instead of
+/// field 9's (<c>100edfd6</c>); 0x8000 only moves the visual to render list 3.
 ///
 /// Stock's fmod (<c>1013f2ec</c>) keeps the dividend's sign, as C#'s % on doubles does.
 ///
@@ -56,6 +60,16 @@ public sealed class ShieldSim
     public int FadeMode { get; }
     public float FadeTime { get; }
     public float FadeFrom { get; }
+
+    /// <summary>Fields 12-14 (visual +0x1b0).</summary>
+    public float WaveX { get; }
+    public float WaveY { get; }
+    public float WaveZ { get; }
+
+    /// <summary>Fields 15-17 set to length 1 (+0x1bc, <c>100439aa</c>).</summary>
+    public float WaveDirX { get; }
+    public float WaveDirY { get; }
+    public float WaveDirZ { get; }
 
     /// <summary>Stock +0x10.</summary>
     public float Duration { get; set; }
@@ -92,10 +106,38 @@ public sealed class ShieldSim
         FadeMode = Int(fields, 29);
         FadeTime = F(fields, 30);
         FadeFrom = F(fields, 31);
+
+        WaveX = F(fields, 12);
+        WaveY = F(fields, 13);
+        WaveZ = F(fields, 14);
+        float dx = F(fields, 15), dy = F(fields, 16), dz = F(fields, 17);
+        float length = (float)Math.Sqrt((float)(dx * dx + dy * dy + dz * dz));
+        if (length != 0f)
+        {
+            float scale = (float)(1.0 / length);
+            dx *= scale;
+            dy *= scale;
+            dz *= scale;
+        }
+        WaveDirX = dx;
+        WaveDirY = dy;
+        WaveDirZ = dz;
     }
 
     /// <summary>True when every vertex takes the same colour (no wave, no ripple).</summary>
     public bool UniformColour => (Flags & (FlagWavePoint | FlagRipple)) == 0;
+
+    /// <summary>Flag 0x800: the fade-in runs as a wave over the shell.</summary>
+    public bool Wave => (Flags & FlagWavePoint) != 0;
+
+    /// <summary>Flag 0x1000: the wave runs along a direction instead of out from a point.</summary>
+    public bool WaveAlongDirection => (Flags & FlagWaveDirection) != 0;
+
+    /// <summary>Flag 0x2000.</summary>
+    public bool Ripple => (Flags & FlagRipple) != 0;
+
+    /// <summary>Flag 0x10000: the shell takes the host's own first material.</summary>
+    public bool HostMaterial => (Flags & FlagHostMaterial) != 0;
 
     /// <summary>Stock slot 6 (<c>100edc9c</c>): start the fade, once.</summary>
     public void Terminate(float age)
@@ -164,10 +206,45 @@ public sealed class ShieldSim
     /// The shell's alpha byte for the uniform case (<c>1001cab2</c>): A * fade / 255, then
     /// _ftol(a * 255 * sin²(clamp(field 21 * T, 0, field 23))).
     /// </summary>
-    public int UniformAlpha()
+    public int UniformAlpha() => FadeInAlpha((float)((double)FadeInRate * Time));
+
+    /// <summary>
+    /// A wave vertex's alpha byte (<c>1001cbca</c>..<c>1001cc61</c>): the same fade-in with
+    /// x = field 21 * T - dist * field 22, dist from <see cref="WaveDistance"/>.
+    /// </summary>
+    public int WaveAlpha(float dist)
+        => FadeInAlpha((float)((double)FadeInRate * Time - (double)dist * WaveSpeed));
+
+    /// <summary>
+    /// The wave's distance for a pushed-out vertex (x, y, z): along the direction with 0x1000
+    /// (d.y dir.y + dir.x d.x + d.z dir.z), otherwise |d|, with d = vertex - point.
+    /// </summary>
+    public float WaveDistance(float x, float y, float z)
+    {
+        float dx = x - WaveX, dy = y - WaveY, dz = z - WaveZ;
+        if (WaveAlongDirection)
+            return (float)((double)dy * WaveDirY + (double)WaveDirX * dx + (double)dz * WaveDirZ);
+        return (float)Math.Sqrt((float)(dx * dx + dy * dy + dz * dz));
+    }
+
+    /// <summary>
+    /// 0x2000 (<c>1001cc94</c>..<c>1001ccec</c>): _ftol(s² * alpha) with s = sin(10x + 10y + 10z + 3T) over
+    /// the vertex's source position.
+    /// </summary>
+    public int RippleAlpha(int alpha, float x, float y, float z)
+    {
+        float w = (float)(x * 10.0 + y * 10.0 + z * 10.0 + Time * 3.0);
+        float s = (float)Math.Sin(w);
+        double a = (double)s * s * alpha;
+        return double.IsNaN(a) ? 0 : (int)a;
+    }
+
+    /// <summary>
+    /// <c>1001cab2</c>: a = A * fade / 255, then _ftol(a * 255 * sin²(clamp(x, 0, field 23))).
+    /// </summary>
+    int FadeInAlpha(float x)
     {
         float a = (float)((Colour >> 24) * (double)Fade / 255.0);
-        float x = (float)((double)FadeInRate * Time);
         if (!(0f < x || 0f == x))
             x = 0f;
         if (FadeInLimit < x)

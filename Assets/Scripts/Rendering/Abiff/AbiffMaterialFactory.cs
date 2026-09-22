@@ -45,6 +45,9 @@ public sealed class AbiffMaterialFactory
         return material;
     }
 
+    /// <summary>An ABIFF texture by AOTexture id (repeat-wrapped, cached), as the materials use it.</summary>
+    public Texture2D GetTexture(int texId) => texId > 0 ? LoadTexture(texId) : null;
+
     Texture2D LoadTexture(int texId)
     {
         if (_textureCache.TryGetValue(texId, out Texture2D cached))

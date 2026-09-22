@@ -5,15 +5,16 @@ using UnityEngine;
 /// typeCode 2004 — stock <c>_GfxControlStars_t</c> (ctor <c>Gamecode 100f74ad</c>, Process
 /// <c>FUN_100f8491</c>): up to 128 sprites drawn by one <c>GfxVisualDiaBill</c>.
 ///
-/// starTypes 3, 16, 19 and 22 are recovered in full and replayed call-for-call by <see cref="StarsCase3"/>,
-/// <see cref="StarsLineSparks"/> (16, 19) and <see cref="StarsLimbSparks"/> (22), and starTypes 7 and 8
+/// starTypes 2, 3, 4, 6, 10, 11, 15, 16, 17, 18, 19, 20 and 22 are recovered in full and replayed call-for-call by
+/// <see cref="StarsCase2"/>, <see cref="StarsCase3"/>, <see cref="StarsCase4"/>, <see cref="StarsSwirl"/> (6, 11), <see cref="StarsCase10"/>,
+/// <see cref="StarsBodySparks"/> (15), <see cref="StarsLineSparks"/> (16 to 20) and <see cref="StarsLimbSparks"/> (22), and starTypes 7 and 8
 /// by <see cref="StarsRing"/>. Every other starType below is still the earlier approximation and has not
 /// been checked against FUN_100f8491.
 ///
 /// Stock Stars never creates a light: no code in the class range (100f7164..100fc404) reaches a light
 /// API, so none is attached here.
 /// </summary>
-public sealed class GfxControlStars : GfxControl
+public sealed class GfxControlStars : GfxControl, ICatVertexReader
 {
     const int MaxPoints = 128;
     const float ImmediateSpawn = -100f;
@@ -31,8 +32,19 @@ public sealed class GfxControlStars : GfxControl
     const float StockDrainSeconds = 5f;
 
     readonly StarsCase3 _case3;
+    readonly StarsCase4 _case4;
+    readonly StarsSwirl _swirl;
+    readonly StarsCase10 _case10;
+    readonly StarsCase2 _case2;
+
+    // Cases stepped from the locator position alone (4, 6, 10, 11), and whether expiry drains them.
+    readonly System.Action<float, Vector3> _originStep;
+    readonly bool _originDrains;
     readonly StarsLineSparks _line;
     readonly StarsLimbSparks _limbs;
+    readonly StarsBodySparks _body;
+    readonly EffectLocator _bodyFrame;
+    CatMeshDeformHost _bodyHost;
     readonly IStarsStockCase _stock;
     readonly EffectHitLocation _hitLocation;
     readonly EffectLocator[] _limbLocators;
@@ -43,13 +55,28 @@ public sealed class GfxControlStars : GfxControl
     /// <summary>The replayed starType 3 state, or null for other starTypes. For debug tooling.</summary>
     public StarsCase3 StockCase3 => _case3;
 
-    /// <summary>The replayed starType 16/19 state, or null for other starTypes. For debug tooling.</summary>
+    /// <summary>The replayed starType 4 state, or null for other starTypes. For debug tooling.</summary>
+    public StarsCase4 StockCase4 => _case4;
+
+    /// <summary>The replayed starType 6/11 state, or null. For debug tooling.</summary>
+    public StarsSwirl StockSwirl => _swirl;
+
+    /// <summary>The replayed starType 10 state, or null. For debug tooling.</summary>
+    public StarsCase10 StockCase10 => _case10;
+
+    /// <summary>The replayed starType 2 state, or null. For debug tooling.</summary>
+    public StarsCase2 StockCase2 => _case2;
+
+    /// <summary>The replayed starType 16-20 state, or null for other starTypes. For debug tooling.</summary>
     public StarsLineSparks StockLineSparks => _line;
 
     /// <summary>The replayed starType 22 state, or null for other starTypes. For debug tooling.</summary>
     public StarsLimbSparks StockLimbSparks => _limbs;
 
-    /// <summary>A starType 16/19 trail built on a hit location: stock sets it no duration and lets it run.</summary>
+    /// <summary>The replayed starType 15 state, or null for other starTypes. For debug tooling.</summary>
+    public StarsBodySparks StockBodySparks => _body;
+
+    /// <summary>A starType 16-20 trail built on a hit location: stock sets it no duration and lets it run.</summary>
     public bool IsHitLocationTracer => _line != null && _hitLocation != null;
 
     float _stockCarry;
@@ -135,6 +162,86 @@ public sealed class GfxControlStars : GfxControl
             return;
         }
 
+        if (_starType == 4 && record != null)
+        {
+            // Loader FUN_100f72a9: 26 duration, 28 size (+0x16d4), 29 launch speed (+0x16d8), 30 life ms.
+            _stockDuration = record.Field(26, 0f);
+            _case4 = new StarsCase4(
+                lifeSeconds: record.FieldInt(30, 0) / 1000f,
+                size: record.Field(28, 0f),
+                speed: record.Field(29, 0f),
+                startArgb: new[] { record.Field(18), record.Field(19), record.Field(20), record.Field(21) },
+                endArgb: new[] { record.Field(22), record.Field(23), record.Field(24), record.Field(25) },
+                rand: () => Random.Range(0, 0x8000));
+            _stock = _case4;
+            _originStep = (age, o) => _case4.Step(age, o.x, o.y, o.z);
+            _originDrains = true;
+            base.SetDuration(InfiniteDuration);
+            return;
+        }
+
+        if (StarsSwirl.Handles(_starType) && record != null)
+        {
+            // Loader FUN_100f72a9: 26 duration, 28 size curve, 29 ring radius, 30 life ms, 31 spring (int).
+            _stockDuration = record.Field(26, 0f);
+            _swirl = new StarsSwirl(
+                _starType,
+                lifeSeconds: record.FieldInt(30, 0) / 1000f,
+                sizeCurve: record.Field(28, 0f),
+                radius: record.Field(29, 0f),
+                spring: record.FieldInt(31, 0),
+                startArgb: new[] { record.Field(18), record.Field(19), record.Field(20), record.Field(21) },
+                endArgb: new[] { record.Field(22), record.Field(23), record.Field(24), record.Field(25) },
+                rand: () => Random.Range(0, 0x8000));
+            _stock = _swirl;
+            _originStep = (age, o) => _swirl.Step(age, o.x, o.y, o.z);
+            _originDrains = true;
+            base.SetDuration(InfiniteDuration);
+            return;
+        }
+
+        if (_starType == 10 && record != null)
+        {
+            // Loader FUN_100f72a9: 11 base size, 26 duration, 28 life (s), 29 shell radius, 30 palette, 31 swing.
+            _stockDuration = record.Field(26, 0f);
+            _case10 = new StarsCase10(
+                lifeSeconds: record.Field(28, 0f),
+                baseSize: record.Field(11, 0f),
+                radius: record.Field(29, 0f),
+                paletteFlag: record.FieldInt(30, 0),
+                swing: record.FieldInt(31, 0),
+                startArgb: new[] { record.Field(18), record.Field(19), record.Field(20), record.Field(21) },
+                endArgb: new[] { record.Field(22), record.Field(23), record.Field(24), record.Field(25) },
+                rand: () => Random.Range(0, 0x8000));
+            _stock = _case10;
+            _originStep = (age, o) => _case10.Step(age, _stockDuration, o.x, o.y, o.z);
+            _originDrains = false;
+            base.SetDuration(InfiniteDuration);
+            return;
+        }
+
+        if (_starType == 2 && record != null)
+        {
+            // Loader FUN_100f72a9: 26 duration, 28 size (+0x16d4). The lazy init (100f80ba) then sets the
+            // duration to 1.5 s on the first call; a SetDuration after that call still lands.
+            _stockDuration = record.Field(26, 0f);
+            _case2 = new StarsCase2(
+                size: record.Field(28, 0f),
+                startArgb: new[] { record.Field(18), record.Field(19), record.Field(20), record.Field(21) },
+                endArgb: new[] { record.Field(22), record.Field(23), record.Field(24), record.Field(25) },
+                rand: () => Random.Range(0, 0x8000));
+            _stock = _case2;
+            _originStep = (age, o) =>
+            {
+                if (!_case2.Initialised)
+                    _stockDuration = StarsCase2.LazyDuration;
+                _case2.Step(age, _stockDuration, o.x, o.y, o.z);
+            };
+            _originDrains = false;
+            base.SetDuration(InfiniteDuration);
+            return;
+        }
+
         if (StarsLineSparks.Handles(_starType) && record != null)
         {
             // Loader FUN_100f72a9: the duration is field 26. The hit location comes from
@@ -171,6 +278,27 @@ public sealed class GfxControlStars : GfxControl
             _limbLocators = new EffectLocator[StarsLimbSparks.AttachIds.Length];
             for (int i = 0; i < _limbLocators.Length; i++)
                 _limbLocators[i] = locator?.WithAttach(StarsLimbSparks.AttachIds[i]);
+            base.SetDuration(InfiniteDuration);
+            return;
+        }
+
+        if (_starType == StarsBodySparks.StarType && record != null)
+        {
+            // Loader FUN_100f72a9: 26 duration, 28 size (+0x16d4), 29 speed (+0x16d8), 30 life ms. The
+            // render's scale (+0x16ec) is 1 here: the baked vertices already carry the renderer's scale.
+            _stockDuration = record.Field(26, 0f);
+            _body = new StarsBodySparks(
+                lifeSeconds: record.FieldInt(30, 0) / 1000f,
+                size: record.Field(28, 0f),
+                speed: record.Field(29, 0f),
+                scale: 1f,
+                startArgb: new[] { record.Field(18), record.Field(19), record.Field(20), record.Field(21) },
+                endArgb: new[] { record.Field(22), record.Field(23), record.Field(24), record.Field(25) },
+                rand: () => Random.Range(0, 0x8000));
+            _stock = _body;
+            // The dynel's own position and rotation (Vehicle_t::GetGlobalPos / n3Dynel_t::GetGlobalRot):
+            // attach 0, the CAT root frame, without the record's template.
+            _bodyFrame = locator?.WithAttach(0);
             base.SetDuration(InfiniteDuration);
             return;
         }
@@ -259,6 +387,12 @@ public sealed class GfxControlStars : GfxControl
             return;
         }
 
+        if (_originStep != null)
+        {
+            ProcessStockAtOrigin(dt);
+            return;
+        }
+
         if (_line != null)
         {
             ProcessStockLine(dt);
@@ -268,6 +402,12 @@ public sealed class GfxControlStars : GfxControl
         if (_limbs != null)
         {
             ProcessStockLimbs(dt);
+            return;
+        }
+
+        if (_body != null)
+        {
+            ProcessStockBody(dt);
             return;
         }
 
@@ -402,9 +542,57 @@ public sealed class GfxControlStars : GfxControl
     }
 
     /// <summary>
-    /// starTypes 16 and 19, replayed like case 3 at <see cref="EffectFrameRate.StockProcessHz"/>. The
+    /// starTypes 4, 6, 10 and 11, replayed like case 3 at <see cref="EffectFrameRate.StockProcessHz"/>
+    /// from the locator position (<c>1010640a</c>), which follows the bone. The first call arms at age 0
+    /// and still runs the case. When 0 &lt;= duration &lt; age, types whose <c>0x100fc374</c> entry is 0
+    /// (4, 6, 11) stop spawning and get 5 s more (<c>100f84ed</c>) and go the next time; type 10 is
+    /// ready at once. Terminating with nothing alive readies any of them (<c>100f884e</c> / <c>100f90c1</c>
+    /// / <c>100f8c23</c>).
+    /// </summary>
+    void ProcessStockAtOrigin(float dt)
+    {
+        Vector3 origin = WorldMatrix.GetColumn(3);
+
+        if (!_stockArmed)
+        {
+            _stockArmed = true;
+            _originStep(0f, origin);
+            return;
+        }
+
+        float step = EffectFrameRate.StockProcessSeconds;
+        int steps = EffectFrameRate.TakeFixedSteps(ref _stockCarry, dt, step, MaxStockStepsPerFrame);
+        for (int s = 0; s < steps; s++)
+        {
+            _stockAge += step;
+
+            bool expired = _stockDuration >= 0f && _stockDuration < _stockAge;
+            if (expired && !_originDrains)
+            {
+                ReadyFlag = true;
+                return;
+            }
+            if (expired && !_stock.Terminating)
+            {
+                _stock.Terminating = true;
+                _stockDuration += StockDrainSeconds;
+                expired = false;
+            }
+
+            _originStep(_stockAge, origin);
+
+            if (expired || _stock.Drained)
+            {
+                ReadyFlag = true;
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// starTypes 16 to 20, replayed like case 3 at <see cref="EffectFrameRate.StockProcessHz"/>. The
     /// first call arms at age 0 and still runs the case. Once <c>_GfxControl_t::Process</c> finds
-    /// 0 &lt;= duration &lt; age the control is ready and both types leave at once (the <c>100f84d6</c>
+    /// 0 &lt;= duration &lt; age the control is ready and all of them leave at once (the <c>100f84d6</c>
     /// table sends them straight out, with no drain as case 3 gets), so the whole trail goes with it.
     /// Terminating stops the spawns, and a step that then finds nothing alive readies it (<c>100fc2f0</c>).
     /// </summary>
@@ -486,6 +674,105 @@ public sealed class GfxControlStars : GfxControl
             }
         }
     }
+
+    /// <summary>
+    /// starType 15, replayed like case 22 at <see cref="EffectFrameRate.StockProcessHz"/>, with case 3's
+    /// expiry (the <c>0x100fc374</c> entry is 0): stop spawning and 5 s more (<c>100f84ed</c>), then go;
+    /// terminating with nothing alive readies it (<c>100f90c1</c>). The lazy init (<c>100f811f</c>) hooks the
+    /// host's CAT mesh; while there is none, stock returns before the age moves and tries again next call.
+    /// The dynel's frame is read once per frame; stock reads it every call.
+    /// </summary>
+    void ProcessStockBody(float dt)
+    {
+        if (_bodyHost == null)
+        {
+            if (Locator == null || !Locator.TryGetHighlightRoot(out GameObject root) || root == null
+                || !CatMeshDeformHost.HasCatMesh(root))
+                return;
+            _bodyHost = CatMeshDeformHost.For(root);
+            _bodyHost.AddReader(this);
+        }
+
+        StarsBodySparks.Frame frame = BodyFrame();
+        if (!_stockArmed)
+        {
+            _stockArmed = true;
+            _body.Step(0f, frame);
+            return;
+        }
+
+        float step = EffectFrameRate.StockProcessSeconds;
+        int steps = EffectFrameRate.TakeFixedSteps(ref _stockCarry, dt, step, MaxStockStepsPerFrame);
+        for (int s = 0; s < steps; s++)
+        {
+            _stockAge += step;
+
+            bool expired = _stockDuration >= 0f && _stockDuration < _stockAge;
+            if (expired && !_body.Terminating)
+            {
+                _body.Terminating = true;
+                _stockDuration += StockDrainSeconds;
+                expired = false;
+            }
+
+            _body.Step(_stockAge, frame);
+
+            if (expired || _body.Drained)
+            {
+                ReadyFlag = true;
+                return;
+            }
+        }
+    }
+
+    /// <summary>The dynel's position and rotation as the body sparks use them; the origin if it's gone.</summary>
+    StarsBodySparks.Frame BodyFrame()
+    {
+        if (_bodyFrame == null || !_bodyFrame.TryResolve(out Matrix4x4 m))
+            return StarsBodySparks.Frame.At(0f, 0f, 0f);
+
+        Quaternion q = m.rotation;
+        Vector3 p = m.GetColumn(3), x = q * Vector3.right, y = q * Vector3.up, z = q * Vector3.forward;
+        return new StarsBodySparks.Frame
+        {
+            Px = p.x, Py = p.y, Pz = p.z,
+            Xx = x.x, Xy = x.y, Xz = x.z,
+            Yx = y.x, Yy = y.y, Yz = y.z,
+            Zx = z.x, Zy = z.y, Zz = z.z,
+        };
+    }
+
+    // The group being read, for SampleVertex.
+    List<Vector3> _groupPositions;
+    List<Vector3> _groupNormals;
+    Matrix4x4 _groupToBody;
+    System.Func<int, StarsBodySparks.Vertex> _vertexAt;
+
+    /// <summary>
+    /// The vertex callback <c>100f740b</c>. Stock gets the skinned vertices in the mesh's own space, which
+    /// is the dynel's frame; the port bakes them in world space, so each one kept is taken back into the
+    /// dynel's frame as it stands now. The next call places it with the frame it has then, as stock does.
+    /// </summary>
+    public void ReadGroup(int count, int baseIndex, int total, List<Vector3> positions, List<Vector3> normals, Matrix4x4 toWorld)
+    {
+        if (_body == null || _bodyFrame == null || !_bodyFrame.TryResolve(out Matrix4x4 m))
+            return;
+
+        _groupPositions = positions;
+        _groupNormals = normals;
+        _groupToBody = Matrix4x4.TRS(m.GetColumn(3), m.rotation, Vector3.one).inverse * toWorld;
+        _vertexAt ??= SampleVertex;
+        _body.ReadGroup(count, baseIndex, total, _vertexAt);
+    }
+
+    StarsBodySparks.Vertex SampleVertex(int index)
+    {
+        Vector3 p = _groupToBody.MultiplyPoint3x4(_groupPositions[index]);
+        Vector3 n = _groupToBody.MultiplyVector(_groupNormals[index]);
+        return new StarsBodySparks.Vertex { X = p.x, Y = p.y, Z = p.z, NX = n.x, NY = n.y, NZ = n.z };
+    }
+
+    protected override void OnReleased(bool immediate) => _bodyHost?.RemoveReader(this);
 
     /// <summary>
     /// <c>10106078</c> for each of <see cref="StarsLimbSparks.AttachIds"/> on the locator's dynel. A point

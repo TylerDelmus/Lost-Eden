@@ -36,18 +36,18 @@ public class EffectCoverageTests
     [Fact]
     public void OtherStarTypes_AreUnverified_AndNamed()
     {
-        EffectCoverage c = Coverage(Rec(45001, EffectTypeTags.Stars, (10, 6), (30, 2000)), Rec(2000, EffectTypeTags.FlareAlt));
+        EffectCoverage c = Coverage(Rec(45001, EffectTypeTags.Stars, (10, 5), (30, 2000)), Rec(2000, EffectTypeTags.FlareAlt));
         EffectCoverage.Result r = c.Of(45001);
         Assert.Equal(EffectStatus.Unverified, r.Status);
-        Assert.Equal(new[] { "Stars #6 unverified" }, r.Gaps); // field 30 is not a child
+        Assert.Equal(new[] { "Stars #5 unverified" }, r.Gaps); // field 30 is not a child
     }
 
     [Fact]
     public void UnportedControl_MakesTheTreeMissing()
     {
-        EffectCoverage c = Coverage(Rec(1, 0x7d5));
+        EffectCoverage c = Coverage(Rec(1, 0xbd9));
         Assert.Equal(EffectStatus.Missing, c.Of(1).Status);
-        Assert.Equal(new[] { "Suns missing" }, c.Of(1).Gaps);
+        Assert.Equal(new[] { "Spiral2 missing" }, c.Of(1).Gaps);
     }
 
     [Fact]
@@ -67,10 +67,10 @@ public class EffectCoverageTests
     }
 
     [Fact]
-    public void Cord_IsVerifiedOnlyWhenItCannotLink()
+    public void Cord_IsVerifiedWhetherOrNotItCanLink()
     {
         Assert.Equal(EffectStatus.Verified, Coverage(Rec(8000, EffectTypeTags.Cord, (0, 5))).Of(8000).Status);
-        Assert.Equal(EffectStatus.Unverified, Coverage(Rec(8002, EffectTypeTags.Cord, (0, 7))).Of(8002).Status);
+        Assert.Equal(EffectStatus.Verified, Coverage(Rec(8002, EffectTypeTags.Cord, (0, 7))).Of(8002).Status);
     }
 
     [Fact]
