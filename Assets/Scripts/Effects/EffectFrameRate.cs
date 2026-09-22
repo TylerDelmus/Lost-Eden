@@ -13,7 +13,11 @@ using System;
 /// </summary>
 public static class EffectFrameRate
 {
-    /// <summary>The frame time stock's constants were authored against (~30 FPS).</summary>
+    /// <summary>
+    /// The frame time stock's constants are assumed to be authored against (~30 FPS). The 0.033 itself
+    /// is stock's first-frame delta clamp in <c>_GfxControl_t::Process</c> (<c>Gamecode 100d2a86</c>),
+    /// not a frame rate; see <see cref="StockProcessHz"/>.
+    /// </summary>
     public const float StockFrameDt = 0.033f;
 
     /// <summary>
@@ -33,6 +37,45 @@ public static class EffectFrameRate
             return 0f;
         float steps = dt / StockFrameDt;
         return steps > MaxFrameSteps ? MaxFrameSteps : steps;
+    }
+
+    /// <summary>
+    /// Rate at which fixed-step controls replay stock Process calls. Stock calls every control's
+    /// Process once per engine frame from <c>_EffectHandler_t::RunFunction</c> (<c>Gamecode 100d2423</c>)
+    /// with no time gate, and the client has no frame cap of its own (only VSync), so the true rate is
+    /// whatever the stock client ran at.
+    /// UNVERIFIED: 30 is the long-standing assumption here, not a measured value. Measure it with
+    /// <c>/framerate</c> in the stock client before treating a replayed control as stock-exact.
+    /// </summary>
+    public const float StockProcessHz = 30f;
+
+    /// <summary>Length of one replayed stock Process call.</summary>
+    public const float StockProcessSeconds = 1f / StockProcessHz;
+
+    /// <summary>
+    /// Whole fixed steps of <paramref name="stepSeconds"/> that fit in the time carried so far plus
+    /// <paramref name="dt"/>, at most <paramref name="maxSteps"/>. Time past the cap is dropped rather
+    /// than carried, so a stall never makes a control fast-forward through its whole life.
+    /// </summary>
+    public static int TakeFixedSteps(ref float carry, float dt, float stepSeconds, int maxSteps)
+    {
+        if (stepSeconds <= 0f || maxSteps <= 0)
+            return 0;
+
+        if (float.IsNaN(carry) || float.IsInfinity(carry) || carry < 0f)
+            carry = 0f;
+        if (!float.IsNaN(dt) && dt > 0f)
+            carry += dt;
+
+        int steps = (int)(carry / stepSeconds);
+        if (steps > maxSteps)
+        {
+            carry = 0f;
+            return maxSteps;
+        }
+
+        carry -= steps * stepSeconds;
+        return steps;
     }
 
     /// <summary>

@@ -353,6 +353,7 @@ public sealed class CatMeshLoader
             renderer.quality = SkinQuality.Bone2;
             renderer.updateWhenOffscreen = true;
             renderer.sharedMaterial = _materials.Get(sub.Material);
+            subGo.AddComponent<CatMeshSourceVertices>().Positions = sub.Positions;
         }
         double meshMs = section.Elapsed.TotalMilliseconds;
 

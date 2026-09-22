@@ -15,6 +15,11 @@ public static class EffectTypeTags
     public const int Nano3 = 0x3f3;      // 1011 — _GfxControlNano3_t
     public const int Sprite = 0x3f4;     // 1012 — _GfxControlSprite_t
     public const int Sparks = 0x3fa;     // 1018 — Sprite2Type0 (not particles)
+    public const int Tracer1 = 0x3fb;    // 1019 — _GfxControlTracer1_t, the nano projectile
+    public const int Plasma = 0x7d2;     // 2002 — _GfxControlPlasma_t, energy strip between two points
+    public const int Tracer4 = 0x400;    // 1024 — _GfxControlTracer4_t, three twisting ribbons
+    public const int Deformer = 0xbb9;   // 3001 — _GfxControlDeformer_t, moves the host's mesh vertices
+    public const int Electra = 0x7d6;    // 2006 — _GfxControlElectra_t, shell of flat sparks
 
     // Legacy aliases used by older call sites
     public const int NanoSprite = Nano0;

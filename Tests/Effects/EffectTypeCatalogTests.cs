@@ -102,7 +102,8 @@ public class EffectTypeCatalogTests
             EffectTypeTags.Meta, EffectTypeTags.Sequencer, EffectTypeTags.Delay,
             EffectTypeTags.Stars, EffectTypeTags.Highlight, EffectTypeTags.Spell1,
             EffectTypeTags.Flare, EffectTypeTags.FlareAlt, EffectTypeTags.Sparks,
-            EffectTypeTags.Scatter, EffectTypeTags.Cord,
+            EffectTypeTags.Scatter, EffectTypeTags.Cord, EffectTypeTags.Tracer1, EffectTypeTags.Plasma,
+            EffectTypeTags.Tracer4, EffectTypeTags.Deformer, EffectTypeTags.Electra,
         };
         int[] actual = EffectTypeCatalog.All
             .Where(i => i.Support == EffectSupport.Ported)

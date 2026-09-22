@@ -29,6 +29,32 @@ public sealed class EffectHandle
         _control?.TerminateGracefully();
     }
 
+    /// <summary>Stock <c>_EffectHandler_t::NextState</c> (Gamecode 100ce288): the control's slot 10.</summary>
+    public void NextState()
+    {
+        if (_dead)
+            return;
+        _control?.NextState();
+    }
+
+    public void UpdatePosition(UnityEngine.Vector3 position)
+    {
+        if (!_dead)
+            _control?.UpdatePosition(position);
+    }
+
+    public void SetStartColor(float a, float r, float g, float b)
+    {
+        if (!_dead)
+            _control?.SetStartColor(a, r, g, b);
+    }
+
+    public void SetStopColor(float a, float r, float g, float b)
+    {
+        if (!_dead)
+            _control?.SetStopColor(a, r, g, b);
+    }
+
     public void Destroy()
     {
         if (_dead && _control == null)

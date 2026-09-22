@@ -38,10 +38,32 @@ public sealed class GfxControlMeta : GfxControl
             _children[i] = _factory?.SpawnChild(childId, locator, tint);
         }
 
+        // Own duration only: stock's ctor writes +0x10 directly (100e5f46 / 100e5f5e), it does not go
+        // through slot 8, so the children keep theirs.
         if (infinite)
-            SetDuration(InfiniteDuration);
+            base.SetDuration(InfiniteDuration);
         else
-            SetDuration(90f); // stock post-ctor safety net
+            base.SetDuration(90f); // stock post-ctor safety net
+    }
+
+    /// <summary>
+    /// Stock slot 8, <c>Gamecode 100e5e09</c>: hands the duration to every child through
+    /// <c>_EffectHandler_t::SetDuration</c>, then keeps <c>seconds + 15</c> for itself so the children
+    /// finish first. This is how the nano cast's <c>SetDuration(6000)</c> reaches the controls that
+    /// actually draw.
+    /// </summary>
+    public override void SetDuration(float seconds)
+    {
+        for (int i = 0; i < SlotCount; i++)
+            _children?[i]?.SetDuration(seconds);
+        base.SetDuration(seconds + 15f);
+    }
+
+    /// <summary>Stock slot 4, <c>Gamecode 100e5d7f</c>: forward to every child.</summary>
+    public override void UpdatePosition(Vector3 position)
+    {
+        for (int i = 0; i < SlotCount; i++)
+            _children[i]?.UpdatePosition(position);
     }
 
     protected override void OnProcess(float dt)
@@ -61,6 +83,11 @@ public sealed class GfxControlMeta : GfxControl
         ReadyFlag = true;
     }
 
+    /// <summary>
+    /// Stock slot 6, <c>Gamecode 100e5ddd</c>: terminate every child gracefully and mark itself
+    /// terminating (+0x28). It does not ready itself; Process readies it once no child is running, so
+    /// the children get to wind down instead of being deleted with the parent.
+    /// </summary>
     protected override void OnTerminateGracefully()
     {
         for (int i = 0; i < SlotCount; i++)
@@ -68,7 +95,6 @@ public sealed class GfxControlMeta : GfxControl
             if (_children[i] != null)
                 _factory?.TerminateEffectGracefully(_children[i]);
         }
-        ReadyFlag = true;
     }
 
     protected override void OnReleased(bool immediate)

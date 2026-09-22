@@ -119,14 +119,28 @@ public sealed class GfxControlCord : GfxControl
         SetDurationFromTemplate(8, 4f);
 
         _additive = SpriteEmitterMath.IsAdditive(_flags);
-        if (_additive && _lights != null)
+        if (_additive && _lights != null && LinksPossible)
             _lights.TryAcquire(out _lightLease);
     }
 
     int IndexFromOldest(int k) => (_head - _count + k + _links.Length * 2) % _links.Length;
 
+    /// <summary>
+    /// Stock Cord only ever creates a link in its slot 4 (<c>100d69d8</c>), and only when the locator is
+    /// in local mode (field 0 bit 1): <c>Cord4CircularLinkList::GetNew</c> has no other caller in the
+    /// Cord (<c>100d6339</c> is the only one; the rest belong to tracers), and its Process
+    /// (<c>100d5f5a</c>) spawns nothing. A Cord without bit 1 therefore never draws — the hand Cords
+    /// 8000/8001 of cast 46116 (field 0 = 5) are invisible in stock.
+    /// UNVERIFIED for local-mode Cords: the rate-driven sampling below is the earlier port's model,
+    /// not stock's one-link-per-UpdatePosition.
+    /// </summary>
+    bool LinksPossible => (_flags & 2) != 0;
+
     protected override void OnProcess(float dt)
     {
+        if (!LinksPossible)
+            return;
+
         for (int k = 0; k < _count; k++)
             _links[IndexFromOldest(k)].Age += dt;
 

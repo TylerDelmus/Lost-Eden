@@ -27,6 +27,22 @@ public static class NanoEffectResolver
     public static bool TryResolveHit(NanoSpell nano, out SpellFx fx)
         => TryResolveStat(nano, StatId.hiteffecttype, out fx);
 
+    /// <summary>Stat 413 effecttype: the buff's own effect, on the recipient while the buff runs.</summary>
+    public static bool TryResolveBuff(NanoSpell nano, out SpellFx fx)
+        => TryResolveStat(nano, StatId.effecttype, out fx);
+
+    /// <summary>Stock only creates the buff effect for a nano whose flags have bit 0x10000 (100518a9).</summary>
+    public static bool HasBuffEffect(NanoSpell nano)
+        => nano?.Template?.Stats != null
+           && nano.Template.Stats.TryGetValue(StatId.flags, out uint flags)
+           && (flags & 0x10000u) != 0;
+
+    /// <summary>Stat 8 timeexist, in centiseconds: how long the buff runs. GfxTest stands in with it for the server.</summary>
+    public static int TimeExist(NanoSpell nano)
+        => nano?.Template?.Stats != null && nano.Template.Stats.TryGetValue(StatId.timeexist, out uint time)
+            ? (int)time
+            : 0;
+
     /// <summary>Legacy alias — cast effect only.</summary>
     public static bool TryResolve(NanoSpell nano, out SpellFx fx)
         => TryResolveCast(nano, out fx);

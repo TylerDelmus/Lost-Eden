@@ -45,7 +45,8 @@ public abstract class GfxControl
         Locator = locator;
     }
 
-    public void SetDuration(float seconds)
+    /// <summary>Stock vftable slot 8, reached through <c>_EffectHandler_t::SetDuration</c> (100ce1ed).</summary>
+    public virtual void SetDuration(float seconds)
     {
         _duration = seconds;
     }
@@ -85,6 +86,32 @@ public abstract class GfxControl
 
     /// <summary>Legacy alias for hard kill.</summary>
     public void Kill() => Release(true);
+
+    /// <summary>
+    /// Stock slot 4 for position-template controls: <c>_GfxLocator_t</c> <c>FUN_101064f7</c>. A
+    /// locator placed by a bare position only follows a new one when the template's field 0 bit 0
+    /// (track) is set. Spell1 calls this on its hand children every frame.
+    /// </summary>
+    public virtual void UpdatePosition(Vector3 position)
+    {
+        if (Locator == null || !Locator.IsWorldPoint)
+            return;
+        if (Record == null || (Record.FieldInt(0, 0) & 1) == 0)
+            return;
+        Locator.SetWorldPoint(position);
+    }
+
+    /// <summary>
+    /// Stock slot 10. The base <c>_GfxControl_t::NextState</c> (<c>100a76f9</c>) is a graceful
+    /// terminate; Spell1 overrides it. The nano cast calls this when its result arrives.
+    /// </summary>
+    public virtual void NextState() => TerminateGracefully();
+
+    /// <summary>Stock slot 11: start colour A,R,G,B. Only controls that have one override it.</summary>
+    public virtual void SetStartColor(float a, float r, float g, float b) { }
+
+    /// <summary>Stock slot 12: end colour A,R,G,B.</summary>
+    public virtual void SetStopColor(float a, float r, float g, float b) { }
 
     public bool Process(float dt)
     {
@@ -129,6 +156,11 @@ public abstract class GfxControl
 
     /// <summary>Collect camera-facing quads for this frame (0..N).</summary>
     public virtual void CollectBillboards(List<EffectBillboardBatch.Quad> dest, Camera camera)
+    {
+    }
+
+    /// <summary>Collect triangle strips for this frame, for visuals that build their own geometry.</summary>
+    public virtual void CollectStrips(List<EffectBillboardBatch.Strip> dest, Camera camera)
     {
     }
 

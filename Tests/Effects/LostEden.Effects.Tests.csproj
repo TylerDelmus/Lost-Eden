@@ -15,7 +15,22 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\..\Assets\Scripts\Effects\StarsMotion.cs" Link="StarsMotion.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\StarsRing.cs" Link="StarsRing.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\StockColorRamp.cs" Link="StockColorRamp.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\StarsCase3.cs" Link="StarsCase3.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\FlareType0Sim.cs" Link="FlareType0Sim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\FlareType0Visual.cs" Link="FlareType0Visual.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\Tracer1Sim.cs" Link="Tracer1Sim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\Tracer4Sim.cs" Link="Tracer4Sim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\Cord4Strip.cs" Link="Cord4Strip.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\DeformerSim.cs" Link="DeformerSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\StarsCase19.cs" Link="StarsCase19.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\ElectraSim.cs" Link="ElectraSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\PlasmaSim.cs" Link="PlasmaSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\EffectCoverage.cs" Link="EffectCoverage.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\GfxTweakRecord.cs" Link="GfxTweakRecord.cs" />
+    <Compile Include="..\..\Assets\Scripts\Rendering\CatMesh\AnimNoteIds.cs" Link="AnimNoteIds.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\Spell1Trail.cs" Link="Spell1Trail.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\EffectTypeTags.cs" Link="EffectTypeTags.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\EffectLightMath.cs" Link="EffectLightMath.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\EffectTypeCatalog.cs" Link="EffectTypeCatalog.cs" />

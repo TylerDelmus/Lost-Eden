@@ -201,15 +201,19 @@ public class Character : Dynel
 
     /// <summary>
     /// Release anim played when cast time completes: spell-self on a self cast, spell-dir otherwise.
+    /// <paramref name="onComplete"/> runs when it ends, or at once when it cannot play.
     /// </summary>
-    public void PlaySpellCastReleaseAnim(bool selfCast)
+    public void PlaySpellCastReleaseAnim(bool selfCast, Action onComplete = null)
     {
         if (_visual == null)
+        {
+            onComplete?.Invoke();
             return;
+        }
 
         // Drop the cast loop first: the release anim may not resolve, and it must not keep looping then.
         StopSpellCastAnim(0f);
-        _visual.PlayKindNameOnce(selfCast ? "spell-self" : "spell-dir", 0f, null, overlay: true);
+        _visual.PlayKindNameOnce(selfCast ? "spell-self" : "spell-dir", 0f, onComplete, overlay: true);
     }
 
     /// <summary>Ends the looping cast anim (cast finished, interrupted, or timed out).</summary>
