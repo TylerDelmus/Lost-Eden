@@ -91,7 +91,7 @@ public sealed class EffectModels
 
     readonly ResourceDatabase _database;
     readonly Dictionary<string, Model> _cache = new Dictionary<string, Model>(System.StringComparer.OrdinalIgnoreCase);
-    AoTweakMeshNames _names;
+    AbiffMeshNames _names;
     AbiffMaterialFactory _materials;
 
     public EffectModels(ResourceDatabase database)
@@ -119,7 +119,7 @@ public sealed class EffectModels
         if (_database?.Rdb == null)
             return null;
 
-        _names ??= new AoTweakMeshNames(_database);
+        _names ??= new AbiffMeshNames(_database);
         _materials ??= new AbiffMaterialFactory(_database);
         if (!_names.TryResolve(fileName, out int meshId) || meshId <= 0)
             return null;

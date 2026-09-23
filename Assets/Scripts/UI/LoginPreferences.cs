@@ -33,13 +33,6 @@ public static class LoginPreferences
         Write();
     }
 
-    public static void SaveAoPath(string aoPath)
-    {
-        EnsureLoaded();
-        _cached.AoPath = aoPath ?? string.Empty;
-        Write();
-    }
-
     public static string GetUsername()
     {
         EnsureLoaded();
@@ -50,12 +43,6 @@ public static class LoginPreferences
     {
         EnsureLoaded();
         return _cached.DimensionId ?? string.Empty;
-    }
-
-    public static string GetAoPath()
-    {
-        EnsureLoaded();
-        return _cached.AoPath ?? string.Empty;
     }
 
     public static int GetPlayfieldId() => DefaultPlayfieldId;
@@ -99,6 +86,5 @@ public static class LoginPreferences
     {
         public string Username;
         public string DimensionId;
-        public string AoPath;
     }
 }

@@ -7,14 +7,18 @@ public class SceneInstaller : MonoBehaviour, IInstaller
     [SerializeField] PlayfieldFactory _playfieldFactory;
     [SerializeField] LoadingScreenView _loadingScreenView;
     [SerializeField] WorldOverlayController _worldOverlayController;
-    [SerializeField] InventoryView _inventoryWindowView;
     [SerializeField] CursorController _cursorController;
+
+    [Header("Worlds")]
+    [Tooltip("Optional. Left empty, a bare LoginWorld GameObject is created instead.")]
+    [SerializeField] GameObject _loginWorldPrefab;
+    [SerializeField] GameObject _gameWorldPrefab;
 
     public void InstallBindings(ContainerBuilder containerBuilder)
     {
         var resourceDatabase = new ResourceDatabase();
 
-        string aoPath = LoginPreferences.GetAoPath();
+        string aoPath = AoInstall.Path;
         if (AoInstallPath.IsValid(aoPath))
             resourceDatabase.Initialize(AoInstallPath.Normalize(aoPath));
 
@@ -25,6 +29,7 @@ public class SceneInstaller : MonoBehaviour, IInstaller
         var skinTextures = new SkinTextureResolver(resourceDatabase);
         var itemTemplates = new ItemTemplateCache(resourceDatabase);
         var effectTextures = new EffectTextureNames(resourceDatabase);
+        var meshNames = new AbiffMeshNames(resourceDatabase);
         var effectCatalog = new GfxTweakCatalog(resourceDatabase);
         var effectHandler = new EffectHandler(effectCatalog, imageTextures, effectTextures);
         containerBuilder.RegisterValue(resourceDatabase);
@@ -33,6 +38,7 @@ public class SceneInstaller : MonoBehaviour, IInstaller
         containerBuilder.RegisterValue(iconTextures);
         containerBuilder.RegisterValue(skinTextures);
         containerBuilder.RegisterValue(itemTemplates);
+        containerBuilder.RegisterValue(meshNames);
         containerBuilder.RegisterValue(effectHandler);
         containerBuilder.RegisterValue(new AbiffLoader(resourceDatabase, abiffMaterials, imageTextures));
         containerBuilder.RegisterValue(new CatMeshLoader(resourceDatabase, catMeshMaterials));
@@ -66,15 +72,9 @@ public class SceneInstaller : MonoBehaviour, IInstaller
 
         containerBuilder.RegisterValue(_worldOverlayController);
 
-        _inventoryWindowView ??= GetComponentInChildren<InventoryView>(true);
-        if (_inventoryWindowView == null)
-        {
-            var inventoryGo = new GameObject("InventoryWindow");
-            inventoryGo.transform.SetParent(transform, false);
-            _inventoryWindowView = inventoryGo.AddComponent<InventoryView>();
-        }
-
-        containerBuilder.RegisterValue(new GameHud(_inventoryWindowView), new System.Type[] { typeof(IGameHud) });
+        // The old inventory window is gone; IGameHud stays as the seam so InputController keeps
+        // resolving, and the rebuilt window will supply the real implementation.
+        containerBuilder.RegisterValue(new NullGameHud(), new System.Type[] { typeof(IGameHud) });
         containerBuilder.RegisterValue(new UIInteractionManager(), new System.Type[] { typeof(IUINotifyService) });
 
         EffectRuntimeHost fxHost = GetComponentInChildren<EffectRuntimeHost>(true);
@@ -87,6 +87,16 @@ public class SceneInstaller : MonoBehaviour, IInstaller
 
         fxHost.Init(effectHandler, _playerController);
         effectHandler.SetLightParent(fxHost.transform);
+
+        // Worlds are spawned after the container exists, so the router is handed the container
+        // through OnContainerBuilt rather than resolving it.
+        var worldRouter = new WorldRouter(transform, _loginWorldPrefab, _gameWorldPrefab);
+        containerBuilder.RegisterValue(worldRouter);
+        containerBuilder.OnContainerBuilt += container =>
+        {
+            worldRouter.Bind(container);
+            worldRouter.EnterLogin();
+        };
     }
 
     CursorController FindCursorController()

@@ -26,7 +26,6 @@ public static class UserInterface
 
     public static IReadOnlyList<UiMenu> Menus => ActiveMenus;
 
-    const string WindowShellResourcePath = "UI/AoWindow";
 
     public static UiMenu Load(
         MonoBehaviour host,
@@ -41,11 +40,6 @@ public static class UserInterface
             throw new ArgumentNullException(nameof(host));
 
         string name = logName ?? uxmlResourcePath;
-        var document = host.GetComponent<UIDocument>();
-        if (document == null)
-            document = host.gameObject.AddComponent<UIDocument>();
-
-        EnsurePanelSettings(document, sortOrder);
 
         var asset = Resources.Load<VisualTreeAsset>(uxmlResourcePath);
         if (asset == null)
@@ -54,81 +48,21 @@ public static class UserInterface
             return null;
         }
 
-        document.visualTreeAsset = asset;
+        var renderer = host.GetComponent<PanelRenderer>();
+        if (renderer == null)
+            renderer = host.gameObject.AddComponent<PanelRenderer>();
 
-        VisualElement panelRoot = document.rootVisualElement;
-        VisualElement contentRoot = panelRoot.Q<VisualElement>("root") ?? panelRoot;
+        // Asset before panel settings: assigning panelSettings rebuilds the root, and the
+        // tree is only cloned into it if the asset is already there.
+        renderer.visualTreeAsset = asset;
+        renderer.sortingOrder = sortOrder;
+        EnsurePanelSettings(renderer, sortOrder);
 
-        StretchToScreen(panelRoot);
-        if (centerPanelRoot)
-            CenterContent(panelRoot);
-
-        if (stretchContentRoot)
-            StretchToScreen(contentRoot);
-
-        EnsureStylesheet(contentRoot, uxmlResourcePath);
-
-        var menu = new UiMenu(host, document, contentRoot, name);
-        menu.SetVisible(startVisible);
+        var menu = new UiMenu(host, renderer, uxmlResourcePath, name, stretchContentRoot, centerPanelRoot, startVisible);
         ActiveMenus.Add(menu);
         return menu;
     }
 
-    /// <summary>
-    /// Loads the shared AO window shell and nests a content UXML into <c>#window-body</c>.
-    /// </summary>
-    public static UiWindow LoadWindow(
-        MonoBehaviour host,
-        string title,
-        string contentUxmlResourcePath,
-        int sortOrder,
-        bool startVisible = false,
-        string logName = null)
-    {
-        if (string.IsNullOrEmpty(contentUxmlResourcePath))
-            throw new ArgumentException("Content UXML resource path is required.", nameof(contentUxmlResourcePath));
-
-        UiMenu menu = Load(
-            host,
-            WindowShellResourcePath,
-            sortOrder,
-            startVisible,
-            logName ?? title ?? contentUxmlResourcePath,
-            stretchContentRoot: true,
-            centerPanelRoot: true);
-
-        if (menu == null)
-            return null;
-
-        Label titleLabel = menu.Q<Label>("window-title");
-        VisualElement closeButton = menu.Q("close-button");
-        VisualElement body = menu.Q("window-body");
-        if (body == null)
-        {
-            Debug.LogError("[UserInterface] AoWindow shell is missing #window-body.");
-            Unregister(menu);
-            return null;
-        }
-
-        VisualTreeAsset contentAsset = LoadTemplate(contentUxmlResourcePath);
-        if (contentAsset == null)
-        {
-            Debug.LogError($"[UserInterface] Missing content VisualTreeAsset at Resources/{contentUxmlResourcePath}");
-            Unregister(menu);
-            return null;
-        }
-
-        body.Clear();
-        TemplateContainer contentInstance = contentAsset.Instantiate();
-        contentInstance.style.flexGrow = 1;
-        contentInstance.style.width = Length.Percent(100);
-        body.Add(contentInstance);
-
-        VisualElement contentRoot = contentInstance.Q<VisualElement>("root") ?? contentInstance;
-        EnsureStylesheet(contentRoot, contentUxmlResourcePath);
-
-        return new UiWindow(menu, titleLabel, closeButton, body, contentRoot, title);
-    }
 
     public static T FindOrCreateMenuView<T>(Transform parent, string childName) where T : Component
     {
@@ -155,20 +89,18 @@ public static class UserInterface
         ActiveMenus.Remove(menu);
     }
 
-    public static void Unregister(UiWindow window)
-    {
-        window?.Dispose();
-    }
 
-    public static void EnsurePanelSettings(UIDocument document, int sortingOrder)
+    public static void EnsurePanelSettings(PanelRenderer renderer, int sortingOrder)
     {
-        PanelSettings panelSettings = GetOrCreatePanelSettings(sortingOrder);
-        document.panelSettings = panelSettings;
+        renderer.panelSettings = GetOrCreatePanelSettings(sortingOrder);
     }
 
     static PanelSettings GetOrCreatePanelSettings(int sortingOrder)
     {
-        if (PanelSettingsBySortOrder.TryGetValue(sortingOrder, out PanelSettings existing))
+        // The cache outlives a play session when Reload Domain is off, but the instances
+        // themselves are destroyed on exit. Unity's == catches those; a plain TryGetValue
+        // would hand back a dead object and every panel would render nothing.
+        if (PanelSettingsBySortOrder.TryGetValue(sortingOrder, out PanelSettings existing) && existing != null)
             return existing;
 
         PanelSettings panelSettings = CreatePanelSettingsInstance();
@@ -224,7 +156,7 @@ public static class UserInterface
         element.style.height = Length.Percent(100);
     }
 
-    static void CenterContent(VisualElement panelRoot)
+    internal static void CenterContent(VisualElement panelRoot)
     {
         panelRoot.style.alignItems = Align.Center;
         panelRoot.style.justifyContent = Justify.Center;
@@ -264,74 +196,9 @@ public static class UserInterface
         label.style.color = color ?? DefaultTextColor;
     }
 
-    public static void StyleTextField(
-        TextField field,
-        Color? background = null,
-        Color? textColor = null,
-        int fontSize = 18)
-    {
-        if (field == null)
-            return;
 
-        Color bg = background ?? DefaultFieldBackground;
-        Color text = textColor ?? DefaultTextColor;
 
-        field.SetEnabled(true);
-        field.style.backgroundColor = bg;
-        field.style.color = text;
-        field.style.fontSize = fontSize;
 
-        TextElement textElement = field.Q<TextElement>();
-        if (textElement != null)
-            textElement.style.color = text;
-
-        VisualElement input = field.Q(className: "unity-base-text-field__input");
-        if (input != null)
-        {
-            input.style.backgroundColor = bg;
-            input.style.color = text;
-        }
-    }
-
-    public static void StyleDropdown(
-        DropdownField dropdown,
-        Color? background = null,
-        Color? textColor = null,
-        int fontSize = 18)
-    {
-        if (dropdown == null)
-            return;
-
-        Color bg = background ?? DefaultFieldBackground;
-        Color text = textColor ?? DefaultTextColor;
-
-        dropdown.SetEnabled(true);
-        dropdown.style.backgroundColor = bg;
-        dropdown.style.color = text;
-        dropdown.style.fontSize = fontSize;
-
-        Label popupText = dropdown.Q<Label>(className: "unity-base-popup-field__text");
-        if (popupText != null)
-            popupText.style.color = text;
-    }
-
-    public static void StyleButton(Button button, Color? textColor = null)
-    {
-        if (button == null)
-            return;
-
-        button.style.backgroundColor = new Color(51f / 255f, 115f / 255f, 191f / 255f);
-        button.style.color = textColor ?? DefaultTextColor;
-    }
-
-    public static void StyleDisabledButton(Button button)
-    {
-        if (button == null)
-            return;
-
-        button.style.backgroundColor = new Color(40f / 255f, 70f / 255f, 110f / 255f);
-        button.style.color = new Color(1f, 1f, 1f, 0.5f);
-    }
 
     public static ThemeStyleSheet LoadDefaultTheme()
     {
@@ -376,35 +243,95 @@ public static class UserInterface
 #endif
 }
 
+/// <summary>
+/// A panel loaded through <see cref="UserInterface.Load"/>.
+///
+/// PanelRenderer exposes no public rootVisualElement: the root only arrives through
+/// RegisterUIReloadCallback, which fires once the panel is attached rather than during
+/// Awake. So <see cref="Root"/> is null to begin with, callers bind through
+/// <see cref="WhenReady"/>, and the wanted visibility is held here and applied on arrival.
+/// </summary>
 public sealed class UiMenu : IDisposable
 {
     readonly MonoBehaviour _host;
     readonly string _name;
+    readonly PanelRenderer _renderer;
+    readonly string _uxmlResourcePath;
+    readonly bool _stretchContentRoot;
+    readonly bool _centerPanelRoot;
 
+    Action<VisualElement> _onReady;
     Coroutine _fadeRoutine;
+    bool _visible;
 
-    public UIDocument Document { get; }
-    public VisualElement Root { get; }
+    public PanelRenderer Renderer => _renderer;
+    public VisualElement PanelRoot { get; private set; }
+    public VisualElement Root { get; private set; }
     public string Name => _name;
 
-    public bool IsVisible => Root.style.display != DisplayStyle.None;
+    public bool IsReady => Root != null;
+    public bool IsVisible => _visible;
 
-    internal UiMenu(MonoBehaviour host, UIDocument document, VisualElement contentRoot, string name)
+    internal UiMenu(
+        MonoBehaviour host,
+        PanelRenderer renderer,
+        string uxmlResourcePath,
+        string name,
+        bool stretchContentRoot,
+        bool centerPanelRoot,
+        bool startVisible)
     {
         _host = host;
-        Document = document;
-        Root = contentRoot;
+        _renderer = renderer;
+        _uxmlResourcePath = uxmlResourcePath;
         _name = name;
+        _stretchContentRoot = stretchContentRoot;
+        _centerPanelRoot = centerPanelRoot;
+        _visible = startVisible;
+
+        _renderer.RegisterUIReloadCallback(OnUiReload);
+    }
+
+    void OnUiReload(PanelRenderer panelRenderer, VisualElement root, int version)
+    {
+        PanelRoot = root;
+        Root = root.Q<VisualElement>("root") ?? root;
+
+        UserInterface.StretchToScreen(PanelRoot);
+        if (_centerPanelRoot)
+            UserInterface.CenterContent(PanelRoot);
+
+        if (_stretchContentRoot)
+            UserInterface.StretchToScreen(Root);
+
+        UserInterface.EnsureStylesheet(Root, _uxmlResourcePath);
+        ApplyVisibility();
+
+        Action<VisualElement> callbacks = _onReady;
+        _onReady = null;
+        callbacks?.Invoke(Root);
+    }
+
+    /// <summary>Runs <paramref name="onReady"/> now if the root already arrived, else when it does.</summary>
+    public void WhenReady(Action<VisualElement> onReady)
+    {
+        if (onReady == null)
+            return;
+
+        if (IsReady)
+            onReady(Root);
+        else
+            _onReady += onReady;
     }
 
     public T Q<T>(string elementName) where T : VisualElement
     {
-        return Root.Q<T>(elementName);
+        return Root?.Q<T>(elementName);
     }
 
     public VisualElement Q(string elementName)
     {
-        return Root.Q(elementName);
+        return Root?.Q(elementName);
     }
 
     public void SetVisible(bool visible)
@@ -418,15 +345,15 @@ public sealed class UiMenu : IDisposable
     public void Show()
     {
         StopFade();
-        UserInterface.SetOpacity(Root, 1f);
-        UserInterface.SetVisible(Root, true);
+        _visible = true;
+        ApplyVisibility();
     }
 
     public void Hide()
     {
         StopFade();
-        UserInterface.SetVisible(Root, false);
-        UserInterface.SetOpacity(Root, 1f);
+        _visible = false;
+        ApplyVisibility();
     }
 
     public void HideFade(Action onComplete = null)
@@ -436,8 +363,9 @@ public sealed class UiMenu : IDisposable
 
     public void HideFade(float duration, Action onComplete = null)
     {
-        if (!IsVisible)
+        if (!_visible || !IsReady)
         {
+            Hide();
             onComplete?.Invoke();
             return;
         }
@@ -458,7 +386,23 @@ public sealed class UiMenu : IDisposable
     public void Dispose()
     {
         StopFade();
-        UserInterface.SetVisible(Root, false);
+        _onReady = null;
+        _visible = false;
+
+        if (_renderer != null)
+            _renderer.UnregisterUIReloadCallback(OnUiReload);
+
+        if (Root != null)
+            UserInterface.SetVisible(Root, false);
+    }
+
+    void ApplyVisibility()
+    {
+        if (Root == null)
+            return;
+
+        UserInterface.SetOpacity(Root, 1f);
+        UserInterface.SetVisible(Root, _visible);
     }
 
     IEnumerator FadeOut(float duration, Action onComplete)
@@ -473,8 +417,9 @@ public sealed class UiMenu : IDisposable
             yield return null;
         }
 
-        Hide();
         _fadeRoutine = null;
+        _visible = false;
+        ApplyVisibility();
         onComplete?.Invoke();
     }
 }

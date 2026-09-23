@@ -50,7 +50,7 @@ public sealed class PlayfieldTest_DEV : MonoBehaviour
 
         if (string.IsNullOrWhiteSpace(_aoPath))
         {
-            string prefs = LoginPreferences.GetAoPath();
+            string prefs = AoInstall.Path;
             if (AoInstallPath.IsValid(prefs))
                 _aoPath = AoInstallPath.Normalize(prefs);
         }

@@ -81,7 +81,7 @@ public static class UvgaTextureSource
 
         string aoPath = AoInstallPath.Normalize(EditorPrefs.GetString(EditorAoPathPrefsKey, string.Empty));
         if (!AoInstallPath.IsValid(aoPath))
-            aoPath = AoInstallPath.Normalize(LoginPreferences.GetAoPath());
+            aoPath = AoInstall.Path;
 
         if (!AoInstallPath.IsValid(aoPath))
             return;

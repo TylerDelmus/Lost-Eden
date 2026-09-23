@@ -24,21 +24,18 @@ public class LoginScreenController : MonoBehaviour
     [Inject] LoadingScreen _loadingScreen;
     [Inject] PlayerController _playerController;
     [Inject] ResourceDatabase _resourceDatabase;
+    [Inject] WorldRouter _worldRouter;
 
     [SerializeField] LoginScreenView _loginView;
 
-    [Header("Login Camera")]
-    [SerializeField] UnityEngine.Vector3 _loginCameraPosition;
-    [SerializeField] UnityEngine.Vector3 _loginCameraEulerAngles;
-
     const float AuthTimeoutSeconds = 30f;
     const string DefaultBrowseHint = @"C:\Program Files (x86)\Steam\steamapps\common\Anarchy Online";
+
 
     LoginScreenState _state = LoginScreenState.BootLoading;
 
     IReadOnlyList<DimensionInfo> _dimensions;
     bool _awaitingPlayfieldReady;
-    bool _awaitingBackdropReload;
     bool _ignoreNextDisconnect;
     string _pendingLoginStatus;
     float _authTimeoutAt = -1f;
@@ -49,6 +46,19 @@ public class LoginScreenController : MonoBehaviour
     }
 
     void Start()
+    {
+        if (_loginView == null)
+        {
+            Debug.LogError("[LoginScreen] Missing LoginScreenView.");
+            return;
+        }
+
+        // The view binds its elements from PanelRenderer's reload callback, which lands
+        // after Start, so the whole boot sequence waits for it.
+        _loginView.WhenReady(OnViewReady);
+    }
+
+    void OnViewReady()
     {
         if (!ValidateView())
             return;
@@ -99,17 +109,25 @@ public class LoginScreenController : MonoBehaviour
     {
         _state = LoginScreenState.AwaitingAoPath;
         _loadingScreen.Hide();
-        string saved = LoginPreferences.GetAoPath();
+        string saved = AoInstall.Path;
         _loginView.ShowAoPathSetup(string.IsNullOrWhiteSpace(saved) ? string.Empty : saved);
         _loginView.SetAoPathStatus("Anarchy Online install path is required.");
     }
 
+    /// <summary>
+    /// Shows the form straight away and loads the backdrop behind it. The backdrop used to
+    /// gate the form, which meant ~10s of playfield streaming (2.6M grass instances) before
+    /// anyone could type a username — there is no reason to load a playfield to log in.
+    /// </summary>
     void BeginBootLoading()
     {
-        _state = LoginScreenState.BootLoading;
-        _loginView.HideLoginUi();
-        _loadingScreen.Show("Loading...", LoadingScreenKind.Login);
-        LoadBackdrop(LoginPreferences.GetPlayfieldId());
+        _state = LoginScreenState.LoginBackdrop;
+        _loginView.ShowLoginForm();
+        _loginView.SetFormInteractable(true);
+        _loadingScreen.Hide();
+
+        // The login backdrop is LoginWorld's job now, not a streamed playfield.
+        _worldRouter?.LoginWorld?.SetStage(0);
     }
 
     bool EnsureResourceDatabase()
@@ -117,7 +135,7 @@ public class LoginScreenController : MonoBehaviour
         if (_resourceDatabase != null && _resourceDatabase.IsInitialized)
             return true;
 
-        string path = AoInstallPath.Normalize(LoginPreferences.GetAoPath());
+        string path = AoInstall.Path;
         if (!AoInstallPath.IsValid(path))
             return false;
 
@@ -139,13 +157,13 @@ public class LoginScreenController : MonoBehaviour
         if (_state != LoginScreenState.AwaitingAoPath)
             return;
 
-        string current = _loginView.AoPathField.value;
+        string current = _loginView.AoPathField.Value;
         string initial = Directory.Exists(current) ? current : DefaultBrowseHint;
 
         if (!NativeFolderDialog.TryPickFolder("Select Anarchy Online Folder", initial, out string selected))
             return;
 
-        _loginView.AoPathField.value = selected;
+        _loginView.AoPathField.Value = selected;
         _loginView.SetAoPathStatus(string.Empty);
     }
 
@@ -154,7 +172,7 @@ public class LoginScreenController : MonoBehaviour
         if (_state != LoginScreenState.AwaitingAoPath)
             return;
 
-        string path = AoInstallPath.Normalize(_loginView.AoPathField.value);
+        string path = AoInstallPath.Normalize(_loginView.AoPathField.Value);
         if (!AoInstallPath.IsValid(path))
         {
             _loginView.SetAoPathStatus("Select a valid Anarchy Online install (must contain cd_image/data/db).");
@@ -171,8 +189,8 @@ public class LoginScreenController : MonoBehaviour
             return;
         }
 
-        LoginPreferences.SaveAoPath(path);
-        _loginView.AoPathField.value = path;
+        AoInstall.Save(path);
+        _loginView.AoPathField.Value = path;
         UvgaTextureSource.RaiseChanged();
         BeginBootLoading();
     }
@@ -279,7 +297,7 @@ public class LoginScreenController : MonoBehaviour
 
     void RestoreFormDefaults()
     {
-        _loginView.UsernameField.value = LoginPreferences.GetUsername();
+        _loginView.UsernameField.Value = LoginPreferences.GetUsername();
 
         string savedDimensionId = LoginPreferences.GetDimensionId();
         if (string.IsNullOrEmpty(savedDimensionId))
@@ -289,7 +307,7 @@ public class LoginScreenController : MonoBehaviour
         {
             if (_dimensions[i].Id.Equals(savedDimensionId, System.StringComparison.OrdinalIgnoreCase))
             {
-                _loginView.DimensionDropdown.index = i;
+                _loginView.SelectDimension(i);
                 break;
             }
         }
@@ -300,8 +318,8 @@ public class LoginScreenController : MonoBehaviour
         if (_state != LoginScreenState.LoginBackdrop)
             return;
 
-        string username = _loginView.UsernameField.value.Trim();
-        string password = _loginView.PasswordField.value;
+        string username = (_loginView.UsernameField.Value ?? string.Empty).Trim();
+        string password = _loginView.PasswordField.Value;
 
         if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
         {
@@ -342,6 +360,7 @@ public class LoginScreenController : MonoBehaviour
         }
 
         _state = LoginScreenState.CharacterSelect;
+        _worldRouter?.LoginWorld?.SetStage(1);
         _loginView.SetStatus(string.Empty);
         _loginView.ShowCharacterSelect();
         _loginView.SetCharacterStatus("Choose a character to enter the world.");
@@ -372,7 +391,7 @@ public class LoginScreenController : MonoBehaviour
         _loginView.SetFormInteractable(true);
         _loginView.SetStatus(string.Empty);
         _loginView.SetCharacterStatus(string.Empty);
-        _loginView.PasswordField.value = string.Empty;
+        _loginView.PasswordField.Value = string.Empty;
     }
 
     void OnCharacterSelected(int characterId)
@@ -392,27 +411,9 @@ public class LoginScreenController : MonoBehaviour
 
     void OnPlayfieldReady(int zoneId)
     {
-        if (_awaitingBackdropReload)
+        // The form is already up; the backdrop just arrives behind it.
+        if (_state == LoginScreenState.LoginBackdrop)
         {
-            _awaitingBackdropReload = false;
-            _state = LoginScreenState.LoginBackdrop;
-            ApplyLoginCameraPose();
-            _loginView.ShowLoginForm();
-            _loginView.SetFormInteractable(true);
-            _loginView.SetStatus(_pendingLoginStatus ?? string.Empty);
-            _pendingLoginStatus = null;
-            _loadingScreen.HideFade();
-            Debug.Log($"[LoginScreen] Backdrop ready (id={zoneId})");
-            return;
-        }
-
-        if (_state == LoginScreenState.BootLoading)
-        {
-            _state = LoginScreenState.LoginBackdrop;
-            ApplyLoginCameraPose();
-            _loginView.ShowLoginForm();
-            _loginView.SetFormInteractable(true);
-            _loadingScreen.HideFade();
             Debug.Log($"[LoginScreen] Boot backdrop ready (id={zoneId})");
             return;
         }
@@ -431,19 +432,13 @@ public class LoginScreenController : MonoBehaviour
 
         _awaitingPlayfieldReady = false;
         _state = LoginScreenState.InGame;
+
+        // The login world has done its job; tear it down so its backdrop and camera stop
+        // competing with the playfield. Previously it stayed alive behind the player.
+        _worldRouter?.Leave();
         Debug.Log("[LoginScreen] Entered world (camera attached)");
     }
 
-    void ApplyLoginCameraPose()
-    {
-        if (_playerController?.CameraController == null)
-        {
-            Debug.LogWarning("[LoginScreen] CameraController unavailable; skipping login camera pose.");
-            return;
-        }
-
-        _playerController.CameraController.SetFreePose(_loginCameraPosition, _loginCameraEulerAngles);
-    }
 
     void OnLoginFailed(LoginError error)
     {
@@ -482,20 +477,19 @@ public class LoginScreenController : MonoBehaviour
         _awaitingPlayfieldReady = false;
         _pendingLoginStatus = "Disconnected";
 
-        _state = LoginScreenState.BootLoading;
+        // Back to the login screen. LoginWorld owns the backdrop, so this is a stage change
+        // rather than streaming a playfield the way it used to be.
+        _state = LoginScreenState.LoginBackdrop;
         _loginView.ClearCharacterButtons();
-        _loadingScreen.Show("Loading...", LoadingScreenKind.Login);
-        _loginView.SetFormInteractable(false);
-        _loginView.SetStatus(string.Empty);
+        _loginView.SetStatus(_pendingLoginStatus ?? string.Empty);
+        _pendingLoginStatus = null;
         _loginView.SetCharacterStatus(string.Empty);
+        _loginView.ShowLoginForm();
+        _loginView.SetFormInteractable(true);
 
-        _awaitingBackdropReload = true;
-        LoadBackdrop(LoginPreferences.GetPlayfieldId());
-    }
-
-    void LoadBackdrop(int playfieldId)
-    {
-        _playfieldFactory.NetworkDriven = false;
-        _playfieldFactory.Load(playfieldId);
+        // EnterLogin is idempotent, and the world will have been torn down if we got as far
+        // as the playfield, so rebuild it before asking for a stage.
+        _worldRouter?.EnterLogin();
+        _worldRouter?.LoginWorld?.SetStage(0);
     }
 }
