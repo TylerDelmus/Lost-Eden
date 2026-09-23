@@ -60,9 +60,10 @@ public static class GfxTweakParser
                 break;
             }
 
+            // A straight memcpy, not BitConverter.ToSingle per field: 71 of the shipped fields are
+            // signalling NaNs and Mono quiets one the instant it goes through a float. See GfxBits.
             var fields = new float[count];
-            for (int f = 0; f < count; f++)
-                fields[f] = BitConverter.ToSingle(bytes, offset + f * 4);
+            Buffer.BlockCopy(bytes, offset, fields, 0, dataBytes);
             offset += dataBytes;
 
             records[id] = new GfxTweakRecord

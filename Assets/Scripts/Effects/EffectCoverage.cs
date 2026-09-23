@@ -103,7 +103,10 @@ public sealed class EffectCoverage
                     return EffectStatus.Missing;
                 if (record.TypeCode == EffectTypeTags.BParticle && record.FieldInt(10, 0) is not (8 or 1))
                     return EffectStatus.Missing;
-                if (record.TypeCode == EffectTypeTags.GroundGrid && record.FieldInt(11, 0) != 0)
+                if (record.TypeCode == EffectTypeTags.GroundGrid && record.FieldInt(11, 0) is not (0 or 1 or 2))
+                    return EffectStatus.Missing;
+                // Only GlobalSmoke's kinds 0 and 2 are ported; no nano reaches the other five.
+                if (record.TypeCode == EffectTypeTags.GlobalSmoke && !GlobalSmokeSim.IsPortedKind(record.FieldInt(10, 0)))
                     return EffectStatus.Missing;
                 if (record.TypeCode == EffectTypeTags.EffectMesh && !EffectMeshSim.IsModelled(record.Fields))
                     return EffectStatus.Approximated;
@@ -135,7 +138,7 @@ public sealed class EffectCoverage
 
     /// <summary>
     /// The parts rebuilt from stock and checked live: Meta, Flare, Tracer1, Tracer4, Plasma, Deformer mode 1, Electra mode 1, Suns sunTypes 0, 1 and 4, Shield, Shield2, Scatter, Highlight (modes 0-2), GroundShake, Sequencer, Spell1 when field 33
-    /// skips its late windows, Stars starTypes 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22 and 28, BPHFSM, BuffPlaceHolder, BParticle2, TParticle, TParticle2, BParticle modes 8 and 1, GroundGrid mode 0, EffectMesh, MParticle, Sparks, Fire, Smoke, Spiral, Tracer5, Tracer3, Nano0, ShockWave, VulcanRocks, VolGrid, Sprite, SkyFlash, Trail2, Toggle, Spiral2, Tracer6, Beam, CrazyCone, Delay, GroundRing, Mesh and Cord (a Cord
+    /// skips its late windows, Stars starTypes 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22 and 28, BPHFSM, BuffPlaceHolder, BParticle2, TParticle, TParticle2, BParticle modes 8 and 1, GroundGrid, EffectMesh, MParticle, Sparks, Fire, Smoke, Spiral, Tracer5, Tracer3, Nano0, ShockWave, VulcanRocks, VolGrid, Sprite, SkyFlash, Trail2, Toggle, Spiral2, Tracer6, Tracer8, EnergyBall, GlobalSmoke kinds 0 and 2, GroundImpact, Beam, CrazyCone, Delay, GroundRing, Mesh and Cord (a Cord
     /// without field 0 bit 1 never links, so it is invisible in stock and here).
     /// </summary>
     static bool IsVerified(GfxTweakRecord record)
@@ -178,6 +181,10 @@ public sealed class EffectCoverage
             case EffectTypeTags.CrazyCone:
             case EffectTypeTags.Tracer5:
             case EffectTypeTags.Tracer6:
+            case EffectTypeTags.Tracer8:
+            case EffectTypeTags.EnergyBall:
+            case EffectTypeTags.GlobalSmoke:
+            case EffectTypeTags.GroundImpact:
             case EffectTypeTags.Tracer3:
             case EffectTypeTags.Nano0:
             case EffectTypeTags.ShockWave:
@@ -246,6 +253,13 @@ public sealed class EffectCoverage
                 // 100ff6e2: the child it carries.
                 if (record.FieldInt(15, 0) > 0)
                     yield return record.FieldInt(15, 0);
+                break;
+            case EffectTypeTags.Tracer8:
+                // 10114ce4 the child it carries, 10114b4c the effect its teardown fires.
+                if (record.FieldInt(11, 0) > 0)
+                    yield return record.FieldInt(11, 0);
+                if (record.FieldInt(14, 0) > 0)
+                    yield return record.FieldInt(14, 0);
                 break;
             case EffectTypeTags.Spell1:
                 // Window 1 always; fields 31 and 32 only in the late windows (field 33 == 0).

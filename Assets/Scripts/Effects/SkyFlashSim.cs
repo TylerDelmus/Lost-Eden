@@ -203,5 +203,5 @@ public sealed class SkyFlashSim
 
     static float F(float[] f, int i) => f != null && i >= 0 && i < f.Length ? f[i] : 0f;
 
-    static int Int(float[] f, int i) => f != null && i >= 0 && i < f.Length ? BitConverter.SingleToInt32Bits(f[i]) : 0;
+    static int Int(float[] f, int i) => f != null && i >= 0 && i < f.Length ? GfxBits.Of(f, i) : 0;
 }

@@ -25,6 +25,13 @@ Last updated 2026-09-22.
   it came from (`100fa9e4`, `FUN_100517f3` and so on), so the next person can re-check it.
 - **Verify live.** A control only counts as *Verified* (§8) once it has unit tests and has been
   watched in GfxTest against the expected stock behaviour, with numbers from a probe.
+- **Never read a packed field through a `float`.** A gfxtweak field is an untyped dword; 71 of the
+  75,221 shipped ones are *signalling* NaNs, and Unity's Mono quiets one the moment the value passes
+  through a float, handing back a different dword. Use `GfxBits.Of(fields, i)`, which memcpys the
+  bytes out. `BitConverter.SingleToInt32Bits(f[i])` and `BitConverter.ToSingle(bytes, o)` both corrupt
+  them — silently, and only in Unity: desktop .NET keeps the bits, so the unit tests cannot catch it.
+  For a packed ARGB the pattern is exactly "alpha 0x7f or 0xff, red 0x80..0xbf", and the red comes out
+  0x40 too high (GroundGrid's `0xff80c0ff` drew as `0xffc0c0ff` until 2026-09-23).
 
 ---
 
@@ -443,7 +450,11 @@ Status legend (matches `EffectCoverage` and the GfxTest window):
 | 0xbcc | `GfxControlTParticle_t` | `GfxControlTParticle` + `TParticleSim` | Verified (§5.17) |
 | 0xbd7 | `GfxControlTParticle2_t` | `GfxControlTParticle2` + `TParticle2Sim` + `StockColorCurve` | Verified (§5.37); flags 0x100, 0x8000, 0x10000, 0x40000, 0x80000 and frame modes 1-3 have no record |
 | 0xbd0 | `GfxControlBParticle_t` | `GfxControlBParticle` + `BParticleSim` | Verified particle modes 8 and 1 (20 of 33 records, §5.18); other modes Missing |
-| 0xbd6 | `GfxControlGroundGrid_t` | `GfxControlGroundGrid` + `GroundGridSim` | Verified visual mode 0 (§5.19); modes 1/2 Missing |
+| 0xbd6 | `GfxControlGroundGrid_t` | `GfxControlGroundGrid` + `GroundGridSim` | Verified, all three visual modes (§5.19) |
+| 0x1388 | `_GfxControlGroundImpact_c` | `GfxControlGroundImpact` + `GroundImpactSim` | Verified (§5.43d); its record is dead data, all of it is GfxVisualForceSword_t |
+| 0xbc9 | `_GfxControlGlobalSmoke_t` | `GfxControlGlobalSmoke` + `GlobalSmokeSim` | Verified kinds 0 and 2 (§5.43c); the other five Missing, and no nano reaches one |
+| 0xbcf | `GfxControlEnergyBall_t` | `GfxControlEnergyBall` + `EnergyBallSim` | Verified (§5.43a): three orthogonal fans of blades |
+| 0xbd2 | `GfxControlTracer8_t` | `GfxControlTracer8` + `Tracer8Sim` | Verified (§5.43b): carries a whole child effect along the hit line; no visual of its own |
 | 0xbd1 | `GfxControlEffectMesh_t` | `GfxControlEffectMesh` + `EffectMeshSim` + `StockUvTrack` | Verified (§5.20), body scale, Atrox variants and animated UVs included; Approx with 0x2000/0x4000, effects 1/2/7, or effect 4 on a model that isn't emissive white |
 | 0xbd3 | `GfxControlMParticle_t` | `GfxControlMParticle` + `MParticleSim` | Verified (§5.21) |
 | others | see `EffectTypeCatalog` | — | Missing / Approx |
@@ -1204,7 +1215,7 @@ per-particle draw `1000a70f`).
 - The other modes (0, 2-7, 9-13; ctor table `0x1000a6db`) are not ported. Mode 13 (72340) is past the
   table's `cmp eax, 0xc`, so stock gives it no spawn at all.
 
-### 5.19 GroundGrid (0xbd6) mode 0: `GroundGridSim`, `GfxControlGroundGrid`
+### 5.19 GroundGrid (0xbd6): `GroundGridSim`, `GfxControlGroundGrid`
 vftable `1016f5ac`, loader `1010ebbd`, init `1010e951`, Process `1010e704`; DisplaySystem
 **GfxVisualGroundGrid** (Update `100164b4`, SetAlpha `1001692d` → D3D texture factor).
 - An N×N grid (field 10) at spacing f18, laid over the ground under the emitter plus f19. With flag 0x800
@@ -1213,9 +1224,30 @@ vftable `1016f5ac`, loader `1010ebbd`, init `1010e951`, Process `1010e704`; Disp
 - Alpha: `age/f14` while fading in, `1 − (age − (dur − f15))/f15` while fading out, else 1.
 - UV: `(j+c)/(N−1)·uScale + uOff` and `(i+c)/(N−1)·vScale + vOff`, with `c = −(N−1)/2` under flag
   0x8000. Scale and offset change at fields 21/22/25/26 per second.
-- Visual mode 0 is a uniform colour (f16). Modes 1 (diamond fall-off) and 2 (per-vertex table), and the
-  flag 0x2000/0x4000 waves, are not ported.
-- 71370 (in 71016) is a 200 × 200 m `groundhit.png` scorch, 60 s.
+- **Visual mode** (field 11) picks a per-vertex fall-off `t`; every vertex is then shaded
+  `max(0, 1 − t) × f16's own alpha`, truncated to a byte and packed with f16's rgb (`10016687`). Past the
+  edge the max clips it away, so `t > 1` is invisible.
+  - **0** (`100167a6`) pushes a plain zero, so the sheet is one flat colour.
+  - **1** (`100165e2`) is an L1 (diamond) distance, `(|j − N/2| + |i − N/2|) / (N/2)`, computed inline.
+  - **2** (`100165cb`) reads a `float[N·N]` the visual's ctor fills at `10016d53` with the **radial**
+    distance, `sqrt((j − (N−1)/2)² + (i − (N−1)/2)²) / ((N−1)/2)`. It depends on nothing but N, so mode 2
+    needs no data from the record and no RDB.
+  - Stock really does normalise mode 1 by `N/2` and mode 2 by `(N−1)/2`. Mode 1 reaches no record.
+- **Ripple** (`10016631`): `w = (sin((t·32 + phase)/2) + 1)/2`, a wave riding out along the fall-off.
+  Flag 0x4000 multiplies the vertex alpha by `w`; flag 0x2000 lifts the vertex by `w/2`. The phase starts
+  at 0 and moves by `f20 · dt` at the end of each Update (`1001690b`).
+- **The Update only runs while a UV rate is non-zero** (`1010e8d0`..`1010e908` tests f21/f22/f25/f26 and
+  returns early if all four are 0). A grid with none of them keeps the vertices its init built — and its
+  ripple stands still. That is stock's own shortcut; both mode 0 records have zero rates, which is why it
+  never showed. All nine mode 2 records have non-zero rates.
+- Stock hands the visual (N−1) triangle strips of 2N vertices, one per row pair (`10016922` sets the
+  count to `2N(N−1)`), so a shared vertex is written twice with the same position and colour. The port
+  keeps one indexed mesh, which yields the same `2(N−1)²` triangles.
+- Records: **71303** (8 × 8) and **71370** (200 × 200 m `groundhit.png` scorch, 60 s, in 71016) are mode
+  0; **71222** (16 × 16) and **71230**-**71237** (20 × 20, `cloud.png`, `0xff80c0ff`, both ripples) are
+  mode 2.
+- **Test ids**: 279613 Crystal Overload and 284267 Harvested Mind (trees 72202 / 72203) are the only two
+  nanos reaching mode 2; spawn record **71230** directly in GfxTest to see one grid on its own.
 
 ### 5.20 EffectMesh (0xbd1): `EffectMeshSim`, `GfxControlEffectMesh`, `EffectModels`
 vftable `1016f0d4`, loader `1010caf8`, init `1010d457`, Process `1010ce9c`. One ABIFF model drawn by a
@@ -2317,6 +2349,152 @@ One record, 70000: speed 30 (capped to 12.9 over GfxTest's 2.58 m), spacing 0.5,
 Michizure's Decuple** (stat 419). Verified live: the red ribbons run caster to target with the sprite
 discs across the line, the trail lands at 0.20 s, the ribbons go at once and the control ends at 1.21 s.
 
+### 5.43c GlobalSmoke (0xbc9) kinds 0 and 2: `GlobalSmokeSim`, `GfxControlGlobalSmoke`
+vftable `1016cec4` (object 0x820), ctor `100e09fe`, loader `100e060f`, build `100e0738`, Process
+`100dfc38`. The visual is a **`GfxVisualSol`** — the same one Suns uses (§5.10) — given **64** sprites
+instead of Suns' 32, so the quad maths is shared (`Quad.UseAxes`).
+
+A steady emitter. Every call it revives as many dead slots as its budget allows, then walks all 64:
+each one moves by its velocity and reads its width, height, colour and frame off its own age. Spawning
+is per **call**, so the port replays it at 30 Hz like BParticle and Suns.
+
+- Fields: 0 flags, 8 duration, 9 material, **10 the kind**, 11, 12, 13 the launch speed, 14/15 the
+  width at birth and death, 16/17 the height, **18-25 a `StockColorRamp`** (the very same
+  `101085de` loader the port already had, evaluated by `10108663`), 26 the particle's life, 27, 28,
+  29 gravity, 30/31 the spawn budget. Fields 30 and 31 are **packed ints**, not floats.
+- Budget per call: `field 30 + (rand() & field 31)`. **Spawning stops once `age > duration − field 26`**
+  (`100dfd15`), so the last particle dies exactly on the duration rather than being cut off; a
+  negative duration never stops.
+- Per particle, `t = (age − birth) / field 26`: past 1 the slot goes dead and is free again next call;
+  otherwise `pos += vel·dt`, width `t·(f15 − f14) + f14`, height `t·(f17 − f16) + f16`, colour
+  `ramp(t)`, frame `_ftol(frameCount·t)`, and screen angle `((slot & 1) − 0.5)·age·(slot − 4)` — so
+  neighbouring sprites lean opposite ways and the whole sheet keeps turning.
+- Kinds **2** and 4 add `field 29 · dt` to the velocity each call; the others don't.
+- **Kind 0** (`100e0249`): a random unit direction (`100d3005`, a pool of 2048 built by rejecting cube
+  samples outside the unit sphere), flipped up if it points down, times field 13; the spawn sits up to
+  a metre under the emitter.
+- **Kind 2** (`100e0391`): `vel = ((rand & 0xffff)/655350 + 1)·f13, −0.4·f13, 0)` from the emitter.
+- Kinds 1, 3, 4, 5 and 6 are **not ported** — no nano reaches one. Their arms are `100e03e1`,
+  `100e02b9`, `100e0247`, `100e021e` and `100e019a`; kind 1 chases a wandering target kept at `+0x750`
+  and kind 3 bails when the camera is over 80 m away (`100dfc8e`).
+
+15 records, all material 49. **Test ids**: **305431 Kneel Before Immortality** (record **12279**,
+kind 0, the fountain) and **304336 Chilling Air** (through 12250 to **12252**, kind 2, the drift); or
+spawn 12279 directly in GfxTest. Verified live on 12279: 64 slots fill in about five calls, the
+sprites rise from under the emitter, the width ramps 2 → 10 and the colour fades out of `0xff4c99ff`.
+
+### 5.43d GroundImpact (0x1388): `GroundImpactSim`, `GfxControlGroundImpact`
+**1 nano** (259452 Recovering from Teleport), **1 record** (90000, whose four fields are 1, 0, 0, 10
+and are all thrown away).
+
+It is reached from a **second factory**: `100d0656`'s switch returns NULL for 5000
+(`cmp eax, 0xfa0; ja` → `xor eax,eax`), but `100d05c1` in a sibling factory matches `0x1388` and
+builds `_GfxControlGroundImpact_c` (vftable `1016d03c`, object 0x38, ctor `100e1593`).
+
+The control is a shell. Its loader (`100e1490`) reads fields 0-3 and `fstp st(0)`s **every one of
+them**, then takes -1 as the duration, so the record is dead data; it builds a
+`GfxVisualForceSword_t`, hands it the locator as the visual's *connector*, and afterwards only
+attaches and detaches it. The visual's vftable is in Gamecode (`1016cfb4`, 0x2f8 bytes) but every
+virtual is a thunk into a **DisplaySystem export**: `Process` `100156e9`, `Render` `10015f21`,
+`InitMesh` `10015730`, `SetConnector` `100156d9`, `SetColor` `1001564b`, `SetSize` `100156c9`.
+
+A blue blade that jitters, built in the connector's own frame:
+- `InitMesh` picks `columns = rand() % 10 + 5` (**5..14**) once and allocates a **9 × columns**
+  lattice of the usual 24-byte vertices. Blending is additive (DESTBLEND ONE, no Z-write, no fog, no
+  culling).
+- **The one buffer carries two different index layouts** — the easy thing to misread. Rows 0-3 are
+  the cross-section's corners at `col * 4 + corner`; rows 4-8 are the trail at `row * columns + col`.
+- UVs are fixed for good: the corners get `u = 0, 1, 0, 1` and a flat `v = 0.65` on every column —
+  there is no run along the blade — and the trail rows sit on the single texel (0.5, 0.5).
+- Every vertex is **RGB(50, 155, 255)**; alpha starts at 255 except the last column's four corners,
+  which start at 0 so the point fades out.
+- Indices: `36 × (columns − 1)`. Twelve per column pair are the blade's **two crossed quads**
+  (corners 0-1 and 2-3), and twenty-four are the trail ribbon, one quad per link per pair.
+- `Render` rebuilds it every call: the blade sweeps from the connector down its own **−z** for
+  `size` metres (1 by default) in `columns − 1` steps; each column is nudged by ±0.005 on x and y,
+  scaled by two tapers that run 0→2 and 2→0 so the middle wanders and the ends stay put; the
+  corners of the middle columns take a fresh `rand() % 200 + 0x37` alpha; and each trail link takes
+  the brightest of those four **shifted right once more per link**, so the halo decays outwards.
+- The trail is walked from the far link back, so each one inherits what its neighbour held last
+  frame. A link whose source has never been written — still exactly zero, which is what `10007cc2`
+  tests — falls back to the cross-section's centre instead.
+
+**Test id**: **259452 Recovering from Teleport**, or spawn record **90000** directly in GfxTest.
+Verified live: 7 columns, 63 vertices, 216 indices / 72 triangles, additive with vertex colours, the
+alpha flickering 245 → 227 → 205 → 218 across frames with the first trail link tracking at about
+half, and the tip at z = −1.
+
+### 5.43a EnergyBall (0xbcf): `EnergyBallSim`, `GfxControlEnergyBall`
+vftable `1016f54c` (object 0x8c), point ctor `1010e56c`, dynel ctor `1010e5e1`, visual ctor
+`1010e659`, loader `1010de89`, build `1010dd3f`, Process `1010e039`; DisplaySystem
+**GfxVisualEnergyBall** (ctor `100123c5`, render `10012264`, one quad `10011e31`). The factory arm is
+the jump table at `0x100cfd62`, indexed by `typeCode − 0xbc7`.
+
+A ball of flat blades: **three orthogonal fans of N blades**, 3N quads in all, every one a square of
+half-size *radius* centred on the ball. Fan k spins about x, y and z in turn; blade i of each sits at
+`i·π/N`. Each blade's top two corners take one colour and its bottom two another, so the whole thing
+reads as a shaded sphere of intersecting sheets.
+
+- Fields: 0 flags, 8 duration, 9 material, 10 rise seconds, 11 fall seconds, 12 N, 13/14 given to the
+  visual but never read by its render, 15/16/17 the radius at the start, the peak and the end, 18/19
+  the starting top and bottom colour, 20/21 the ones they reach, 22 the ease mode, 23 how far the ball
+  wanders, 24 how much the radius pulses, 25 how far it climbs, 26 a random spawn offset.
+- **The life is `field 10 + field 11`, not field 8** — every record's field 8 is −1.
+- `f` runs 0→1 over the rise and 1→0 over the fall, so the two halves meet at 1 and the ramps are
+  continuous. Field 22 picks the curve: 0 `1 − (1−x)⁶`, 1 `x⁶`, 2 the straight line.
+- Radius `((cos 2πu)·f24 + base)·envelope`, where base ramps f15→f16 over the rise and f16→f17 over
+  the fall. Field 25 sets both the climb and the envelope: positive gives `h = f25(1 − u⁸)` with
+  envelope `u`; negative gives `h = f25((1−u)⁴ − 1)` with envelope `1 − u`; zero neither.
+- Position `emitter + (0, h, 0) + (sin 8πu, cos 6πu, sin 2πu)·f23`; rotation is a turn of `2πu`
+  about the **normalised** `(cos ½πu, cos 1½πu, sin 3πu)`, times the locator's. The two are not the
+  same operation: `1007030f` is a plain out-of-place **scale**, `100439aa` normalises in place and
+  then scales. Reading the first as a set-length makes the ball's wander hold a constant reach
+  instead of breathing.
+- Colours are `randy31 Color_t` maths (`10019c93` scales, `10019bb1` adds): each of the four bytes on
+  its own, rounded by adding a half and truncating, and clamped to 0..255 at both steps.
+- Flags: **0x100** swaps every blade's UVs (the visual's `+0x1c0`), **0x200** is the visual base's
+  blend flag (additive, the same slot GroundGrid uses), **0x2000** snaps the spawn to the ground.
+  All six records are `0x0f03`, so every ball is additive and UV-swapped.
+- **Two RE traps.** `100d1ed8` takes **no** arguments, so a value pushed before it belongs to the
+  *next* call — the build's argument order only resolves with that. And the visual's mangled name
+  `??0GfxVisualEnergyBall@@QAE@HMM_NPAVRMaterial_t@@0000@Z` claims five `RMaterial*`, but the ctor
+  reads args 5-8 as **bytes**; only arg 4 is a material.
+
+Six records, all N = 4 (12 quads): **71060** (peak 65, in 71015), 71031 (peak 35), 71065 (peak 25,
+field 25 = −800, so it climbs 800 m), 71505 (peak 0.5, ease mode 2, field 26 = 0.25), **72331**
+(peak 5), 97200 (peak 30, field 25 = 2). **Test ids**: 278873 Orbital Strike Resolve Mission and
+278875 Orbital Strike (tree 71015 → 71060), and 291321 Ravaged Sanity (→ 72331); or spawn **71060**
+directly in GfxTest. Verified live on 71060: 12 quads / 48 vertices, radius 4 → 64 → 61 at the join →
+4, colours ramping 0x00888888 → 0x80ffffff and back.
+
+### 5.43b Tracer8 (0xbd2): `Tracer8Sim`, `GfxControlTracer8`
+vftable `1016fa9c` (object 0xc0), point ctor `10114e83`, dynel ctor `10114f29`, loader `10114c68`,
+init `10114d6d`, build `10114ce4`, Process `10114b73`, teardown `10114b42`. It is the fourth arm of
+`CreateGfxControlTracer` (`100d18eb`), so like the other tracers it takes its endpoints from a hit
+location, once.
+
+**Tracer8 has no visual of its own.** It carries one whole child effect from the start of the flight
+line to the end, and fires a second effect when it goes away.
+- Fields: 0 flags, 8 duration, **11 the child effect id**, **12 the flight speed**, **14 the effect
+  fired on teardown**. Fields 10 and 13 are loaded (to `+0x38` and `+0x40`) and never read again.
+- The init is Tracer5's: direction and length from the two points, a line under 0.01 readies the
+  control, and the speed is capped at **5 x the length** (`10114e13`), only ever downwards.
+- Per call `d = speed * age`; reaching the length clamps the child onto the target on the same call
+  that ends the tracer, so the last frame draws it at the target rather than past it.
+- The child is built on the tracer's **own ref frame** (`10114ce4` → `100cf4fe`, the generic factory)
+  and handed that frame again every call (`10114c40` calls its slot 5, a straight 64-byte matrix
+  copy), so it follows the turn as well as the position. The turn is `1013c747`: row 0 is
+  unit(dir x up), row 2 is unit(dir), up = (0, 1, 0) — Unity's `LookRotation(dir, -up)`.
+- On teardown, field 14 is fired at the point the flight **started** from: `+0x80` is a copy of the
+  start made in the constructor (`10114eef`) that nothing ever rewrites, and `10114b4c` passes it.
+- `+0xb8` is cleared by the init and never set, so the `+0xbc` timeout the Process checks is dead.
+
+Six records. **71001** is the only one a nano reaches (**305335 Nanobot Suppression Rocket**, stat
+419): child 71520, an EffectMesh, at 40 m/s, with Meta 71004 on teardown. 72151-72155 carry 71512,
+71516, 71904, 71905 and 71906 at 25 / 10 / 10 / 10 / 10 m/s with no teardown effect, and no nano
+reaches them. Verified live on 71001 over a 20 m line: the EffectMesh child is created and its mesh
+walks 0 → 6.65 → 14.65 m at exactly 40 m/s.
+
 ### 5.44 Beam (0xbce): `BeamSim`, `BeamBlades`, `GfxControlBeam`
 
 Stock `GfxControlBeam_t` (vftable `1016ef3c`, Process `10109c0c`, slot 6 `101096c2`, build + field
@@ -2664,7 +2842,7 @@ Next targets, by nano count (the scratch coverage tool's `rank` mode counts each
 | **Fire 2200 direction** | Stock's code sends the Rage flames down the attach-0 frame's z, i.e. out behind the character along the ground (§5.25). That's the port's result too. Not yet compared with the live client; if the client shows them rising, the attach-0 frame differs from the dynel frame somewhere in N3. |
 | **Weather wind speed** | `EffectWind.WeatherSpeed` is 0: the port has no weather system, so the wind is stock's no-weather gusts. The weather controller (presets, blending, per-zone wind speed) isn't traced (§5.24). |
 | ~~**EffectMesh lighting**~~ | **Fixed 2026-09-23.** Rendering effect 4's render states are recovered exactly (factory `1006c62e`, its arm at `1006c912`): `D3DRS_LIGHTING=1`, `ZWRITEENABLE=0`, `FOGENABLE=0`, `ALPHABLENDENABLE=1`, `SRCBLEND=SRCALPHA`, `DESTBLEND=ONE`, `CULLMODE=NONE` — additive **and** lit, two-sided, no depth write. It is now drawn through `EffectModels.Part.LitAdditive`, an HDRP Lit variant with `_BlendMode` additive, built beside the existing `LitFade`, carrying the model's own diffuse instead of a constant. 71123, 71224 and 72623 are Verified. Own-material models (effect 0) still use the environment's HDRP Lit materials, and effect 4 now has the same standing. |
-| **Locator template on other types** | Fields 1-3 are the locator's offset and 4-6 its turn (`EffectHandler.TakesLocatorTemplate`). Stock has two sibling setters — `101067af` takes the six fields, `10106be2` takes six zeros — and every control has one ctor per locator kind, of which only the **dynel** one passes the fields; that is why the port applies it to dynel/visual locators only. The list is now RTTI-complete: every call site of `101067af` and of its wrapper `_GfxControl_t::InitDynelTemplate` (`100d2d84`) was walked back to the vftable its ctor installs. Ported types reaching it directly: Flare, FlareAlt, Nano0, Nano1, Sparks, BuffPlaceHolder, Cord, Fire, Smoke, Spiral, Sprite, VulcanRocks. Through InitDynelTemplate: Stars, Suns, BParticle, BParticle2, EffectMesh, GroundGrid, MParticle, TParticle, TParticle2, VolGrid, SkyFlash, Trail2. The 2026-09-22 pass added the second group (113 records onto their offsets; checked live on 28611 Hot Foot). A later pass the same day added **Flare, FlareAlt, Nano0, Nano1, Nano3 and Sparks**, which had been missed: that is 21 Flare records and 37 Sparks records carrying a **rotation**, so they had been drawn unturned. Found from 204580 Tattered Flame, whose hit (Meta 47386) is Stars 43713 + Sparks 43714 (field 6 = -pi/2) + Flare 43715 (fields 5/6 = -+pi/2); the port had been dropping both turns. **Electra** was removed in the same pass: its three ctors call neither setter, so stock never gives it a template (no Electra record has a non-zero field 1-6, so nothing moved). `100d2f58` is also called by unported classes (Bubble, CrazyCone, Drips, Font, GlobalSmoke, GroundRing, Hexagram, LavaBall, Mesh, MeshTest, Particle, SpinningShot, Trail, Vein, WaterRipples, AParticle, Beam, EnergyBall, GroundShake, ...); add each when it is ported. **GroundShake** and **Spiral2** were added when they were ported. Hit-location and point ctors don't use it. |
+| **Locator template on other types** | Fields 1-3 are the locator's offset and 4-6 its turn (`EffectHandler.TakesLocatorTemplate`). Stock has two sibling setters — `101067af` takes the six fields, `10106be2` takes six zeros — and every control has one ctor per locator kind, of which only the **dynel** one passes the fields; that is why the port applies it to dynel/visual locators only. The list is now RTTI-complete: every call site of `101067af` and of its wrapper `_GfxControl_t::InitDynelTemplate` (`100d2d84`) was walked back to the vftable its ctor installs. Ported types reaching it directly: Flare, FlareAlt, Nano0, Nano1, Sparks, BuffPlaceHolder, Cord, Fire, Smoke, Spiral, Sprite, VulcanRocks. Through InitDynelTemplate: Stars, Suns, BParticle, BParticle2, EffectMesh, GroundGrid, MParticle, TParticle, TParticle2, VolGrid, SkyFlash, Trail2, EnergyBall. The 2026-09-22 pass added the second group (113 records onto their offsets; checked live on 28611 Hot Foot). A later pass the same day added **Flare, FlareAlt, Nano0, Nano1, Nano3 and Sparks**, which had been missed: that is 21 Flare records and 37 Sparks records carrying a **rotation**, so they had been drawn unturned. Found from 204580 Tattered Flame, whose hit (Meta 47386) is Stars 43713 + Sparks 43714 (field 6 = -pi/2) + Flare 43715 (fields 5/6 = -+pi/2); the port had been dropping both turns. **Electra** was removed in the same pass: its three ctors call neither setter, so stock never gives it a template (no Electra record has a non-zero field 1-6, so nothing moved). `100d2f58` is also called by unported classes (Bubble, Drips, Font, Hexagram, LavaBall, MeshTest, Particle, SpinningShot, Trail, Vein, WaterRipples, AParticle, ...); add each when it is ported. **GroundShake** and **Spiral2** were added when they were ported. Hit-location and point ctors don't use it. |
 | **Spell1's locator template** | Spell1's dynel ctor (`100f333b`) builds **three** locators and passes fields 1-6 to only one of them (`100f3533`, on a different dynel argument than the two that get zeros at `100f3474` / `100f34e1`). The port has a single Spell1 locator, so applying the template to it would turn all three; Spell1 is therefore left out of `TakesLocatorTemplate` until the three are told apart. No Spell1 record's rotation has been checked against stock. |
 | **Shield blend flag** | Flag 0x400 goes to the base GfxVisual (+0x190), read by randy31 (not in the Ghidra project). The port treats it as additive, like the Electra/Sol ctor flag; unconfirmed. |
 | **VulcanRocks model table** | **By decision (user, 2026-09-22).** Stock's rocks are the meshes of `VisualEnvFX_t`'s model table, which only the environment effects fill (`ActivateFX`). The records' slot 4 (rock01) is loaded once any FXID 4 environment effect has run in the session, and before that stock throws no rocks at all. The port has no environment effects and takes slot 4 as loaded (`GfxControlVulcanRocks.LoadedModels`); every other slot gives nothing, as in stock (§5.31). |
@@ -2684,6 +2862,6 @@ Next targets, by nano count (the scratch coverage tool's `rank` mode counts each
 | **Toggle mover** | Toggle's 0x2000 / 0x8000 read the dynel's `Vehicle_t` direction (±1, set by `SetDirection` from Gamecode's movement code) and speed. Which movement sets −1 isn't traced; the port takes −1 while `CharacterMotor`'s Backward flag is set and +1 once Forward is, and the motor's current speed. Not seen live: GfxTest's dynels have no motor (§5.36). |
 | **Toggle playfield** | `GfxControlToggle.PlayfieldId` stands in for the current playfield (stock: `n3Playfield_t::GetPlayfieldResource` +0x1c) and nothing sets it yet; the resource's +0x50 flags aren't read. Only 72106, 3421 and 73100 use the test, and none reaches a nano. |
 | **ABIFF UV transform** | randy31's `FAFAnim_t` evaluate leaves a UV track's tiling / offset on the animation (+0x84 / +0x8c); the code that applies them to the texture wasn't found. The port applies D3D's usual texture transform, u·tiling + offset, which decides the scroll's direction on the hoverbike circles (§5.20). |
-| **AODB doesn't read the whole CAT mesh** | The port reads CAT meshes (RDB type 1010002) through the AODB package (`Assets/Packages/AODB.1.0.6`, `AODB.Common.RDBObjects.RDBCatMesh`). It reads textures, materials, joints, mesh groups and attractors, and leaves the rest as unnamed fields: `Unk1` (the first 32 bytes; in Solitus female 5927 they begin `CollSphere01`), `Unk2`-`Unk6`, `UnknownFloats` (4 floats each; none in 5927) and each group's `UnknownThings`. Stock parses the same record in randy31 (the FAF archive: `FAFCollisionSphere_c::Instantiate` `10016b30`, `CATGroup_t::GetColSphere` / `GetColSphereCnt` `10011d3f` / `10011d3b`). DisplaySystem's loader (`100704b8`) copies a 16-byte sphere (radius, then x, y, z) from the parsed data at +0x30 into `VisualCATMesh_t` +0xbc, read by `GetTorsoSphereRadi` (`10072c22`) and `GetTorsoSpherePos` (`10072bfc`). Which bytes of the record become that sphere isn't traced, so the port has no torso sphere, bounding sphere or collision spheres. Known users: SkyFlash's negative field 18 (above). Tracing it means reading randy31's FAF CAT mesh reader and mapping its fields onto AODB's unnamed ones. |
+| **AODB doesn't read the whole CAT mesh** | The port reads CAT meshes (RDB type 1010002) through the AODB package (`Assets/Packages/AODB.1.0.6`, `AODB.Common.RDBObjects.RDBCatMesh`). It reads textures, materials, joints, mesh groups and attractors, and leaves the rest as unnamed fields: `Unk1` (the first 32 bytes; in Solitus female 5927 they begin `CollSphere01`), `Unk2`-`Unk6`, `UnknownFloats` (4 floats each; none in 5927) and each group's `UnknownThings`. Stock parses the same record in randy31 (the FAF archive: `FAFCollisionSphere_c::Instantiate` `10016b30`, `CATGroup_t::GetColSphere` / `GetColSphereCnt` `10011d3f` / `10011d3b`). DisplaySystem's loader (`100704b8`) copies a 16-byte sphere (radius, then x, y, z) from the parsed data at +0x30 into the load request's +0x18; when the load completes (`1006fdae`, state 0x1f) that block is handed to an **internal** `VisualCATMesh_t::SetMesh(mesh, sphere)` (`1007494b`, not the exported one N3 calls), whose `100749a6` copies it to +0xbc, read by `GetTorsoSphereRadi` (`10072c22`) and `GetTorsoSpherePos` (`10072bfc`). The constructor (`100746cc`) leaves that sphere at radius 0 and position (0,0,0), and `1007494b` has exactly one call site, so a CAT mesh that yields no sphere gives **radius 0**, not 1 — `GetTorsoSphereRadi` returns 1 only when there is no mesh at all (`10072c2b`). Which bytes of the record become that sphere isn't traced, so the port has no torso sphere, bounding sphere or collision spheres. Known users: SkyFlash's negative field 18 (above). Tracing it means reading randy31's FAF CAT mesh reader and mapping its fields onto AODB's unnamed ones. |
 | **ShockWave paths no record takes** | **Not ported, by decision (user, 2026-09-22): nothing would look different.** All 11 ShockWave records (flags 0x3801 ×9, 0x2801 ×2) set 0x800 and none sets 0x8000, so two stock paths never run. (1) Without 0x800 the rings blend Zero/SrcColor, a darkening multiply. Drawing it would take a third blend setup in the vertex-colour shader, without the premultiply and the exposure scaling. (2) 0x8000 is read but not traced; it may be draw order. Port either one only if new data sets these flags. (§5.30) |
 | **Game path untested live** | The FinishNanoCasting / SetNanoDuration / Buff handlers compile and follow stock, but have only been exercised through GfxTest, not against a server. |

@@ -148,7 +148,10 @@ public static class EffectTypeCatalog
         // TParticle2: GfxControlTParticle2 / TParticle2Sim from Process 10113b55 and GfxVisualTParticle2.
         Add(EffectTypeTags.TParticle2, "GfxControlTParticle2_t", EffectCategory.Particle, EffectSupport.Ported);
         Add(0xbdb, "GfxControlAParticle_t", EffectCategory.Particle, EffectSupport.Missing);
-        Add(0xbc9, "_GfxControlGlobalSmoke_t", EffectCategory.Particle, EffectSupport.Missing);
+        // GlobalSmoke: GfxControlGlobalSmoke / GlobalSmokeSim from Process 100dfc38; kinds 0 and 2.
+        Add(EffectTypeTags.GlobalSmoke, "_GfxControlGlobalSmoke_t", EffectCategory.Particle, EffectSupport.Ported);
+        // GroundImpact: reached from the second factory (100d05c1), not 100d0656's switch.
+        Add(EffectTypeTags.GroundImpact, "_GfxControlGroundImpact_c", EffectCategory.Particle, EffectSupport.Ported);
         Add(0xbcb, "_GfxControlTrail_t", EffectCategory.Particle, EffectSupport.Missing);
         Add(EffectTypeTags.Trail2, "GfxControlTrail2_t", EffectCategory.Particle, EffectSupport.Ported);
 
@@ -164,7 +167,8 @@ public static class EffectTypeCatalog
         Add(EffectTypeTags.EffectMesh, "GfxControlEffectMesh_t", EffectCategory.Mesh, EffectSupport.Ported);
         // Beam: GfxControlBeam / BeamSim from Process 10109c0c and GfxVisualBeam (geometry 10008056).
         Add(EffectTypeTags.Beam, "GfxControlBeam_t", EffectCategory.Mesh, EffectSupport.Ported);
-        Add(0xbcf, "GfxControlEnergyBall_t", EffectCategory.Mesh, EffectSupport.Missing);
+        // EnergyBall: GfxControlEnergyBall / EnergyBallSim from Process 1010e039 + render 10012264.
+        Add(EffectTypeTags.EnergyBall, "GfxControlEnergyBall_t", EffectCategory.Mesh, EffectSupport.Ported);
         // CrazyCone: GfxControlCrazyCone / CrazyConeSim from Process 100d6dcc and GfxVisualCone
         // (geometry 1000bd0a). A 21-field header then field 20 stages of 29.
         Add(EffectTypeTags.CrazyCone, "_GfxControlCrazyCone_t", EffectCategory.Mesh, EffectSupport.Ported);
@@ -202,7 +206,8 @@ public static class EffectTypeCatalog
         Add(0x3fd, null, EffectCategory.Tracer, EffectSupport.Missing);
         Add(EffectTypeTags.Tracer3, "_GfxControlTracer3_t", EffectCategory.Tracer, EffectSupport.Ported);
         Add(0x403, null, EffectCategory.Tracer, EffectSupport.Missing);
-        Add(0xbd2, null, EffectCategory.Tracer, EffectSupport.Missing);
+        // Tracer8: GfxControlTracer8 / Tracer8Sim from Process 10114b73; it only carries a child.
+        Add(EffectTypeTags.Tracer8, "GfxControlTracer8_t", EffectCategory.Tracer, EffectSupport.Ported);
 
         // ---- Constructed by a CreateGfxControl overload we have not mapped yet ----
         Add(EffectTypeTags.Plasma, "_GfxControlPlasma_t", EffectCategory.Tracer, EffectSupport.Ported);

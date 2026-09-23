@@ -15,6 +15,11 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\..\Assets\Scripts\Effects\GfxBits.cs" Link="GfxBits.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\Tracer8Sim.cs" Link="Tracer8Sim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\EnergyBallSim.cs" Link="EnergyBallSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\GlobalSmokeSim.cs" Link="GlobalSmokeSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Effects\GroundImpactSim.cs" Link="GroundImpactSim.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\StarsRing.cs" Link="StarsRing.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\StockColorRamp.cs" Link="StockColorRamp.cs" />
     <Compile Include="..\..\Assets\Scripts\Effects\StarsCase3.cs" Link="StarsCase3.cs" />

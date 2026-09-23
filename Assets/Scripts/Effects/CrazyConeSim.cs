@@ -150,10 +150,10 @@ public sealed class CrazyConeSim
     public float Stage(int stage, int slot) => _stages[stage * StageFields + slot];
 
     public uint StageColour(int stage, int slot)
-        => unchecked((uint)BitConverter.SingleToInt32Bits(_stages[stage * StageFields + slot]));
+        => GfxBits.UOf(_stages, stage * StageFields + slot);
 
     public int StageInt(int stage, int slot)
-        => BitConverter.SingleToInt32Bits(_stages[stage * StageFields + slot]);
+        => GfxBits.Of(_stages, stage * StageFields + slot);
 
     /// <summary>
     /// One Process call (<c>100d6dcc</c>). <paramref name="locatorValid"/> is stock's
@@ -361,7 +361,7 @@ public sealed class CrazyConeSim
     float F(int i) => i >= 0 && i < _fields.Length ? _fields[i] : 0f;
 
     int Int(int i)
-        => i >= 0 && i < _fields.Length ? BitConverter.SingleToInt32Bits(_fields[i]) : 0;
+        => i >= 0 && i < _fields.Length ? GfxBits.Of(_fields, i) : 0;
 
     /// <summary>What one call hands every cone.</summary>
     public struct State

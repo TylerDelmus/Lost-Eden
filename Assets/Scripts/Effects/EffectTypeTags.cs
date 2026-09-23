@@ -67,6 +67,10 @@ public static class EffectTypeTags
     /// <summary>1026 — _GfxControlTracer6_t: a widening sprite trail plus three Cord4 ribbons.</summary>
     public const int Tracer6 = 0x402;
     public const int Tracer3 = 0x3fe;        // 1022 — _GfxControlTracer3_t (carries a child along the hit line)
+    public const int Tracer8 = 0xbd2;        // 3026 — GfxControlTracer8_t (carries a whole child effect along the hit line)
+    public const int EnergyBall = 0xbcf;     // 3023 — GfxControlEnergyBall_t (three orthogonal fans of blades)
+    public const int GlobalSmoke = 0xbc9;    // 3017 — _GfxControlGlobalSmoke_t (64 Sol sprites from a steady emitter)
+    public const int GroundImpact = 0x1388;  // 5000 — _GfxControlGroundImpact_c (a jittering blue blade, GfxVisualForceSword_t)
     public const int ShockWave = 0xbb8;      // 3000 — _GfxControlShockWave_t (ground rings and cones)
     public const int VulcanRocks = 0x405;    // 1029 — _GfxControlVulcanRocks_t (rocks thrown up, bouncing to rest)
     public const int VolGrid = 0xbde;        // 3038 — GfxControlVolGrid_t (a box of crossed textured slices)

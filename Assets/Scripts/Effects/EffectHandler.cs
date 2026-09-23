@@ -983,6 +983,12 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 return CreateBParticle(record, locator);
             case EffectTypeTags.GroundGrid:
                 return CreateGroundGrid(record, locator);
+            case EffectTypeTags.EnergyBall:
+                return CreateEnergyBall(record, locator);
+            case EffectTypeTags.GlobalSmoke:
+                return CreateGlobalSmoke(record, locator);
+            case EffectTypeTags.GroundImpact:
+                return CreateGroundImpact(record, locator);
             case EffectTypeTags.EffectMesh:
                 return new GfxControlEffectMesh(record, locator, Models);
             case EffectTypeTags.MParticle:
@@ -1007,6 +1013,8 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 return CreateTracer5(record, locator);
             case EffectTypeTags.Tracer6:
                 return CreateTracer6(record, locator);
+            case EffectTypeTags.Tracer8:
+                return CreateTracer8(record, locator);
             case EffectTypeTags.Tracer3:
                 return CreateTracer3(record, locator);
             case EffectTypeTags.ShockWave:
@@ -1263,6 +1271,18 @@ public sealed class EffectHandler : IEffectSpawnFactory
     /// <summary>ABIFF models for EffectMesh, MParticle and VulcanRocks, loaded on first use.</summary>
     EffectModels Models => _models ??= new EffectModels(_catalog.Database);
 
+    /// <summary>
+    /// Build 1010dd3f: the visual takes the material from field 9 (every record's is 8). Its render
+    /// states leave the blend to the base constructor, whose flag is the record's 0x200.
+    /// </summary>
+    GfxControl CreateEnergyBall(GfxTweakRecord record, EffectLocator locator)
+    {
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 0, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        return new GfxControlEnergyBall(record, locator, texture);
+    }
+
     GfxControl CreateGroundGrid(GfxTweakRecord record, EffectLocator locator)
     {
         int materialIndex = ResolveMaterialIndex(record, defaultIndex: 95, preferredField: 9);
@@ -1361,6 +1381,8 @@ public sealed class EffectHandler : IEffectSpawnFactory
             case EffectTypeTags.BParticle:
             case EffectTypeTags.BParticle2:
             case EffectTypeTags.EffectMesh:
+            case EffectTypeTags.EnergyBall:
+            case EffectTypeTags.GlobalSmoke:
             case EffectTypeTags.GroundGrid:
             case EffectTypeTags.GroundShake:
             case EffectTypeTags.MParticle:
@@ -1524,6 +1546,23 @@ public sealed class EffectHandler : IEffectSpawnFactory
     }
 
     /// <summary>
+    /// Stock builds a Tracer8 from the tracer factory's fourth arm (<c>100d18eb</c>), so like the other
+    /// tracers it reads its start and end from the hit location once. It has no material of its own:
+    /// everything it shows belongs to the child effect in field 11.
+    /// </summary>
+    GfxControl CreateTracer8(GfxTweakRecord record, EffectLocator locator)
+    {
+        if (locator == null
+            || !locator.TryGetHitLocation(out EffectHitLocation hitLoc)
+            || !hitLoc.TryGetEndpoints(out Vector3 start, out Vector3 end))
+        {
+            return new GfxControlUnsupported(record, locator);
+        }
+
+        return new GfxControlTracer8(record, EffectLocator.WorldPoint(start, Quaternion.identity), start, end, this);
+    }
+
+    /// <summary>
     /// Stock ShockWave (init <c>100eeacb</c>): GfxVisualGroundRing(material from field 9) per ring and
     /// GfxVisualCone(material from field 25) per cone. Both textures wrap (D3D's default).
     /// </summary>
@@ -1589,6 +1628,31 @@ public sealed class EffectHandler : IEffectSpawnFactory
         if (texture != null)
             texture.wrapMode = TextureWrapMode.Repeat;
         return new GfxControlShield2(record, locator, texture);
+    }
+
+    /// <summary>
+    /// Build 100e1536: GfxVisualForceSword_t(1, material 1) — the material is the literal 1, not a
+    /// record field, because the loader discards every field the record has.
+    /// </summary>
+    GfxControl CreateGroundImpact(GfxTweakRecord record, EffectLocator locator)
+    {
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(GfxControlGroundImpact.MaterialIndex);
+        Texture2D texture = slot.IsUntextured
+            ? WhiteTexture
+            : GetMaterialTexture(GfxControlGroundImpact.MaterialIndex, slot);
+        return new GfxControlGroundImpact(record, locator, texture);
+    }
+
+    /// <summary>
+    /// Build 100e0738: GfxVisualSol(material from field 9, 0, additive) with 64 sprites, sized by the
+    /// material's columns and rows, whose product the control uses as the frame count.
+    /// </summary>
+    GfxControl CreateGlobalSmoke(GfxTweakRecord record, EffectLocator locator)
+    {
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 49, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        return new GfxControlGlobalSmoke(record, locator, texture, _atlasFrames, slot.Cols, slot.Rows);
     }
 
     /// <summary>

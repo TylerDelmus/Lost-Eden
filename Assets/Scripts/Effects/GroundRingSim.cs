@@ -255,7 +255,7 @@ public sealed class GroundRingSim
     float F(int i) => i >= 0 && i < _fields.Length ? _fields[i] : 0f;
 
     int Int(int i)
-        => i >= 0 && i < _fields.Length ? BitConverter.SingleToInt32Bits(_fields[i]) : 0;
+        => i >= 0 && i < _fields.Length ? GfxBits.Of(_fields, i) : 0;
 
     uint UInt(int i) => unchecked((uint)Int(i));
 }

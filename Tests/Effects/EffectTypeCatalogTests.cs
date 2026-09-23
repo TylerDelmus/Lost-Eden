@@ -108,7 +108,7 @@ public class EffectTypeCatalogTests
             EffectTypeTags.Scatter, EffectTypeTags.Cord, EffectTypeTags.Tracer1, EffectTypeTags.Plasma,
             EffectTypeTags.Tracer4, EffectTypeTags.Deformer, EffectTypeTags.Electra, EffectTypeTags.Suns, EffectTypeTags.Shield, EffectTypeTags.Shield2, EffectTypeTags.BuffFsm, EffectTypeTags.BuffPlaceHolder,
             EffectTypeTags.TParticle, EffectTypeTags.TParticle2, EffectTypeTags.BParticle2, EffectTypeTags.BParticle, EffectTypeTags.GroundGrid,
-            EffectTypeTags.EffectMesh, EffectTypeTags.MParticle, EffectTypeTags.GroundShake, EffectTypeTags.Tracer5, EffectTypeTags.Tracer6, EffectTypeTags.Fire,
+            EffectTypeTags.EffectMesh, EffectTypeTags.MParticle, EffectTypeTags.GroundShake, EffectTypeTags.Tracer5, EffectTypeTags.Tracer6, EffectTypeTags.Tracer8, EffectTypeTags.EnergyBall, EffectTypeTags.GlobalSmoke, EffectTypeTags.GroundImpact, EffectTypeTags.Fire,
             EffectTypeTags.Smoke, EffectTypeTags.Spiral, EffectTypeTags.Spiral2, EffectTypeTags.Beam, EffectTypeTags.CrazyCone, EffectTypeTags.GroundRing, EffectTypeTags.Mesh, EffectTypeTags.Tracer3, EffectTypeTags.Nano0, EffectTypeTags.ShockWave,
             EffectTypeTags.VulcanRocks, EffectTypeTags.VolGrid, EffectTypeTags.Sprite, EffectTypeTags.SkyFlash, EffectTypeTags.Trail2, EffectTypeTags.Toggle,
         };

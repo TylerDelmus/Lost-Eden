@@ -385,7 +385,7 @@ public sealed class BeamSim
     static float F(float[] f, int i) => f != null && i >= 0 && i < f.Length ? f[i] : 0f;
 
     static int Int(float[] f, int i)
-        => f != null && i >= 0 && i < f.Length ? BitConverter.SingleToInt32Bits(f[i]) : 0;
+        => f != null && i >= 0 && i < f.Length ? GfxBits.Of(f, i) : 0;
 
     static uint UInt(float[] f, int i) => unchecked((uint)Int(f, i));
 
