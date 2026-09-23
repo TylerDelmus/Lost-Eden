@@ -5,15 +5,13 @@ This is the working reference for Lost Eden's in-game UI. Everything the player 
 `UnityEngine.UI` or `UnityEngine.EventSystems` in any runtime script. Read this before touching
 `Assets/Scripts/UI/`.
 
-Last updated 2026-09-23.
-
 ---
 
 ## 1. Ground rules
 
 - **`PanelRenderer`, not `UIDocument`.** Unity 6000.6 files `UIDocument` under "UI Toolkit/Legacy";
-  `PanelRenderer` (Unity 6.5+) is the replacement. The whole layer was migrated on 2026-09-23 and
-  no `UIDocument` remains outside `Assets/Editor/`. Don't reintroduce one.
+  `PanelRenderer` (Unity 6.5+) is the replacement. No `UIDocument` remains outside
+  `Assets/Editor/`. Don't reintroduce one.
 - **The root arrives late.** `PanelRenderer` exposes *no* public `rootVisualElement` — that
   property, `IPanelComponent.GetRootVisualElement()` and `PanelRendererRootElement` are all
   `internal`. The only supported way in is `RegisterUIReloadCallback(VersionedUIReloadCallback)`,

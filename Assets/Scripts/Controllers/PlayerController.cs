@@ -118,11 +118,8 @@ public class PlayerController : MonoBehaviour
         var flags = _inputController.ActorInput.ToMovementFlags();
         _localPlayer.Motor.SetInputs(flags, cameraYaw);
 
-        // Right-drag mouse-look turns the character by a delta; the camera follows because it is
-        // stay-behind. Left-drag orbits the camera only and contributes nothing here.
-        float mouseYaw = N3Camera.ConsumeCharacterYaw();
-        if (mouseYaw != 0f)
-            _localPlayer.Motor.ApplyYawDelta(mouseYaw);
+        // Right-drag mouse-look turns the character, but N3Camera does that itself, in the same
+        // frame as the camera's own pitch — see N3Camera.TurnCharacter.
 
         // Network heading is character facing, not camera look (they diverge without mouse-turn).
         var facing = Quaternion.AngleAxis(_localPlayer.transform.eulerAngles.y, Vector3.up);

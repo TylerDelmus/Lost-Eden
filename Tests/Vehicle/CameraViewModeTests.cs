@@ -177,6 +177,111 @@ public class CameraViewModeTests
 
     // ---- trail -------------------------------------------------------------
 
+    // ---- right-drag: the character turns, lock rides with it ----------------
+
+    /// <summary>Shortest signed difference between two bearings — the camera sits at +/-180.</summary>
+    static float BearingDelta(float a, float b)
+    {
+        float d = (b - a) % 360f;
+        if (d > 180f) d -= 360f;
+        if (d < -180f) d += 360f;
+        return d;
+    }
+
+    /// <summary>Angle from the character's facing round to the camera, in degrees.</summary>
+    static float OffsetBearing(CameraVehicleFixedThirdSim cam)
+    {
+        Vec3 offset = cam.Position - cam.GetLookTargetPos();
+        Vec3 facing = cam.TargetRotation * Vec3.ReferenceForward;
+        return MathF.Atan2(
+            offset.X * facing.Z - offset.Z * facing.X,
+            offset.X * facing.X + offset.Z * facing.Z) * 180f / MathF.PI;
+    }
+
+    /// <summary>
+    /// A right drag turns the character; Lock is rigid, so the camera must hold the same bearing
+    /// behind it with no lag at all. The turn has to land before the tick that places the camera —
+    /// <c>N3Camera.TurnCharacter</c> re-reads the target pose for exactly this reason.
+    /// </summary>
+    [Fact]
+    public void Lock_RidesWithTheCharacterWhenTheTurnLandsBeforeTheTick()
+    {
+        var cam = Third(locked: true);
+        cam.Tick(1f / 60f, 5f);
+        float bearing = OffsetBearing(cam);
+
+        for (int frame = 0; frame < 90; frame++)
+        {
+            cam.TargetRotation = Quat.FromAxisAngle(Vec3.ReferenceUp, (frame + 1) * 4f * MathF.PI / 180f);
+            cam.Tick(1f / 60f, 5f);
+
+            Assert.True(MathF.Abs(BearingDelta(bearing, OffsetBearing(cam))) < 0.01f,
+                $"camera slipped {BearingDelta(bearing, OffsetBearing(cam))} degrees at frame {frame}");
+        }
+    }
+
+    /// <summary>
+    /// The right-drag loop in full: each frame the camera takes a small pitch against the body's
+    /// current rotation, re-seats its goal (Lock does that on every drag, <c>10021572</c>), and only
+    /// then the body turns. The camera must stay pinned to the character's back throughout.
+    ///
+    /// Re-seating <i>after</i> the turn stores a bearing measured against the old facing, and the
+    /// camera walks off the character's back by the yaw delta every frame.
+    /// </summary>
+    [Fact]
+    public void Lock_RightDrag_DoesNotDriftOffTheCharactersBack()
+    {
+        var cam = Third(locked: true);
+        cam.Tick(1f / 60f, 5f);
+        float bearing = OffsetBearing(cam);
+
+        for (int frame = 0; frame < 90; frame++)
+        {
+            // The camera's own move, against the rotation the body still has.
+            Vec3 lookTarget = cam.GetLookTargetPos();
+            Vec3 offset = cam.Position - lookTarget;
+            float distance = offset.Length;
+            Vec3 dir = offset / distance;
+            Vec3 axis = Vec3.Cross(Vec3.ReferenceUp, dir);
+            Vec3 pitched = Quat.FromAxisAngle(axis / axis.Length, 0.4f * MathF.PI / 180f) * dir;
+            Vec3 placed = lookTarget + pitched * distance;
+            cam.SetRelPos(placed);
+            cam.UpdateHeadingToPos(placed, false);
+            cam.ForcedUpdate(false);
+
+            // Then the body turns, and the tick places the camera behind its new rotation.
+            cam.TargetRotation = Quat.FromAxisAngle(Vec3.ReferenceUp, (frame + 1) * 4f * MathF.PI / 180f);
+            cam.Tick(1f / 60f, 5f);
+
+            Assert.True(MathF.Abs(BearingDelta(bearing, OffsetBearing(cam))) < 0.5f,
+                $"camera drifted {BearingDelta(bearing, OffsetBearing(cam))} degrees off the back "
+                + $"by frame {frame}");
+        }
+    }
+
+    /// <summary>
+    /// The failure this replaced: turning the character only after the camera has been placed
+    /// leaves the camera a frame behind the body every frame it is turning, which reads as the two
+    /// fighting each other.
+    /// </summary>
+    [Fact]
+    public void Lock_LagsTheCharacterWhenTheTurnLandsAfterTheTick()
+    {
+        var cam = Third(locked: true);
+        cam.Tick(1f / 60f, 5f);
+        float bearing = OffsetBearing(cam);
+
+        float worst = 0f;
+        for (int frame = 0; frame < 90; frame++)
+        {
+            cam.Tick(1f / 60f, 5f);
+            cam.TargetRotation = Quat.FromAxisAngle(Vec3.ReferenceUp, (frame + 1) * 4f * MathF.PI / 180f);
+            worst = MathF.Max(worst, MathF.Abs(BearingDelta(bearing, OffsetBearing(cam))));
+        }
+
+        Assert.True(worst > 3f, $"expected a visible lag from the wrong order, saw {worst} degrees");
+    }
+
     [Fact]
     public void Trail_FollowsAtRoughlyItsFollowDistance()
     {

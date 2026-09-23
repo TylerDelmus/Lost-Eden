@@ -5,8 +5,6 @@ that draw nano casts, projectiles, hits and buffs) into Lost Eden. It collects w
 recovered from the stock client, how the port is laid out, and how to add the next control. Read it
 before touching `Assets/Scripts/Effects/`.
 
-Last updated 2026-09-22.
-
 ---
 
 ## 1. Ground rules
@@ -31,7 +29,7 @@ Last updated 2026-09-22.
   bytes out. `BitConverter.SingleToInt32Bits(f[i])` and `BitConverter.ToSingle(bytes, o)` both corrupt
   them — silently, and only in Unity: desktop .NET keeps the bits, so the unit tests cannot catch it.
   For a packed ARGB the pattern is exactly "alpha 0x7f or 0xff, red 0x80..0xbf", and the red comes out
-  0x40 too high (GroundGrid's `0xff80c0ff` drew as `0xffc0c0ff` until 2026-09-23).
+  0x40 too high (it would draw GroundGrid's `0xff80c0ff` as `0xffc0c0ff`).
 
 ---
 
@@ -127,7 +125,7 @@ holds `Gamecode.dll`).
   - When the lookup fails, the locator keeps the mesh frame, attach 0 (`10106744`).
   - Names are compared exactly (randy31 `RCATMesh_t::GetAttractor` / `GetBoneMatrix`, a case-sensitive
     strcmp). The port's two name tables match stock's `0x102c63f8` / `0x102c63a8` entry for entry.
-  - The port (`VisualDynel.TryGetAttachMatrix`, 2026-09-22) follows these rules as written:
+  - The port (`VisualDynel.TryGetAttachMatrix`) follows these rules as written:
     - It finds a bone or attractor by its exact CAT name, and falls back to `Attractor01_head`.
     - 3000, 3001 and any other id fail on a character. The locator then keeps the mesh frame
       (`EffectLocator`), and a point getter fails.
@@ -219,8 +217,8 @@ Stock calls every control's Process once per engine frame (`_EffectHandler_t::Ru
 `100d2423`), with the real frame delta and no time gate. So in the original client, effects with per-call
 maths looked different at different frame rates.
 
-**Our client unifies this (your rule, 2026-09-22): an effect must look the same at any frame rate.** The
-maths is stock's; the clock is ours. The only exception left is MParticle (group C), kept by your call.
+**Our client unifies this: an effect must look the same at any frame rate.** The maths is stock's;
+the clock is ours. The only exception is MParticle (group C).
 
 **The rule for choosing a model** (apply it to every new port):
 - **Age-driven body** (every value is a function of age or dt, nothing counted per call): run it every
@@ -228,12 +226,12 @@ maths is stock's; the clock is ours. The only exception left is MParticle (group
   these on the 30 Hz replay with `Blend`:
   - `Blend` only interpolates position and size, so turns, colours and frames would still step.
   - The straight-line interpolation cuts corners on anything moving in a circle.
-  - Suns sunType 1 was moved off the replay for exactly this reason.
+  - Suns sunType 1 belongs in group A for exactly this reason.
 - **Per-call body** (spawn budgets, springs, per-call steps, anything that would run faster at a higher
   frame rate): replay it at 30 Hz (group B). If its sprites move, draw them between the last two steps
   with `Blend`.
 - **Neither fits** (a stock formula that is unstable at the replay rate): sub-step it and say so (group C).
-- Known exception: Stars starType 2 is age-driven but still on the replay (item 3 below).
+- Known exception: Stars starType 2 is age-driven but still on the replay (item 2 below).
 
 The port uses four models:
 
@@ -247,58 +245,56 @@ runs.
 - Sprite (its cycle is a function of age)
 - SkyFlash (a function of age; the place is re-read in a following phase)
 - Stars starTypes 7/8 (`StarsRing`, computed from age at draw time)
-- Suns sunTypes 0 and 1, since 2026-09-22 (type 1 was on the 30 Hz replay and spun in 18° steps)
+- Suns sunTypes 0 and 1 (on the 30 Hz replay, type 1 spins in 18° steps)
 
 **B. Replayed at a fixed 30 Hz** (`EffectFrameRate.StockProcessHz`, `TakeFixedSteps`, at most 8 steps
 a frame). For bodies with per-call spawn budgets, springs or step counts.
 - Stars starTypes 2, 3, 4, 5, 6, 9, 10, 11, 13, 15, 16-20 and 22. They're drawn between the last two steps with
   `StarsCase3.Blend`, which interpolates position and size only.
 - Suns sunType 4. It isn't interpolated, but its sparks don't move.
-- Electra, since 2026-09-22: its spawn cap (≤ 2 a call) made the shell fill faster at high fps. The
+- Electra: its spawn cap (≤ 2 a call) would fill the shell faster at high fps. The
   sparks are put back on the locator every frame (`ElectraSim.Place`), so the shell doesn't lag a moving
   host.
-- BParticle2, since 2026-09-22: the respawn cap (field 15 a call), the bounce and the drag are per call.
+- BParticle2: the respawn cap (field 15 a call), the bounce and the drag are per call.
   Particles are drawn between their last two steps (position, size, angle); one that was dead on the
   previous step is drawn where it is.
 - Trail2: one sample a call, so the trail's length in time is N calls. The samples are taken at 30 Hz; the
   origin (the live end) is set every frame and the thrust drift runs every frame with its dt (§5.35).
-- Cord, since 2026-09-22: stock's step is the frame delta clamped to [0.01, 0.025], so links drifted
-  1.44× fast at 144 fps and 0.75× at 30. Each step is now one 1/30 s call (clamped step 0.025). The links
+- Cord: stock's step is the frame delta clamped to [0.01, 0.025], which drifts links 1.44× fast at
+  144 fps and 0.75× at 30. Each step here is one 1/30 s call (clamped step 0.025). The links
   aren't interpolated; they drift a few millimetres a step.
 - Checked live at 30 fps and at ~150 fps: Electra 43452 (24 / 28 / 30 sparks at 0.5 / 1 / 2 s) and Cord
   20071 (13 / 15 links, same spread) are identical; BParticle2 in 71016 matches in count (20 / 60 / ~220)
   and differs only in its random layout.
-- VulcanRocks, from its port (2026-09-22): a resting rock adds one settle a call and the control ends at
+- VulcanRocks: a resting rock adds one settle a call and the control ends at
   field 20 settles, and a rock sinking between calls bounces again at low frame rates. Rocks are drawn
   between their last two steps (position, and the angle while the spin axis is unchanged).
 - The wind (`EffectWind`, at most 4 steps a frame).
-- BuffPlaceHolder's children: `ChildDt` = one stock frame per 0.45 rad step. This is a deliberate
-  deviation, kept by your decision (§9).
+- BuffPlaceHolder's children: `ChildDt` = one stock frame per 0.45 rad step, a deliberate
+  deviation (§9).
 
 **C. Sub-stepped at ≤ 1/60 s.** MParticle (`GfxControlMParticle.MaxStep`). Stock's bounce is
-`100·b·dt`, which is unstable at 30 fps. This was reported as a decision when it was ported (§5.21).
-It still depends on fps above 60 (each frame is then one step). Left as is by your call (2026-09-22).
+`100·b·dt`, which is unstable at 30 fps (§5.21). It still depends on fps above 60, since each frame
+is then one step.
 
-**D. Per-call constants scaled by dt.** The unverified Stars starTypes that still run the earlier
-stand-in (`FrameSteps`, `TakeBudget`).
+**D. Per-call constants scaled by dt.** The unverified Stars starTypes that run the stand-in
+(`FrameSteps`, `TakeBudget`).
 
 To revisit:
 1. **Measure the stock client's frame rate** (`/framerate`). Group B assumes stock ran at 30 fps; if it
    ran faster, those effects spawn and move faster in stock than here.
-2. ~~Group A controls with per-call caps.~~ Done 2026-09-22: Electra, BParticle2 and Cord moved to
-   group B.
-3. **Stars starType 2 depends only on age** but sits in group B, which breaks the rule above. Positions
-   are interpolated, but size, colour and frame change 30 times a second. Move it to group A, as Suns
-   sunType 1 was, when that's convenient.
-4. **Group B's drawn state updates at 30 Hz** apart from Stars' interpolated position and size.
+2. **Stars starType 2 depends only on age** but sits in group B, which breaks the rule above.
+   Positions are interpolated, but size, colour and frame change 30 times a second. It belongs in
+   group A.
+3. **Group B's drawn state updates at 30 Hz** apart from Stars' interpolated position and size.
    Colours and frames step visibly at high fps.
-5. **MParticle's 1/60 sub-step** is a stability choice, not stock. It keeps its bounces close to what
-   stock produces at 60 fps, but above 60 fps it still changes with the frame rate. The unified fix is
-   fixed 1/60 s steps with the remainder carried; held back by your call.
-6. **BuffPlaceHolder's child delta** (§9) makes the trail length frame-rate dependent in stock; the port
-   fixes it at the 30 fps look.
-7. **Controls not in these lists are older stand-ins** (Flare1, Nano1, Delay);
-   their timing hasn't been checked.
+4. **MParticle's 1/60 sub-step** is a stability choice, not stock. It keeps its bounces close to what
+   stock produces at 60 fps, but above 60 fps it still changes with the frame rate. The unified fix
+   is fixed 1/60 s steps with the remainder carried.
+5. **BuffPlaceHolder's child delta** (§9) makes the trail length frame-rate dependent in stock; the
+   port fixes it at the 30 fps look.
+6. **Controls not in these lists are stand-ins** (Flare1, Nano1, Delay); their timing has not been
+   checked.
 
 ---
 
@@ -858,8 +854,8 @@ the hit of 28604 Electrifying Containment; 43618, the damage-shield buffs).
 - The lazy init sets the timers to 0. On expiry it drains like case 3.
 - All 37 records are world mode, attach 1000.
 
-Other starTypes are still the previous developer's approximations. By nanos they hold back (2026-09-22):
-5 (26), 13 (15), 9 (12), 14 and 12 (6 each).
+Every other starType is an approximation. Ranked by the nanos they hold back: 5 (26), 13 (15),
+9 (12), 14 and 12 (6 each).
 
 ### 5.9 Deformer (0xbb9) mode 1: `DeformerSim`, `CatMeshDeformHost`
 vftable `1016c6bc`, loader `100d823f`, Process `100d7caa`, vertex callback `FUN_100d776f`, slot 6 `100d7742`.
@@ -968,7 +964,7 @@ draw `1001c8a5`.
 - Port: the control bakes each SkinnedMeshRenderer every frame, offsets it, sets the UVs and draws it
   through `EffectBillboardBatch.MeshDraw` in one colour.
   - The shield texture is set to Repeat.
-- **Per-vertex alpha** (vertex build `1001cab2`..`1001cd00`), ported 2026-09-22:
+- **Per-vertex alpha** (vertex build `1001cab2`..`1001cd00`):
   - Wave, 0x800 (visual +0x1ac; the Gamecode build `100ee0e3` sets it with the point, fields 12-14, at
     +0x1b0): the fade-in's sine takes `x = f21·T − dist·f22` instead of `f21·T`, still clamped to
     [0, f23]. dist is measured from the pushed-out position: `|p − point|`, or with 0x1000 (+0x1ad) the
@@ -1009,7 +1005,7 @@ Process `100ecb95`, slot 6 `100ecb55`.
   its children.
 
 ### 5.13 Buff FSM (0x3e9) and BuffPlaceHolder (0x3ea)
-The catalog used to call these "not rendered". They draw nothing themselves, but they spawn effects that do.
+They draw nothing themselves, but they spawn effects that do.
 - **BPHFSM** (`GfxControlBuffFsm`; vftable `1016c444`, loader `100d3f12`, Process `100d4066`)
   - Fields: 10/11 effects A/B, 12-15 / 16-19 start/stop colour, 20 interval, 21 count.
   - A countdown runs out every f20 seconds. Then, if 5 s of game time have passed since any BPHFSM
@@ -1415,7 +1411,7 @@ DisplaySystem's **GfxVisualSprite2Type0**, not Flare's visual. The visual's pool
   - Then `p += v·dt`, `v.y += g·dt`.
   - Colour, frame and size step, and the colour is FISTP-packed (`c·255` as a float, − 0.49999).
 - Slots: 6 sets duration = age + f35, 8 sets duration, 11/12 set start/end colour for later spawns.
-  Stock Sparks has no light (the old emitter port had one).
+  Stock Sparks has no light.
 - The wind is the effect handler's GetWind (§5.24). 14 of the 42 records use mode 4: black (43668,
   43675–43680) and white (43689, 43696–43701) sprite plumes at 0.5–8 per second, e.g. the Omni-Tek
   Rank 1–7 Effect buffs (one step per rank).
@@ -1443,7 +1439,7 @@ vftable `1016e0a4`, loader `101003f9`, init `1010077d`, build `101004b4`, Proces
     local y (the flight direction). The first two make the drawn quad; the third only turns its side.
 - Slot 6 readies it; slot 8 is a no-op.
 - All 13 records are local mode (field 0 = 2).
-- The old `GfxControlTracer` stand-in still draws 0x3f5. 0x402 is now ported (§5.43).
+- 0x3f5 is drawn by the `GfxControlTracer` stand-in; 0x402 is ported (§5.43).
 - 45708 (nano 45889's tracer): speed 50, streak 4.5 m, width 0.225, colour (1, 1, 0.8, 0.8), s_bullet.png.
   Over GfxTest's 2.6 m line the cap makes it 12.9 m/s.
 ### 5.24 Wind: `EffectWindSim`, `EffectWind`
@@ -1533,8 +1529,7 @@ its defaults.
   - This follows stock's code, but it hasn't been compared with the live client (§9).
 ### 5.26 Smoke (0x3f1): `SmokeSim`, `GfxControlSmoke`
 vftable `1016db34`, factory case in `100d0656` (0xa4 bytes), ctor `100f12bf`, loader `100f0b6b`, init
-`100f0cd4`, Process `100f04bd`. The same **GfxVisualSprite2Type0** as Sparks and Fire. The port used to
-call this type "Nano2" and drew a stand-in billboard.
+`100f0cd4`, Process `100f04bd`. The same **GfxVisualSprite2Type0** as Sparks and Fire.
 - Fields:
   - 0 flags: bits 0-2 are the locator's; 0x400 keeps it running when the locator is lost
   - 1-6 locator offset and turn (the ctor passes them to `10106be2`); 7 attach
@@ -1660,8 +1655,8 @@ GfxVisualSprite2Type0 (§5.22), as Sparks does.
 - Slots: 6 duration = age + f35; 8 duration; 11/12 colours; 13 start = colour, stop = colour at alpha 0.
 - 14 records. They reach nanos only as Tracer3's children. 8010 is also field 31 of all 180 Spell1
   records, but only 9000 and 9002 have field 33 = 0 (so spawn it), and no nano uses those.
-- Port: `GfxControlNano0` replaces the previous developer's `GfxControlNano` for 0x3ef (Nano1, 0x3f0,
-  keeps it). Seen live as 28609's trail (§5.28).
+- Port: `GfxControlNano0` draws 0x3ef; `GfxControlNano` keeps 0x3f0 (Nano1). Seen live as 28609's
+  trail (§5.28).
 
 ### 5.30 ShockWave (0xbb8): `ShockWaveSim`, `GfxControlShockWave`
 vftable `1016da14`; dynel ctor `100eeec0`, loader `100ee3cc`, init `100eeacb`, Process `100ee525`.
@@ -1760,7 +1755,7 @@ DisplaySystem's `GfxVisualRockList` (ctor `1001c5d0`, GetNew `1001c4f9`, Process
     Breath, 226116 Seismic Smash, 275380 Magma Burn.
   - 61031/61033/61034 (slots 40-46) are used by the 4 Destruction nanos, which get no rock in stock.
 - Port:
-  - Slot 4 is taken as loaded, by decision (user, 2026-09-22; §9). So about one throw in 7 gives a rock
+  - Slot 4 is taken as loaded, by decision (§9). So about one throw in 7 gives a rock
     from the 45058-45060 records.
   - The body replays at 30 Hz (§3.7 group B).
   - The ground is `EffectGround.TryGround` (a raycast, with the hit normal). With nothing under a rock,
@@ -2147,7 +2142,7 @@ drawn N times, each copy a little larger.
 
 ### 5.39 Scatter (0xbd5): `ScatterSim`, `GfxControlScatter`
 vftable `1016f6cc`; loader `10110cc2`, slot build `10110db5`, Process `101108a8`, slot 6 `100d2b34`
-(the base flag only). Rebuilt 2026-09-22 from a stand-in that only modelled the timing.
+(the base flag only).
 
 N timed copies of one child, each placed by its own scatter offset.
 - Fields: 0 flags, 1/2/3 an offset added to every copy, 4 the **position** mode, 5 the **time** mode,
@@ -2189,7 +2184,7 @@ N timed copies of one child, each placed by its own scatter offset.
 
 ### 5.40 Highlight (0x7db): `HighlightSim`, `GfxControlHighlight`
 vftable `1016d164` (plus two more for its second base); loader `100e2dc0`, start `100e309b`,
-Process `100e2efc`, slot 6 `100e2d91`, slot 8 `100e2da5`. Checked against stock 2026-09-22; the port's
+Process `100e2efc`, slot 6 `100e2d91`, slot 8 `100e2da5`. Checked against stock; the port's
 field map and curves were already right, and the terminate was not.
 
 It spawns no visual — it tints the target's existing mesh through randy31:
@@ -2204,8 +2199,8 @@ also calls `SetSpecular`.
   `1 - (2 * age / duration - 1)^2`, an arc up and back down; mode 2 rises as `min(age / pulse, 1)` and,
   once terminated, falls as `(duration - age) / pulse`; any other mode stays at 0.
 - Slot 6 is **not** an ending: for mode 2 it sets `duration = pulse + age` and then every mode just
-  raises +0x38. The control still runs until its duration expires. The port used to go ready at once
-  for modes 0, 1 and 3 — fixed.
+  raises +0x38. The control still runs until its duration expires, and the port does the same —
+  it does not go ready at once for modes 0, 1 and 3.
 - Records: 11. 11500/11501/11503/11504 and 61110-61112 are mode 0, 11502 mode 1, 11506 mode 2,
   11507/11508 mode 3. The nanos reach mode 2 (11506: 269512 Dimensional Shift, 275524 Monster Cloak
   Nano, 293946 Umbral Fastness) and mode 0 (through 61060-61063 and 61090, e.g. 202509 Destruction 1).
@@ -2720,7 +2715,7 @@ fade-in and held (its duration is 300 s), and the tower wreck renders with its o
 | Tests | `Tests/Effects/*.cs` + `LostEden.Effects.Tests.csproj`, which **links** the Unity-free sources. Run `dotnet test` in `Tests/Effects`, then delete `bin/` and `obj/`. |
 
 Additive brightness: `EffectBillboardBatch.AdditiveHdrBoost = 3` multiplies additive RGB so HDRP bloom
-has energy to catch. **Not stock**, kept by the user's choice (§9).
+has energy to catch. **Not stock**, a deliberate deviation (§9).
 
 ---
 
@@ -2780,8 +2775,7 @@ has energy to catch. **Not stock**, kept by the user's choice (§9).
 - Many files are **CRLF**. Scripted replacements must convert `\n` to `\r\n` first.
 - Long Bash heredocs containing quotes can fail with "unexpected EOF". Write the edit script to a
   file with the editor tool and run it.
-- Never `git rm --cached`. Delete from the working tree only. Nothing is committed without the
-  user's say-so.
+- Never `git rm --cached`. Delete from the working tree only.
 
 ---
 
@@ -2792,9 +2786,7 @@ spawn them). A tree is as good as its worst record. Two scan pitfalls that have 
 Stars field 30 is the spark life, not a child id; and Spell1 spawns fields 31/32 only when field
 33 == 0.
 
-As of 2026-09-23 (after the goal run: GroundGrid modes 1 and 2, Tracer8, EnergyBall, GlobalSmoke
-kinds 0 and 2, and GroundImpact), with the buff slot counted:
-**7,756 nanos have effects. 7,755 are verified and 1 is approximated. Nothing is unverified and
+With the buff slot counted: **7,756 nanos have effects. 7,755 are verified and 1 is approximated. Nothing is unverified and
 nothing is missing.** The one approximation is SkyFlash's negative field 18 on 256069 Xenosquad,
 left on purpose because the sphere it wants is an RDB gap (§9).
 
@@ -2802,15 +2794,15 @@ Getting there: Shield2 moved 25 nanos off Missing onto Scatter and rebuilding Sc
 Highlight — once its fade actually rendered — cleared the last unverified port of any size; and the
 final run closed the last six gaps. Missing had risen earlier, when buff effects started being counted.
 
-**Ids that aren't in gfxtweak.bin count as Verified** (user's decision, 2026-09-22; it replaces the earlier
+**Ids that aren't in gfxtweak.bin count as Verified** (it replaces the earlier
 rule that kept them Missing). Stock draws nothing for them, and the port draws nothing too:
 - Stock loads the effect table only from `Setupf/gfxtweak.bin` (`100ce664`, through
   `AnarchyPath_t::GetSetupPath`). There is no other copy on disk.
 - The dynel factory (`100d0656`) looks the id up first (`10107068`) and returns 0 when it isn't there.
   No control is made, nothing is drawn and nothing is logged.
-- The port: `EffectHandler.CreateControl` returns null for such an id. It used to draw a stand-in flare
-  instead, which stock never did. The buff and tracer paths warn only when an id that *is* in gfxtweak
-  fails. `EffectCoverage` rates the id Verified with no gap.
+- The port: `EffectHandler.CreateControl` returns null for such an id, drawing nothing, as stock
+  does. The buff and tracer paths warn only when an id that *is* in gfxtweak fails. `EffectCoverage`
+  rates the id Verified with no gap.
 - The two ids nanos reach:
   - 39745 is the buff effect (stat 413) of 39 nanos, e.g. 70300 Total Mirror Shield Mk X. Their cast,
     tracer and hit play; the buff shows nothing, in stock as in the port.
@@ -2833,8 +2825,8 @@ so the next real work is whatever the user names, not a rank position.
 | Item | Detail |
 |---|---|
 | **Stock frame rate** | `EffectFrameRate.StockProcessHz = 30` is an assumption. Stock runs Process once per frame, uncapped. Get the number from `/framerate` (Ctrl+Alt+F) in the real client while 28612's hit plays. |
-| **Vertex colour** | Since 2026-09-22 every effect quad and strip, and the Shield's per-vertex meshes, draw through the vertex-colour shader (§6). Checked against HDRP/Unlit on frozen frames: additive quads alone match within 3 levels (62 pixels over 2); with alpha Smoke among them, within 7 (28 pixels over 4), because a batch of additive quads now sorts against alpha draws as one object. Animated sprites still take one draw per frame texture (Fire 2200: 16 quads, 16 draws), since `EffectAtlasFrames` hands out each frame as its own texture; drawing from the atlas with UV rects would merge them. `EffectBillboardBatch.VertexColorPath = false` restores the old HDRP/Unlit path. |
-| **Additive brightness** | **Deliberate deviation (user's call, 2026-09-22).** `AdditiveHdrBoost = 3`; stock draws colour × texture unscaled (×1) with no bloom. At ×1 a sprite never exceeds 1.0, so a bloom threshold of 1 leaves effects unglowing; ×3 gives bloom energy at the cost of stock colours (pastels wash toward white). The alternative, not built, is an effects-only glow Custom Pass that keeps ×1 colours. The user tunes the bloom volume. HDRP also blends in linear space and doesn't clip overlaps at 1; D3D blended in gamma into an 8-bit buffer. |
+| **Vertex colour** | Every effect quad and strip, and the Shield's per-vertex meshes, draw through the vertex-colour shader (§6). Checked against HDRP/Unlit on frozen frames: additive quads alone match within 3 levels (62 pixels over 2); with alpha Smoke among them, within 7 (28 pixels over 4), because a batch of additive quads now sorts against alpha draws as one object. Animated sprites still take one draw per frame texture (Fire 2200: 16 quads, 16 draws), since `EffectAtlasFrames` hands out each frame as its own texture; drawing from the atlas with UV rects would merge them. `EffectBillboardBatch.VertexColorPath = false` switches back to the HDRP/Unlit path. |
+| **Additive brightness** | **Deliberate deviation.** `AdditiveHdrBoost = 3`; stock draws colour × texture unscaled (×1) with no bloom. At ×1 a sprite never exceeds 1.0, so a bloom threshold of 1 leaves effects unglowing; ×3 gives bloom energy at the cost of stock colours (pastels wash toward white). The alternative, not built, is an effects-only glow Custom Pass that keeps ×1 colours. The user tunes the bloom volume. HDRP also blends in linear space and doesn't clip overlaps at 1; D3D blended in gamma into an 8-bit buffer. |
 | **Buff message semantics vs the server** | Stock: CharacterAction 98 adds a buff, and a Buff message with `Unknown1 == 0` removes it. The previous code played the buff on Buff and treated 98 (`AnimKindIds.AttackSwingAction = 0x62`) as an attack swing. Not yet checked against what the server actually sends. |
 | **Buffs already running** | When a character appears with active nanos, stock recreates their effects (`FUN_1004f2bd` / `FUN_10051c0c`). Not ported. |
 | **Buff conflicts** | Stock's stacking rule (`FUN_1004e9cc`) is not traced; the port only replaces the same nano. |
@@ -2843,20 +2835,20 @@ so the next real work is whatever the user names, not a rank position.
 | **Random tables** | `100d3005`'s shared unit-vector table and walk are replaced by fresh draws with the same distribution. |
 | **Deformer source positions** | Stock feeds the wave the CATTriVertex (0x44-byte) source position from randy31.dll; the port uses mesh bind positions (believed equal, unconfirmed). |
 | **Spell1 windows 3/4** | Still the earlier model (only matters when field 33 == 0). |
-| **BuffPlaceHolder child delta** | **Deliberate deviation, kept for consistency with the rest of the port (user's call, 2026-09-22).** Stock runs the children once per 0.45 rad step (~28/s), each with the whole frame delta, so the Cord's trail depends on the client's frame rate. A point lives 0.5 s of summed deltas, and 32 points at most. At 30 fps that's ~15 points, ~1.1 turns: the tail fades just behind the spark. At 60 fps it's ~30 points, ~2.1 turns: the spark runs into its own trail and the overlap stacks brighter, as seen in the live client. At 100+ fps it's 32 points, ~2.3 turns, and the tail cuts off half bright. The outward drift (`v·clamp(dt, 0.01, 0.025)` per step) also grows with frame rate. The port feeds one stock frame per step (`EffectFrameRate.StockProcessSeconds`, `GfxControlBuffPlaceHolder.ChildDt`), so ours is the 30 fps look. To match a real client, feed the frame delta there instead. |
-| **MParticle step** | **Port decision (2026-09-22).** Stock's bounce restitution is 100·b·dt, which follows the frame rate. At 30 fps, 71045's b = 0.5 returns 165%: a chunk that ends a frame under the ground flips and grows every frame, and runs hundreds of metres off (seen live). At 60 fps it's 83%, and at 100 fps 50%, which looks like what the data was tuned for. `GfxControlMParticle` cuts each call into pieces of at most 1/60 s, so ours is stock as it runs at 60 fps or more. This is also evidence against `StockProcessHz = 30`. |
+| **BuffPlaceHolder child delta** | **Deliberate deviation, kept for consistency with the rest of the port.** Stock runs the children once per 0.45 rad step (~28/s), each with the whole frame delta, so the Cord's trail depends on the client's frame rate. A point lives 0.5 s of summed deltas, and 32 points at most. At 30 fps that's ~15 points, ~1.1 turns: the tail fades just behind the spark. At 60 fps it's ~30 points, ~2.1 turns: the spark runs into its own trail and the overlap stacks brighter, as seen in the live client. At 100+ fps it's 32 points, ~2.3 turns, and the tail cuts off half bright. The outward drift (`v·clamp(dt, 0.01, 0.025)` per step) also grows with frame rate. The port feeds one stock frame per step (`EffectFrameRate.StockProcessSeconds`, `GfxControlBuffPlaceHolder.ChildDt`), so ours is the 30 fps look. To match a real client, feed the frame delta there instead. |
+| **MParticle step** | **A port decision.** Stock's bounce restitution is 100·b·dt, which follows the frame rate. At 30 fps, 71045's b = 0.5 returns 165%: a chunk that ends a frame under the ground flips and grows every frame, and runs hundreds of metres off (seen live). At 60 fps it's 83%, and at 100 fps 50%, which looks like what the data was tuned for. `GfxControlMParticle` cuts each call into pieces of at most 1/60 s, so ours is stock as it runs at 60 fps or more. This is also evidence against `StockProcessHz = 30`. |
 | **Fire 2200 direction** | Stock's code sends the Rage flames down the attach-0 frame's z, i.e. out behind the character along the ground (§5.25). That's the port's result too. Not yet compared with the live client; if the client shows them rising, the attach-0 frame differs from the dynel frame somewhere in N3. |
 | **Weather wind speed** | `EffectWind.WeatherSpeed` is 0: the port has no weather system, so the wind is stock's no-weather gusts. The weather controller (presets, blending, per-zone wind speed) isn't traced (§5.24). |
-| ~~**EffectMesh lighting**~~ | **Fixed 2026-09-23.** Rendering effect 4's render states are recovered exactly (factory `1006c62e`, its arm at `1006c912`): `D3DRS_LIGHTING=1`, `ZWRITEENABLE=0`, `FOGENABLE=0`, `ALPHABLENDENABLE=1`, `SRCBLEND=SRCALPHA`, `DESTBLEND=ONE`, `CULLMODE=NONE` — additive **and** lit, two-sided, no depth write. It is now drawn through `EffectModels.Part.LitAdditive`, an HDRP Lit variant with `_BlendMode` additive, built beside the existing `LitFade`, carrying the model's own diffuse instead of a constant. 71123, 71224 and 72623 are Verified. Own-material models (effect 0) still use the environment's HDRP Lit materials, and effect 4 now has the same standing. |
-| **Locator template on other types** | Fields 1-3 are the locator's offset and 4-6 its turn (`EffectHandler.TakesLocatorTemplate`). Stock has two sibling setters — `101067af` takes the six fields, `10106be2` takes six zeros — and every control has one ctor per locator kind, of which only the **dynel** one passes the fields; that is why the port applies it to dynel/visual locators only. The list is now RTTI-complete: every call site of `101067af` and of its wrapper `_GfxControl_t::InitDynelTemplate` (`100d2d84`) was walked back to the vftable its ctor installs. Ported types reaching it directly: Flare, FlareAlt, Nano0, Nano1, Sparks, BuffPlaceHolder, Cord, Fire, Smoke, Spiral, Sprite, VulcanRocks. Through InitDynelTemplate: Stars, Suns, BParticle, BParticle2, EffectMesh, GroundGrid, MParticle, TParticle, TParticle2, VolGrid, SkyFlash, Trail2, EnergyBall. The 2026-09-22 pass added the second group (113 records onto their offsets; checked live on 28611 Hot Foot). A later pass the same day added **Flare, FlareAlt, Nano0, Nano1, Nano3 and Sparks**, which had been missed: that is 21 Flare records and 37 Sparks records carrying a **rotation**, so they had been drawn unturned. Found from 204580 Tattered Flame, whose hit (Meta 47386) is Stars 43713 + Sparks 43714 (field 6 = -pi/2) + Flare 43715 (fields 5/6 = -+pi/2); the port had been dropping both turns. **Electra** was removed in the same pass: its three ctors call neither setter, so stock never gives it a template (no Electra record has a non-zero field 1-6, so nothing moved). `100d2f58` is also called by unported classes (Bubble, Drips, Font, Hexagram, LavaBall, MeshTest, Particle, SpinningShot, Trail, Vein, WaterRipples, AParticle, ...); add each when it is ported. **GroundShake** and **Spiral2** were added when they were ported. Hit-location and point ctors don't use it. |
+| **EffectMesh lighting** | Rendering effect 4's render states are recovered exactly (factory `1006c62e`, its arm at `1006c912`): `D3DRS_LIGHTING=1`, `ZWRITEENABLE=0`, `FOGENABLE=0`, `ALPHABLENDENABLE=1`, `SRCBLEND=SRCALPHA`, `DESTBLEND=ONE`, `CULLMODE=NONE` — additive **and** lit, two-sided, no depth write. It is now drawn through `EffectModels.Part.LitAdditive`, an HDRP Lit variant with `_BlendMode` additive, built beside the existing `LitFade`, carrying the model's own diffuse instead of a constant. 71123, 71224 and 72623 are Verified. Own-material models (effect 0) still use the environment's HDRP Lit materials, and effect 4 now has the same standing. |
+| **Locator template on other types** | Fields 1-3 are the locator's offset and 4-6 its turn (`EffectHandler.TakesLocatorTemplate`). Stock has two sibling setters — `101067af` takes the six fields, `10106be2` takes six zeros — and every control has one ctor per locator kind, of which only the **dynel** one passes the fields; that is why the port applies it to dynel/visual locators only. The list is now RTTI-complete: every call site of `101067af` and of its wrapper `_GfxControl_t::InitDynelTemplate` (`100d2d84`) was walked back to the vftable its ctor installs. Ported types reaching it directly: Flare, FlareAlt, Nano0, Nano1, Sparks, BuffPlaceHolder, Cord, Fire, Smoke, Spiral, Sprite, VulcanRocks. Through InitDynelTemplate: Stars, Suns, BParticle, BParticle2, EffectMesh, GroundGrid, MParticle, TParticle, TParticle2, VolGrid, SkyFlash, Trail2, EnergyBall. The second group covers 113 records onto their offsets, checked live on 28611 Hot Foot. Flare, FlareAlt, Nano0, Nano1, Nano3 and Sparks matter because 21 Flare and 37 Sparks records carry a **rotation**; 204580 Tattered Flame is the example, whose hit (Meta 47386) is Stars 43713 + Sparks 43714 (field 6 = -pi/2) + Flare 43715 (fields 5/6 = -+pi/2). **Electra** is excluded: its three ctors call neither setter, so stock never gives it a template, and no Electra record has a non-zero field 1-6. `100d2f58` is also called by unported classes (Bubble, Drips, Font, Hexagram, LavaBall, MeshTest, Particle, SpinningShot, Trail, Vein, WaterRipples, AParticle, ...); add each when it is ported. **GroundShake** and **Spiral2** were added when they were ported. Hit-location and point ctors don't use it. |
 | **Spell1's locator template** | Spell1's dynel ctor (`100f333b`) builds **three** locators and passes fields 1-6 to only one of them (`100f3533`, on a different dynel argument than the two that get zeros at `100f3474` / `100f34e1`). The port has a single Spell1 locator, so applying the template to it would turn all three; Spell1 is therefore left out of `TakesLocatorTemplate` until the three are told apart. No Spell1 record's rotation has been checked against stock. |
 | **Shield blend flag** | Flag 0x400 goes to the base GfxVisual (+0x190), read by randy31 (not in the Ghidra project). The port treats it as additive, like the Electra/Sol ctor flag; unconfirmed. |
-| **VulcanRocks model table** | **By decision (user, 2026-09-22).** Stock's rocks are the meshes of `VisualEnvFX_t`'s model table, which only the environment effects fill (`ActivateFX`). The records' slot 4 (rock01) is loaded once any FXID 4 environment effect has run in the session, and before that stock throws no rocks at all. The port has no environment effects and takes slot 4 as loaded (`GfxControlVulcanRocks.LoadedModels`); every other slot gives nothing, as in stock (§5.31). |
+| **VulcanRocks model table** | **By decision.** Stock's rocks are the meshes of `VisualEnvFX_t`'s model table, which only the environment effects fill (`ActivateFX`). The records' slot 4 (rock01) is loaded once any FXID 4 environment effect has run in the session, and before that stock throws no rocks at all. The port has no environment effects and takes slot 4 as loaded (`GfxControlVulcanRocks.LoadedModels`); every other slot gives nothing, as in stock (§5.31). |
 | **SkyFlash torso radius** | Stock scales a negative field 18 by the target's torso sphere radius (§5.34). The port can't read that radius (see the next row) and uses 1, stock's value for a mesh without one. Only 12510 (nano 256069 Xenosquad, field 18 = −2) is affected, and it is rated Approx. |
 | **Trail2 attractors** | Every Trail2 record attaches to Attractor07_special (2006) or Attractor08_special (2007). GfxTest's caster (Solitus female) has neither, so stock's lookup (`10105e6d`) and the port both fall back to `Attractor01_head` (§3.2), and the live check (§5.35) ran there. Not established: which mesh the vehicle nanos show on the character, whether it carries those two attractors, and which way their z axes point. The thrust drift runs along that z, and the 0x800 test blacks a sample that moves against the dynel's forward. So the trail's look on the real mesh, whether it streams behind or goes dark, is unchecked. To check it: find that mesh's CAT mesh id, load it on the GfxTest caster, and make buff 72308 on it. |
 | **Trail2 / EffectMesh rendering switch** | Built on a dynel, Trail2 and EffectMesh hide their visual while the dynel's mesh flag is clear (Trail2 `10115071`, EffectMesh `1010c9c9`: `VisualMesh_t` +0xc → +0x94, or `VisualCATMesh_t` +0x90 → +0xd0). What those flags mean isn't traced, so the port always draws (§5.20, §5.35). EffectMesh also reads the body scale only while shown. |
-| **Highlight transparency** | Stock's `RRefFrame_t::SetTransparency` fades the body itself, and every Highlight record a nano reaches is transparency-only. A `MaterialPropertyBlock` cannot do it: the body materials are opaque `HDRP/Lit` and HDRP ignores alpha in the opaque pass. `EffectMeshTint` now clones each renderer's materials, switches the clones to transparent (`HDMaterial.SetSurfaceType`, alpha blend, no z-write, queue 3000) for the tint's life and restores the originals on clear. Verified by reading the live material back — surface type 0 to 1, queue 2225 to 3000, alpha 1.00 to 0.20 and back, originals restored — and confirmed on screen by the user on 275524 Monster Cloak Nano. |
-| **Highlight emissive units** | `EffectMeshTint` used to scale the stock emissive by an invented `Lerp(0.15, 2.5, transparency)`, which is why 11506's `(0.2, 0.2, 0.2)` landed at `(0.124, 0.124, 0.124)`. Removed — the ramp's rgb now goes straight into `_EmissiveColor` as stock writes it. Whether HDRP's emissive units want a scale factor is still open, but no nano-reachable record has a non-black emissive. |
+| **Highlight transparency** | Stock's `RRefFrame_t::SetTransparency` fades the body itself, and every Highlight record a nano reaches is transparency-only. A `MaterialPropertyBlock` cannot do it: the body materials are opaque `HDRP/Lit` and HDRP ignores alpha in the opaque pass. `EffectMeshTint` now clones each renderer's materials, switches the clones to transparent (`HDMaterial.SetSurfaceType`, alpha blend, no z-write, queue 3000) for the tint's life and restores the originals on clear. Verified by reading the live material back — surface type 0 to 1, queue 2225 to 3000, alpha 1.00 to 0.20 and back, originals restored — and confirmed on screen on 275524 Monster Cloak Nano. |
+| **Highlight emissive units** | `EffectMeshTint` puts the ramp's rgb straight into `_EmissiveColor`, as stock writes it, with no scale factor. Whether HDRP's emissive units want one is open, but no nano-reachable record has a non-black emissive. |
 | **Highlight mode 3** | Stock's mode 3 skips the body's own node (`100e2faa`) and tints only the attached items, filtered by their +4 (`100e300b`), adding `SetSpecular`. The port tints everything under the highlight root and writes specular there. Only 11507 and 11508 use mode 3 and no nano reaches them, so they are marked Approximated. |
 | **Highlight flag 0x400** | With 0x400 stock's start (`100e309b`) resolves the dynel's CAT mesh and registers a per-mesh callback (`100e2e80`) instead of walking from the root; the port always walks the root. Records 61110 and 61112 set it. Nothing visibly differs in GfxTest, but the set of meshes tinted has not been compared. |
 | **Scatter's locator bases** | Stock picks a copy's base by the locator's mode: a stored world point, a 4x4 it snapshots once from the host's mesh or CAT frame (`10110963`), the dynel's own position (`10155340`), or the locator object's matrix. The port uses the locator's resolved position for all four, so a Scatter whose stock base was the snapshot rather than the live frame will follow the host where stock would not. No record has been seen to depend on it. |
@@ -2869,5 +2861,5 @@ so the next real work is whatever the user names, not a rank position.
 | **Toggle playfield** | `GfxControlToggle.PlayfieldId` stands in for the current playfield (stock: `n3Playfield_t::GetPlayfieldResource` +0x1c) and nothing sets it yet; the resource's +0x50 flags aren't read. Only 72106, 3421 and 73100 use the test, and none reaches a nano. |
 | **ABIFF UV transform** | randy31's `FAFAnim_t` evaluate leaves a UV track's tiling / offset on the animation (+0x84 / +0x8c); the code that applies them to the texture wasn't found. The port applies D3D's usual texture transform, u·tiling + offset, which decides the scroll's direction on the hoverbike circles (§5.20). |
 | **AODB doesn't read the whole CAT mesh** | The port reads CAT meshes (RDB type 1010002) through the AODB package (`Assets/Packages/AODB.1.0.6`, `AODB.Common.RDBObjects.RDBCatMesh`). It reads textures, materials, joints, mesh groups and attractors, and leaves the rest as unnamed fields: `Unk1` (the first 32 bytes; in Solitus female 5927 they begin `CollSphere01`), `Unk2`-`Unk6`, `UnknownFloats` (4 floats each; none in 5927) and each group's `UnknownThings`. Stock parses the same record in randy31 (the FAF archive: `FAFCollisionSphere_c::Instantiate` `10016b30`, `CATGroup_t::GetColSphere` / `GetColSphereCnt` `10011d3f` / `10011d3b`). DisplaySystem's loader (`100704b8`) copies a 16-byte sphere (radius, then x, y, z) from the parsed data at +0x30 into the load request's +0x18; when the load completes (`1006fdae`, state 0x1f) that block is handed to an **internal** `VisualCATMesh_t::SetMesh(mesh, sphere)` (`1007494b`, not the exported one N3 calls), whose `100749a6` copies it to +0xbc, read by `GetTorsoSphereRadi` (`10072c22`) and `GetTorsoSpherePos` (`10072bfc`). The constructor (`100746cc`) leaves that sphere at radius 0 and position (0,0,0), and `1007494b` has exactly one call site, so a CAT mesh that yields no sphere gives **radius 0**, not 1 — `GetTorsoSphereRadi` returns 1 only when there is no mesh at all (`10072c2b`). Which bytes of the record become that sphere isn't traced, so the port has no torso sphere, bounding sphere or collision spheres. Known users: SkyFlash's negative field 18 (above). Tracing it means reading randy31's FAF CAT mesh reader and mapping its fields onto AODB's unnamed ones. |
-| **ShockWave paths no record takes** | **Not ported, by decision (user, 2026-09-22): nothing would look different.** All 11 ShockWave records (flags 0x3801 ×9, 0x2801 ×2) set 0x800 and none sets 0x8000, so two stock paths never run. (1) Without 0x800 the rings blend Zero/SrcColor, a darkening multiply. Drawing it would take a third blend setup in the vertex-colour shader, without the premultiply and the exposure scaling. (2) 0x8000 is read but not traced; it may be draw order. Port either one only if new data sets these flags. (§5.30) |
+| **ShockWave paths no record takes** | **Not ported, by decision: nothing would look different.** All 11 ShockWave records (flags 0x3801 ×9, 0x2801 ×2) set 0x800 and none sets 0x8000, so two stock paths never run. (1) Without 0x800 the rings blend Zero/SrcColor, a darkening multiply. Drawing it would take a third blend setup in the vertex-colour shader, without the premultiply and the exposure scaling. (2) 0x8000 is read but not traced; it may be draw order. Port either one only if new data sets these flags. (§5.30) |
 | **Game path untested live** | The FinishNanoCasting / SetNanoDuration / Buff handlers compile and follow stock, but have only been exercised through GfxTest, not against a server. |

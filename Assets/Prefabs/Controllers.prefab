@@ -386,6 +386,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::N3Camera
   _lookSensitivity: {x: 5, y: 5}
+  _rightDragPitchesCamera: 1
   _zoomStep: 4
   _collisionMask:
     serializedVersion: 2

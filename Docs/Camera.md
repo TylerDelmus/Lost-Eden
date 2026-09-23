@@ -3,10 +3,6 @@
 This is the working reference for porting Anarchy Online's camera and movement into Lost Eden.
 Read it before touching `Assets/Scripts/Vehicle/` or `Assets/Scripts/Controllers/`.
 
-Started 2026-09-23. The previous developer's implementation was **not** used as a source; it is
-preserved unmodified at `~/Desktop/LostEden-camera-backup-20260923/` and is treated as leads only.
-§7 records where it diverges.
-
 ---
 
 ## 1. Ground rules
@@ -37,8 +33,7 @@ The camera is **not** in `Gamecode.dll`. It is split across three DLLs:
 | `Gamecode.dll` | `CharVehicle_t` → `PlayerVehicle_t` / `NPCVehicle_t` — the character side |
 
 All three export **mangled C++ symbols**, so full method names and signatures are recoverable.
-`Vehicle.dll` was imported into the Ghidra project on 2026-09-23 (`/Vehicle.dll`); the others were
-already there.
+All three are in the Ghidra project (`/Vehicle.dll`, `/N3.dll`, `/Gamecode.dll`).
 
 Scratchpad helpers (session-local, rebuild if missing): `aolib.py` (PE loader, RTTI),
 `rtti.py <dll> <Class>` (vftables), `hier.py <dll> <Class>` (RTTI base list),
@@ -53,7 +48,7 @@ Scratchpad helpers (session-local, rebuild if missing): `aolib.py` (PE loader, R
 
 ## 3. The architecture
 
-This is the single most important finding, and the previous implementation has no trace of it.
+This is the single most important finding.
 
 ```
 Vehicle_t                        [Vehicle.dll]  physics + steering, abstract
@@ -381,7 +376,7 @@ when you stand still and quick when you sprint, and `UpdateMotionConstraints` fl
 teleported the camera with `SetRelPosIgnoreCollision`, followed by `ForcedUpdate(false)`. It is a
 **re-sync** of the stored distance to wherever the camera was just put. Calling it every frame feeds
 the camera's own distance back into the goal that determines that distance, and the camera walks
-itself onto the character's head. (This port made that exact mistake; `Tests/Vehicle` now pins it.)
+itself onto the character's head. `Tests/Vehicle` pins that.
 
 ### 5.3 `UpdateMotionConstraints` — where the feel comes from
 
@@ -677,15 +672,41 @@ the camera whenever the right button was down.
 - the horizontal delta goes to the **character**, as `TurnRightMouse` (0xa) / `TurnLeftMouse` (0xd)
   to begin and action **`0x2b`** to continue;
 - and the pitch is only applied **at all** when the matching preference is set (`10019768`):
-  `enabled = (RMBMouseLook1st && IsFirstPerson) || (RMBMouseLook3rd && !IsFirstPerson)`. With it
-  off — which is the port's default, `N3Camera._rightDragPitchesCamera` — a right drag moves the
-  character and does not disturb the camera at all;
+  `enabled = (RMBMouseLook1st && IsFirstPerson) || (RMBMouseLook3rd && !IsFirstPerson)`. Both
+  default **on** in the live client — a right drag there turns the character with the horizontal
+  and pitches the camera with the vertical — so `N3Camera._rightDragPitchesCamera` defaults on too.
+  Neither default is in these DLLs: the only reference to either name is this read;
 - the camera then swings round on its own, because it is stay-behind.
+
+**Order matters, and it is not optional.** Both halves happen inside the one call, in this sequence:
+
+1. **the camera moves**, against the rotation the body still has — `MouseCameraControl(0.0, dy)` at
+   `10019836`, which is `FUN_1002118c`, including Lock's re-seat of its goal at `10021572`;
+2. **then the body turns** — `MovementChanged` → `VehicleForwardUpdate` at `10019a85`;
+3. and the camera is placed behind the body's *new* rotation before anything is drawn.
+
+`N3Camera` runs the same three steps inside one `LateUpdate`: `OrbitThirdPerson`, then
+`TurnCharacter` (which re-reads the target pose), then `Vehicle.Tick`.
+
+Either departure from that order breaks Lock visibly. Turning the body before the camera's own move
+makes Lock re-seat a bearing measured against the old facing, so the camera walks off the
+character's back a little further every frame; deferring the turn to the next frame leaves the
+camera running a frame ahead of the body for the whole drag. `CameraViewModeTests` pins all three
+orderings — with the right one, Lock holds its bearing to under 0.01° through a full 360° turn.
 
 `N3Msg_MovementChanged` (`10018bc4`) shows what `0x2b` means: it rewrites it to `Update` (0x16) and
 flags it **local-only** (`10018be8`), applying it through `n3Dynel_t::VehicleForwardUpdate(pos, rot,
 dx, dy)` rather than sending it. `CheckMotionUpdate` sends a real `Update` to the server later, once
 the pose has drifted past a threshold.
+
+`n3Dynel_t::VehicleForwardUpdate` (`N3 10004ebd`, export 882) is where the character actually turns.
+Given the body's current rotation it builds two quaternions — **dx about world up** `(0,1,0)`, and
+**dy about the body's own right axis** (`(1,0,0)` rotated by the current rotation) — applies the
+pitch first behind a guard (the pitched forward must still have a positive dot with the unpitched
+one, `> 0.001`, so it cannot tip past vertical), then multiplies the yaw in, normalises, and commits
+through `Vehicle_t::SetRelPosRot` / `SetRelRot`. So the dy that reaches here pitches the **body**,
+not the camera; on foot it is always zero, because `N3Msg_MouseMovement` only forwards dy when the
+control mode is 7 and otherwise hands it to `MouseCameraControl`.
 
 The same function holds the **turn-to-strafe remap** (`10018d1a`): while mouse-look is active
 (`DAT_102e3588`), `TurnLeftStart`→`StrafeLeftStart`, `TurnRightStart`→`StrafeRightStart`, and the
@@ -770,7 +791,7 @@ Not a controller in the Unity sense; a command sink. `exp.py n3 n3Camera_t` give
 
 109 xUnit tests in `Tests/Vehicle`, all green (`dotnet test`), plus in-editor runs (below).
 
-**Measured in the Unity editor** (`Unity_RunCommand`, 2026-09-23), stock defaults, no occluders:
+**Measured in the Unity editor** (`Unity_RunCommand`), stock defaults, no occluders:
 
 | Scenario | Result |
 |---|---|
@@ -797,7 +818,8 @@ project compiles with **0 errors**.
 | Unity binding — `N3Camera` on the sim: line of sight, orbit, zoom, view-mode dropdown | **Ported**, verified in editor |
 | `ZoomSteer` + `Forward` + `ForcedUpdate` + the driver's zoom state machine | **Ported**, unit-tested, verified in editor |
 | Third-person pitch pole guard | **Ported**, unit-tested |
-| `RMBMouseLook1st` / `RMBMouseLook3rd` gate | **Ported** as `_rightDragPitchesCamera` |
+| `RMBMouseLook1st` / `RMBMouseLook3rd` gate | **Ported** as `_rightDragPitchesCamera`, default on |
+| `n3Dynel_t::VehicleForwardUpdate` (mouse-look character turn) | **Read** — dx about world up, dy about body right, dot guard, `SetRelRot` |
 | `MouseTurnSensitivity` chain | **Traced** — the slider is above these DLLs; `_lookSensitivity` fills its role |
 | `SteeringSeek` | **Ported** |
 | `UpdateSensors` / `CalculateSensorSteerDir` / `LineOfSight` | Seam (`Func<Vec3,Vec3,bool>` → `Physics.Raycast`); stock bodies not read |
@@ -818,8 +840,8 @@ project compiles with **0 errors**.
 
 ### 6.1 How the port is wired
 
-The binding is `Assets/Scripts/Controllers/N3Camera.cs`, which replaces the previous
-`CameraController.cs`. It is stock's `n3Camera_t` — it owns the view, takes the input verbs, holds the mode at `+0x1ec`, dispatches the
+The binding is `Assets/Scripts/Controllers/N3Camera.cs`. It is stock's `n3Camera_t` — it owns the
+view, takes the input verbs, holds the mode at `+0x1ec`, dispatches the
 vehicle (`FUN_10020290`) and runs the driver `FUN_10022345`, which is itself reached from
 `n3Camera_t`'s vftable at `1003e3ec`. That mirrors the effects port's split between a `GfxControl*`
 binding and its Unity-free `*Sim`.
@@ -827,15 +849,14 @@ binding and its Unity-free `*Sim`.
 The `*Sim` classes keep their stock names, since they already mirror `Vehicle_t` /
 `CameraVehicle_t` / `CameraVehicleFixedThird_t` / `CameraVehicleFirstPerson_t` exactly.
 
-`PlayerController`'s field is `N3Camera`. The Controllers prefab stores that reference **by field
-name**, so the prefab key was renamed with it and `[FormerlySerializedAs("CameraController")]`
-carries any scene or prefab that still holds the old key. The component itself binds by the script
-GUID (`790e4331…`), which the file rename preserved.
+`PlayerController` holds it in a field called `N3Camera`. The Controllers prefab stores that
+reference **by field name**, so the prefab key must match it; the component itself binds by the
+script GUID `790e4331…`.
 
-The public surface — `Camera`, `TargetAttached`, `SetInputs`, `SetTarget`, `ClearTarget`,
-`SetFreePose`, `GetViewAngles` — is unchanged, so the six external call sites (`PlayerController`,
-`EffectRuntimeHost`, `PlayfieldFactory`, `LoginScreenController`, `WorldOverlayController`) still
-compile as they were. Everything underneath is the sim.
+The public surface is `Camera`, `TargetAttached`, `SetInputs`, `SetTarget`, `ClearTarget`,
+`SetFreePose` and `GetViewAngles`, used by `PlayerController`, `EffectRuntimeHost`,
+`PlayfieldFactory`, `LoginScreenController` and `WorldOverlayController`. Everything underneath is
+the sim.
 
 **One deliberate deviation worth knowing:** stock's per-frame driver belongs to `n3Camera_t`, but the
 port puts `Tick(dt, characterMaxSpeed)` on `CameraVehicleSim` instead. That keeps the driver testable
@@ -854,59 +875,20 @@ The binding supplies:
 
 ---
 
-## 7. Where the previous implementation diverges
-
-Backed up unmodified at `~/Desktop/LostEden-camera-backup-20260923/`. Assessed, not trusted.
-
-1. **No shared vehicle.** The old `CameraController` lerps a transform; `CharacterMotor` drives a Unity
-   `CharacterController`. Stock runs both through one integrator. Everything below follows from this.
-2. **No sub-stepping and no frame clamp.** `CharacterMotor.Update` integrates once with
-   `Time.deltaTime`. Stated carefully: at 30 fps and above this matches what stock's *character*
-   vehicle does anyway (§4.1 — the 0.4 s cap never binds there), so this is **not** the headline bug
-   it first looks like. It does diverge in two places that matter: stock drops any frame over 4 s
-   outright, and stock's *camera* caps at 0.05 s, so a hitch throws the old camera roughly ten times
-   further off than stock's would.
-3. **`ComputeMaxForce = mass * maxVel / forceReachTime` is real, but mis-transplanted.** I first
-   wrote that it was invented; it is not. It is `CameraVehicle_t::UpdateMotionConstraints`
-   (`1001e6b6`) almost exactly — but that is a **camera** function, it uses **0.3** where the old
-   code uses `ForceReachTime = 0.5`, and it comes paired with `brakeDistance = maxVel * 0.3` and the
-   catch-up curve, neither of which was carried across. Applying it to `CharacterMotor` gives a
-   character the camera's acceleration model. Separately, `SteeringArrive`'s own force is
-   `(desired - velocity) * mass * 4.0` — a fixed 0.25 s reach time — which the old code does not have
-   at all.
-4. **Exponential smoothing everywhere** (`1 - exp(-sharpness * dt)`) for camera follow, distance and
-   rotation. Stock has no such term; the camera is force-driven and its smoothness comes from mass,
-   max force and the arrive behaviour.
-5. **`SphereCast` pushes the camera out of geometry after the fact.** Stock never does this. It
-   binary-searches the segment from the head to the ideal spot for the furthest visible fraction
-   (§5.1) and *steers* there, and separately vetoes a direction before moving (`VetoForward`,
-   `VetoUpAlignment`). The visible difference is that stock slides along the head-to-camera line
-   while the old code shoves the camera sideways off a surface normal.
-6. **Strafing snaps to target speed** (`_velocity = desiredVelocity`, "matches AO feel").
-   Stock routes lateral motion through the `Lateral` channel and rescales so that the combined
-   velocity keeps its magnitude — a redirect, never a snap.
-7. **Targeting is a separate `TargetingController`.** Stock puts click-picking and tab-targeting on
-   the camera via `n3CameraCollLine_t`.
-8. **Minimum follow distance 1.0** (`_minFollowDistance`); stock clamps at **0.9**
-   (`1001e59a`, and again in `VetoForward`).
-9. Some constants happen to match stock and are kept: **mass 50**, **gravity -20**. `WalkBaseVelocity`,
-   the run-speed slopes and the jump formula are unverified and are *not* carried over on trust —
-   they are re-derived from `CharVehicle_t` when the character side is ported.
-
----
-
-## 8. Open questions
+## 7. Open questions
 
 - `LineOfSight` (`1001d69a`) and `CanSeeFlexedPos` (`1001d8c6`) are unread; `LineOfSight` is a seam
   in the port, backed by `Physics.Raycast`.
 - `CalculateSensorSteerDir` (`1001d955`) / `UpdateSensors` (`1001e71f`) are unread, but the driver
   only calls them for camera mode 1, so they are out of mode 3's path.
 - `DoDirectControl` (`1001d6e5`) is unread; it is reached only from `CameraVehicle_t::CalcSteering`,
-  which `FixedThird` overrides, so it is out of mode 3's path too. It would matter for mode 1.
-- `+0x44` (1.0) is set by the constructor and not yet traced to a use.
-- `DecideSnap` (`1001f537`) and `UpdateHeadingToPos` (`1001f660`) are unread; `DecideSnap` is
-  presumably what makes the camera cut rather than glide on a big reposition.
+  which `FixedThird` overrides, so it is out of the third-person modes' path. It matters for Trail.
+- `+0x44` (1.0) is set by the constructor and not traced to a use.
+- `EnsureSurfaceAlignment` is read (§4.5) but not ported, so `+0x4c` stays at the constructor's 0.01
+  instead of being rewritten from the surface every step.
+- The `RMBMouseLook1st` / `RMBMouseLook3rd` defaults are not in these DLLs — the only reference to
+  either name is the read at `10019768`. The port takes them from the live client's behaviour, and
+  collapses stock's two flags into one field.
+- Stock's fresh-install `PreferredCameraMode` is unrecovered; the port defaults to Lock.
 - The two `mov dword [esi+0x104]` at `1002641b` / `100265ac` in N3 are a different class at the same
   offset, not vehicle sub-step caps — worth re-checking if sub-stepping ever looks wrong.
-- **Nothing here has been checked against a running client.** Every number is static analysis, and
-  the camera has not yet been put on screen. Treat §5 as verified-by-reading, not verified-by-eye.

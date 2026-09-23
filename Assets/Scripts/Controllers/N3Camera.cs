@@ -45,10 +45,11 @@ public class N3Camera : MonoBehaviour
     [SerializeField]
     [Tooltip("Whether holding the RIGHT button also pitches the camera. Stock gates this behind the " +
              "RMBMouseLook1st / RMBMouseLook3rd DistributedValues (Gamecode N3Msg_MouseMovement, " +
-             "10019768): when off, a right drag turns the CHARACTER only and the camera just follows " +
-             "because it is stay-behind. Yaw always goes to the character either way — stock calls " +
-             "MouseCameraControl with its yaw argument hardcoded to zero.")]
-    bool _rightDragPitchesCamera;
+             "10019768) and passes only the vertical delta through: MouseCameraControl(0.0, dy). " +
+             "Both default ON in the live client, which is why a right drag there turns the " +
+             "character with the horizontal and pitches the camera with the vertical. The defaults " +
+             "are not in these DLLs — the only reference to either name is the read above.")]
+    bool _rightDragPitchesCamera = true;
 
     [Header("Zoom")]
     [SerializeField]
@@ -101,17 +102,26 @@ public class N3Camera : MonoBehaviour
     float _zoomDelta;
     bool _leftMouseHeld;
     bool _rightClickHeld;
-    float _pendingCharacterYaw;
-
     /// <summary>
-    /// Degrees of yaw the mouse asked the <b>character</b> to turn this frame, from a right-drag.
-    /// <c>PlayerController</c> takes it and applies it; reading it clears it.
+    /// Turn the character by a right-drag's horizontal delta, the way stock's
+    /// <c>n3Dynel_t::VehicleForwardUpdate</c> (<c>N3 10004ebd</c>) does: a quaternion about world up
+    /// composed into the body rotation, not an absolute heading.
+    ///
+    /// This happens inline, in the same frame as the camera's own pitch, because stock does both
+    /// inside one call — <c>N3Msg_MouseMovement</c> pitches the camera at <c>10019836</c> and turns
+    /// the character at <c>10019a85</c>. Deferring the turn to the next frame leaves the camera a
+    /// frame ahead of the body, which reads as the two fighting each other.
     /// </summary>
-    internal float ConsumeCharacterYaw()
+    void TurnCharacter(float yawDegrees)
     {
-        float yaw = _pendingCharacterYaw;
-        _pendingCharacterYaw = 0f;
-        return yaw;
+        if (yawDegrees == 0f || _target == null || _target.Motor == null)
+            return;
+
+        _target.Motor.ApplyYawDelta(yawDegrees);
+
+        // The vehicle's goal is built from the target's rotation, so re-read it before the tick
+        // places the camera; otherwise Lock snaps behind where the character was.
+        SyncTargetPose();
     }
 
     /// <summary>
@@ -391,12 +401,46 @@ public class N3Camera : MonoBehaviour
         float yawDelta = _lookInput.x * _lookSensitivity.x;
         float pitchDelta = _lookInput.y * _lookSensitivity.y;
 
-        if (_first != null)
+        // Right drag is stock's mouse-look, and its horizontal turns the CHARACTER, not the camera.
+        // n3EngineClientAnarchy_t::N3Msg_MouseMovement (Gamecode 100196b3) calls
+        // MouseCameraControl(0.0, dy) — yaw hardcoded to zero — and routes the horizontal delta to
+        // the character as a local heading update (n3Dynel_t::VehicleForwardUpdate). The camera
+        // swings round on its own because it is stay-behind. Left drag orbits the camera freely and
+        // leaves the character alone, which is why standing still and left-dragging moves nothing.
+        float characterYaw = 0f;
+        if (_rightClickHeld)
         {
-            OrbitFirstPerson(yawDelta, pitchDelta);
-            return;
+            characterYaw = yawDelta;
+            yawDelta = 0f;
+
+            // Stock only pitches the camera on a right drag when RMBMouseLook3rd (or ...1st) is
+            // set; otherwise the right button moves the character and nothing else.
+            if (!_rightDragPitchesCamera)
+                pitchDelta = 0f;
         }
 
+        // Stock's order, and it is load-bearing: the camera moves against the body's CURRENT
+        // rotation (10019836), and only then does the body turn (10019a85). Turning first would
+        // leave the camera's offset pointing at where the character used to face, and the Lock
+        // re-seat below would then store that stale bearing — the camera drifts off the character's
+        // back a little more with every frame of the drag.
+        if (yawDelta != 0f || pitchDelta != 0f)
+        {
+            if (_first != null)
+                OrbitFirstPerson(yawDelta, pitchDelta);
+            else
+                OrbitThirdPerson(yawDelta, pitchDelta);
+        }
+
+        TurnCharacter(characterYaw);
+    }
+
+    /// <summary>
+    /// The third-person orbit proper — <c>FUN_1002118c</c>. Takes the deltas already split between
+    /// camera and character by <see cref="ApplyOrbit"/>.
+    /// </summary>
+    void OrbitThirdPerson(float yawDelta, float pitchDelta)
+    {
         // Stock rotates the camera's CURRENT offset from the look target (1002119f:
         // offset = position - GetLookTargetPos()), not the preferred direction at the preferred
         // distance. That matters in Rubber: while walking the camera lags behind its ideal spot, so
@@ -409,27 +453,6 @@ public class N3Camera : MonoBehaviour
 
         Vector3 dir = offset.normalized;
         float currentDistance = offset.magnitude;
-
-        // Right drag is stock's mouse-look, and it turns the CHARACTER, not the camera.
-        // n3EngineClientAnarchy_t::N3Msg_MouseMovement (Gamecode 100196b3) calls
-        // MouseCameraControl(0.0, dy) — yaw hardcoded to zero — and routes the horizontal delta to
-        // the character as a local heading update (n3Dynel_t::VehicleForwardUpdate). The camera
-        // swings round on its own because it is stay-behind. Left drag orbits the camera freely and
-        // leaves the character alone, which is why standing still and left-dragging moves nothing.
-        if (_rightClickHeld)
-        {
-            _pendingCharacterYaw += yawDelta;
-            yawDelta = 0f;
-
-            // Stock only pitches the camera on a right drag when RMBMouseLook3rd (or ...1st) is
-            // set; otherwise the right button moves the character and nothing else.
-            if (!_rightDragPitchesCamera)
-                pitchDelta = 0f;
-        }
-
-        // Nothing left to apply — do not disturb the camera at all.
-        if (yawDelta == 0f && pitchDelta == 0f)
-            return;
 
         // Yaw about world up (left drag only).
         if (yawDelta != 0f)
@@ -498,17 +521,7 @@ public class N3Camera : MonoBehaviour
     /// </summary>
     void OrbitFirstPerson(float yawDelta, float pitchDelta)
     {
-        // Right drag still steers the character, same as third person.
-        if (_rightClickHeld)
-        {
-            _pendingCharacterYaw += yawDelta;
-            if (!_rightDragPitchesCamera)
-                return;
-        }
-        else
-        {
-            _firstPersonYaw += yawDelta * Mathf.Deg2Rad;
-        }
+        _firstPersonYaw += yawDelta * Mathf.Deg2Rad;
 
         _firstPersonPitch = Mathf.Clamp(
             _firstPersonPitch + pitchDelta * Mathf.Deg2Rad, -MaxPitchRadians, MaxPitchRadians);
