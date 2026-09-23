@@ -36,18 +36,23 @@ public class EffectCoverageTests
     [Fact]
     public void OtherStarTypes_AreUnverified_AndNamed()
     {
-        EffectCoverage c = Coverage(Rec(45001, EffectTypeTags.Stars, (10, 13), (30, 2000)), Rec(2000, EffectTypeTags.FlareAlt));
+        // 21 is a synthetic example: it only has to be a starType outside EffectCoverage's verified
+        // set. If it is ever ported, move this to another one rather than adding it to the set.
+        EffectCoverage c = Coverage(Rec(45001, EffectTypeTags.Stars, (10, 21), (30, 2000)), Rec(2000, EffectTypeTags.FlareAlt));
         EffectCoverage.Result r = c.Of(45001);
         Assert.Equal(EffectStatus.Unverified, r.Status);
-        Assert.Equal(new[] { "Stars #13 unverified" }, r.Gaps); // field 30 is not a child
+        Assert.Equal(new[] { "Stars #21 unverified" }, r.Gaps); // field 30 is not a child
     }
 
     [Fact]
     public void UnportedControl_MakesTheTreeMissing()
     {
-        EffectCoverage c = Coverage(Rec(1, 0xbd9));
+        // 0xbba Splash, still a stand-in and reached by no nano at all, so it should outlast the
+        // types on the coverage rank. If it is ever ported, move this to another unported typeCode
+        // rather than adding it to the set.
+        EffectCoverage c = Coverage(Rec(1, 0xbba));
         Assert.Equal(EffectStatus.Missing, c.Of(1).Status);
-        Assert.Equal(new[] { "Spiral2 missing" }, c.Of(1).Gaps);
+        Assert.Equal(new[] { "Splash missing" }, c.Of(1).Gaps);
     }
 
     [Fact]

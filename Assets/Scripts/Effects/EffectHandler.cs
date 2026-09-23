@@ -888,6 +888,13 @@ public sealed class EffectHandler : IEffectSpawnFactory
             control.CollectMeshes(_meshes, camera);
         }
 
+        // GroundShake posts its offset while the controls run; stock moves the eye the moment it does
+        // (n3Camera_t +0x1d4 then UpdateTargetEye). Consume it here so it is applied once and never
+        // carries into the next frame, whichever host drove the tick.
+        Vector3 shake = EffectCameraShake.Consume();
+        if (shake != Vector3.zero && camera != null)
+            camera.transform.position += shake;
+
         for (int i = 0; i < _quads.Count; i++)
             _batch.Add(_quads[i]);
         for (int i = 0; i < _strips.Count; i++)
@@ -931,6 +938,9 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 return new GfxControlBuffPlaceHolder(record, locator, this, body);
             case EffectTypeTags.Delay:
                 return new GfxControlDelay(record, locator, this, tint);
+            case EffectTypeTags.Toggle:
+                // 1011265a: the child is made unregistered and run by the Toggle itself.
+                return new GfxControlToggle(record, locator, this);
             case EffectTypeTags.Scatter:
                 return new GfxControlScatter(record, locator, this, tint);
             case EffectTypeTags.Stars:
@@ -950,6 +960,19 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 return CreateSmoke(record, locator);
             case EffectTypeTags.Spiral:
                 return CreateSpiral(record, locator);
+            case EffectTypeTags.Spiral2:
+                return CreateSpiral2(record, locator);
+            case EffectTypeTags.Beam:
+                return CreateBeam(record, locator);
+            case EffectTypeTags.CrazyCone:
+                // 100d7401: GfxVisualCone(field 11 segments, fields 14/15 uv, material field 9).
+                return new GfxControlCrazyCone(record, locator, WrappedTexture(record, field: 9));
+            case EffectTypeTags.GroundRing:
+                // 100e1f80: GfxVisualGroundRing(field 10 segments, fields 11/12 uv, material field 9).
+                return new GfxControlGroundRing(record, locator, WrappedTexture(record, field: 9));
+            case EffectTypeTags.Mesh:
+                // 100e53fb: the model is one of four literals picked by field 9.
+                return new GfxControlMesh(record, locator, Models);
             case EffectTypeTags.Nano0:
                 return CreateNano0(record, locator);
             case EffectTypeTags.Nano1:
@@ -966,8 +989,12 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 return new GfxControlMParticle(record, locator, Models);
             case EffectTypeTags.TParticle:
                 return CreateTParticle(record, locator);
+            case EffectTypeTags.TParticle2:
+                return CreateTParticle2(record, locator);
             case EffectTypeTags.Highlight:
                 return new GfxControlHighlight(record, locator);
+            case EffectTypeTags.GroundShake:
+                return new GfxControlGroundShake(record, locator);
             case EffectTypeTags.Spell1:
                 return CreateSpell1(record, locator, tint, caster, target, attachOverride, casterVisual, targetVisual);
             case EffectTypeTags.Tracer1:
@@ -978,6 +1005,8 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 return CreateTracer4(record, locator);
             case EffectTypeTags.Tracer5:
                 return CreateTracer5(record, locator);
+            case EffectTypeTags.Tracer6:
+                return CreateTracer6(record, locator);
             case EffectTypeTags.Tracer3:
                 return CreateTracer3(record, locator);
             case EffectTypeTags.ShockWave:
@@ -989,6 +1018,12 @@ public sealed class EffectHandler : IEffectSpawnFactory
             case EffectTypeTags.VolGrid:
                 // 10115eb5: GfxVisualVolGrid(flags, fields 14-16, material from field 9).
                 return new GfxControlVolGrid(record, locator, WrappedTexture(record, field: 9));
+            case EffectTypeTags.SkyFlash:
+                // 100ef58b: GfxVisualCone per cone, material from field 9.
+                return new GfxControlSkyFlash(record, locator, WrappedTexture(record, field: 9));
+            case EffectTypeTags.Trail2:
+                // 10115260: GfxVisualTrail2(material from field 10, flags, field 11 samples), texture clamped.
+                return new GfxControlTrail2(record, locator, ClampedTexture(record, field: 10));
             case EffectTypeTags.Deformer:
                 if (record.FieldInt(10, 0) == DeformerSim.WobbleMode)
                     return new GfxControlDeformer(record, locator);
@@ -1003,6 +1038,8 @@ public sealed class EffectHandler : IEffectSpawnFactory
                 return new GfxControlUnsupported(record, locator);
             case EffectTypeTags.Shield:
                 return CreateShield(record, locator);
+            case EffectTypeTags.Shield2:
+                return CreateShield2(record, locator);
             default:
                 // Tracers are strips between two points, so they get the stretched control.
                 // Remaining sprite-family types fall back to the generic billboard stand-in.
@@ -1181,6 +1218,35 @@ public sealed class EffectHandler : IEffectSpawnFactory
         return new GfxControlSpiral(record, locator, texture);
     }
 
+    /// <summary>
+    /// Stock Spiral2 (init <c>10111fdb</c>): field 10 GfxVisualSpiral2 ribbons built with the field 9
+    /// material. u runs to field 17 along the ribbon, up to 10 in the records, so it wraps like Spiral's.
+    /// </summary>
+    GfxControl CreateSpiral2(GfxTweakRecord record, EffectLocator locator)
+    {
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 32, preferredField: 9);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        if (texture != null)
+            texture.wrapMode = TextureWrapMode.Repeat;
+        return new GfxControlSpiral2(record, locator, texture);
+    }
+
+    /// <summary>
+    /// Stock Beam (build <c>101096ee</c>): <c>GfxVisualBeam(flags, field 14 blades, fields 15/16 uv,
+    /// field 40, bit 8, material from field 9, bit 9, 0, 0, 0, material from field 39)</c>. A field 39
+    /// below zero — which is most records — means there is no second material and no glare quad.
+    /// </summary>
+    GfxControl CreateBeam(GfxTweakRecord record, EffectLocator locator)
+    {
+        Texture2D texture = WrappedTexture(record, field: 9);
+        int second = record != null ? record.FieldInt(39, -1) : -1;
+        Texture2D cap = second >= 0 && second < EffectMaterialTable.SlotCount
+            ? WrappedTexture(record, field: 39)
+            : null;
+        return new GfxControlBeam(record, locator, texture, cap);
+    }
+
     GfxControl CreateBParticle2(GfxTweakRecord record, EffectLocator locator, Color tint)
     {
         int materialIndex = ResolveMaterialIndex(record, defaultIndex: 10, preferredField: 10);
@@ -1226,6 +1292,19 @@ public sealed class EffectHandler : IEffectSpawnFactory
     }
 
     /// <summary>
+    /// Loader <c>10113780</c>: the material is field 10, and the init (<c>1011465c</c>) takes the
+    /// cell grid and frame range from it for every particle's visual.
+    /// </summary>
+    GfxControl CreateTParticle2(GfxTweakRecord record, EffectLocator locator)
+    {
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 10, preferredField: 10);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        return new GfxControlTParticle2(
+            record, locator, texture, slot.Cols, slot.Rows, slot.FirstFrame, slot.LastFrame);
+    }
+
+    /// <summary>
     /// Stock <c>_GfxControl_t::InitDynelTemplate</c> (0x100d2d31) reads the attach id from the
     /// caller, and when that is 0 falls back to the template's own field 7:
     /// <c>if (attachId == 0) attachId = record.GetInt(7)</c>. That is how a hit effect places
@@ -1234,15 +1313,28 @@ public sealed class EffectHandler : IEffectSpawnFactory
     /// Sequencer tree gets its own attach.
     /// </summary>
     /// <summary>
-    /// Types whose dynel ctor builds its locator with fields 1-6 as the template offset and turn
-    /// (<c>_GfxLocator_t 10106be2</c>), each checked on the ctor the dynel factory (<c>100d0656</c>) calls:
-    /// BuffPlaceHolder (<c>100d5f14</c>), Cord (<c>100d6957</c>), Fire (<c>100dcc82</c>), Smoke (<c>100f13cf</c>)
-    /// and Spiral (<c>100f54b5</c>) directly, and through the shared <c>100d2f58</c> Electra (<c>100d9aa9</c>),
-    /// Stars (<c>100f7a74</c>), Suns (<c>100fd851</c>), BParticle (<c>1010ad28</c>), BParticle2
-    /// (<c>1010c5bd</c>), EffectMesh (<c>1010da0d</c>), GroundGrid (<c>1010eebc</c>), MParticle (<c>10110597</c>)
-    /// TParticle (<c>101134ed</c>) and VolGrid (<c>10116562</c>). VulcanRocks (<c>10103a18</c>) and Sprite (<c>100f6c93</c>) call it directly. A hit-location or world-point locator ignores it. Other types keep the
-    /// bare attach until theirs are checked; for some, fields 1-6 mean something else (Meta's child ids, a
-    /// Billboard's scales).
+    /// Types whose dynel ctor builds its locator with fields 1-3 as the template offset and 4-6 as its
+    /// turn. Stock has two sibling setters: <c>101067af</c> takes those six fields, and <c>10106be2</c>
+    /// takes six zeros; every control has one ctor per locator kind and only the **dynel** one passes the
+    /// fields, which is why <see cref="EffectLocator.WithTemplate"/> ignores the other kinds.
+    ///
+    /// The list below is the RTTI-complete set: every call site of <c>101067af</c> and of its wrapper
+    /// <c>_GfxControl_t::InitDynelTemplate</c> (<c>100d2d84</c>) was walked back to the vftable its ctor
+    /// installs. Ported types that reach it directly are Flare (<c>100dd740</c>), FlareAlt
+    /// (<c>100deb41</c>), Nano0 (<c>100e7502</c>), Nano1 (<c>100e8527</c>), Sparks (<c>100f1f9c</c>),
+    /// BuffPlaceHolder (<c>100d5a5b</c>), Cord (<c>100d6524</c>), Fire (<c>100dc8f2</c>), Smoke
+    /// (<c>100f103f</c>), Spiral (<c>100f5118</c>), Sprite (<c>100f68fd</c>) and VulcanRocks
+    /// (<c>1010379e</c>); through InitDynelTemplate: Stars (<c>100f760a</c>), Suns (<c>100fd4c0</c>),
+    /// BParticle (<c>1010ac6d</c>), BParticle2 (<c>1010c4ee</c>), EffectMesh (<c>1010d910</c>),
+    /// GroundGrid (<c>1010ee15</c>), MParticle (<c>1011049f</c>), TParticle (<c>10112f18</c>),
+    /// TParticle2 (<c>1011483a</c>), VolGrid (<c>101164c2</c>), SkyFlash (<c>100ef756</c>), Trail2
+    /// (<c>101153f0</c>) and Spiral2 (<c>1011227e</c>).
+    ///
+    /// Not here, deliberately: **Electra**, whose three ctors call neither setter, so stock never gives it
+    /// a template; and **Spell1**, whose ctor (<c>100f333b</c>) builds three locators and passes the
+    /// fields to only one of them (<c>100f3533</c>, on a different dynel argument than the other two) —
+    /// the port has one locator, so applying it to all three would be wrong (Docs §9). Other types keep
+    /// the bare attach; for some, fields 1-6 mean something else (Meta's child ids, a Billboard's scales).
     /// </summary>
     static bool TakesLocatorTemplate(int typeCode)
     {
@@ -1251,20 +1343,34 @@ public sealed class EffectHandler : IEffectSpawnFactory
             case EffectTypeTags.BuffPlaceHolder:
             case EffectTypeTags.Cord:
             case EffectTypeTags.Fire:
+            case EffectTypeTags.Flare:
+            case EffectTypeTags.FlareAlt:
+            case EffectTypeTags.Nano0:
+            case EffectTypeTags.Nano1:
+            case EffectTypeTags.Nano3:
+            case EffectTypeTags.Sparks:
             case EffectTypeTags.Smoke:
             case EffectTypeTags.Spiral:
-            case EffectTypeTags.Electra:
+            case EffectTypeTags.Spiral2:
+            case EffectTypeTags.Beam:
+            case EffectTypeTags.CrazyCone:
+            case EffectTypeTags.GroundRing:
+            case EffectTypeTags.Mesh:
             case EffectTypeTags.Stars:
             case EffectTypeTags.Suns:
             case EffectTypeTags.BParticle:
             case EffectTypeTags.BParticle2:
             case EffectTypeTags.EffectMesh:
             case EffectTypeTags.GroundGrid:
+            case EffectTypeTags.GroundShake:
             case EffectTypeTags.MParticle:
             case EffectTypeTags.TParticle:
+            case EffectTypeTags.TParticle2:
             case EffectTypeTags.VulcanRocks:
             case EffectTypeTags.VolGrid:
             case EffectTypeTags.Sprite:
+            case EffectTypeTags.SkyFlash:
+            case EffectTypeTags.Trail2:
                 return true;
             default:
                 return false;
@@ -1371,6 +1477,37 @@ public sealed class EffectHandler : IEffectSpawnFactory
     }
 
     /// <summary>
+    /// Stock builds a Tracer6 the same way, from the tracer factory's 0x402 case (<c>100d18e6</c>).
+    /// Its two visuals take different materials: the build hardcodes 15 for the three
+    /// <c>GfxVisualCord4</c> ribbons (<c>10100e01</c>) and uses field 9 only for the sprite trail
+    /// (<c>10100f87</c>), whose atlas it then forces to 8 × 8.
+    /// </summary>
+    GfxControl CreateTracer6(GfxTweakRecord record, EffectLocator locator)
+    {
+        if (locator == null
+            || !locator.TryGetHitLocation(out EffectHitLocation hitLoc)
+            || !hitLoc.TryGetEndpoints(out Vector3 start, out Vector3 end))
+        {
+            return new GfxControlUnsupported(record, locator);
+        }
+
+        EffectMaterialTable.Slot ribbonSlot = EffectMaterialTable.Get(Tracer6Sim.RibbonMaterialIndex);
+        Texture2D ribbonTexture = ribbonSlot.IsUntextured
+            ? WhiteTexture
+            : GetMaterialTexture(Tracer6Sim.RibbonMaterialIndex, ribbonSlot);
+
+        int spriteIndex = ResolveMaterialIndex(record, defaultIndex: 15, preferredField: 9);
+        EffectMaterialTable.Slot spriteSlot = EffectMaterialTable.Get(spriteIndex);
+        Texture2D spriteTexture = spriteSlot.IsUntextured
+            ? WhiteTexture
+            : GetMaterialTexture(spriteIndex, spriteSlot);
+
+        return new GfxControlTracer6(
+            record, EffectLocator.WorldPoint(start, Quaternion.identity), start, end,
+            ribbonTexture, spriteTexture);
+    }
+
+    /// <summary>
     /// Stock Tracer3 from a hit location (<c>CreateGfxControl(id, hitLoc)</c>, case <c>100d1b07</c>, ctor
     /// <c>100ff996</c>): the endpoints are read once; the child is owned by the tracer.
     /// </summary>
@@ -1394,6 +1531,17 @@ public sealed class EffectHandler : IEffectSpawnFactory
     {
         return new GfxControlShockWave(
             record, locator, WrappedTexture(record, field: 9), WrappedTexture(record, field: 25));
+    }
+
+    /// <summary>A material texture drawn clamped (D3DTSS_ADDRESS 3), as GfxVisualTrail2 sets it (<c>1002c63e</c>).</summary>
+    Texture2D ClampedTexture(GfxTweakRecord record, int field)
+    {
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 0, preferredField: field);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        if (texture != null && texture != WhiteTexture)
+            texture.wrapMode = TextureWrapMode.Clamp;
+        return texture;
     }
 
     Texture2D WrappedTexture(GfxTweakRecord record, int field)
@@ -1432,6 +1580,17 @@ public sealed class EffectHandler : IEffectSpawnFactory
         return new GfxControlShield(record, locator, texture);
     }
 
+    /// <summary>Loader <c>1011148b</c>: Shield2's material is field 12 (the init hands it to the visual at <c>10111743</c>).</summary>
+    GfxControl CreateShield2(GfxTweakRecord record, EffectLocator locator)
+    {
+        int materialIndex = ResolveMaterialIndex(record, defaultIndex: 13, preferredField: 12);
+        EffectMaterialTable.Slot slot = EffectMaterialTable.Get(materialIndex);
+        Texture2D texture = slot.IsUntextured ? WhiteTexture : GetMaterialTexture(materialIndex, slot);
+        if (texture != null)
+            texture.wrapMode = TextureWrapMode.Repeat;
+        return new GfxControlShield2(record, locator, texture);
+    }
+
     /// <summary>
     /// Suns' visual (around 100fd276): GfxVisualSol(material from field 9, 0, additive), sized by the
     /// material's columns and rows. Type 4 reads its hit location on every spawn.
@@ -1447,29 +1606,42 @@ public sealed class EffectHandler : IEffectSpawnFactory
     }
 
     /// <summary>
-    /// Tracers stock builds from its own data and lets run their course (no SetDuration, no cut-off).
-    /// Stock's launch (FUN_1004f989) never sets a tracer's duration; the port only does so for the
-    /// earlier stand-ins, so a Meta counts as stock-built when every child it spawned is.
+    /// Tracers stock builds from its own data and lets run their course. Stock's launch
+    /// (<c>FUN_1004f989</c>) <b>never</b> sets a tracer's duration and never cuts it off when the hit
+    /// lands, so only the port's own stand-ins need that treatment.
+    ///
+    /// This is deliberately a test for the three stand-in classes rather than a list of the ported
+    /// ones. The list version went stale twice: it missed <see cref="GfxControlSequencer"/> (28 nanos
+    /// use one as a tracer) and it missed Stars starType 28, whose head crosses by age / duration — an
+    /// overridden duration made the snowball cross at a third of stock's speed and the cut-off stopped
+    /// it 0.57 m short of the target. Ten more ported types reach a tracer stat and react to
+    /// SetDuration (VolGrid, Shield, Deformer, Smoke, GroundShake, Flare, Electra, Highlight), so the
+    /// same deviation was stretching or squashing all of them.
+    ///
+    /// Nothing runs away as a result: <see cref="GfxControl.WatchdogSeconds"/> still ends any control
+    /// that outlives 60 s, and tracers are not buff trees, so none of them is exempt.
     /// </summary>
     static bool IsStockTracer(EffectHandle handle)
     {
         GfxControl control = handle?.Control;
-        if (control is GfxControlTracer1
-            || control is GfxControlPlasma
-            || control is GfxControlTracer4
-            || control is GfxControlTracer5
-            || control is GfxControlTracer3
-            || control is GfxControlStars { IsHitLocationTracer: true }
-            || control is GfxControlSuns { IsHitLocationTracer: true })
-        {
-            return true;
-        }
-
-        if (control is not GfxControlMeta meta)
+        if (control == null)
             return false;
 
+        // A composite is as stock-built as the children it has actually spawned.
+        if (control is GfxControlMeta meta)
+            return AllChildrenStock(meta.Children);
+        if (control is GfxControlSequencer sequencer)
+            return AllChildrenStock(sequencer.Children);
+
+        return control is not GfxControlTracer
+               && control is not GfxControlBillboard
+               && control is not GfxControlUnsupported;
+    }
+
+    static bool AllChildrenStock(IEnumerable<EffectHandle> children)
+    {
         bool any = false;
-        foreach (EffectHandle child in meta.Children)
+        foreach (EffectHandle child in children)
         {
             if (child == null)
                 continue;
@@ -1600,6 +1772,14 @@ public sealed class EffectHandler : IEffectSpawnFactory
             return null;
         }
 
+        // Stock's effect setup (100089f4) never sets D3DTSS_ADDRESSU/V, so every effect draw runs on
+        // D3D's default, D3DTADDRESS_WRAP. BParticle mode 1 relies on it: its u is 1 - (u + offset),
+        // which is negative for all but one particle, and clamping smears the edge column across the
+        // quad instead of rolling the texture. AoImageTextureCache hands out Clamp, so this sets the
+        // wrap on the ids the effect material table names. The cache is shared with VisualDynel and
+        // AbiffLoader, so this does change those ids for them too; no armour or model texture is in
+        // the material table today, and stock drew those with wrap as well.
+        tex.wrapMode = TextureWrapMode.Repeat;
         _materialTextures[index] = tex;
         return tex;
     }

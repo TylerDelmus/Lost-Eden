@@ -101,7 +101,7 @@ public sealed class EffectCoverage
                 if (record.TypeCode == EffectTypeTags.Suns
                     && record.FieldInt(10, 0) is not (SunsSim.SparkLineType or SunsSim.RingType or SunsSim.HaloType))
                     return EffectStatus.Missing;
-                if (record.TypeCode == EffectTypeTags.BParticle && record.FieldInt(10, 0) != 8)
+                if (record.TypeCode == EffectTypeTags.BParticle && record.FieldInt(10, 0) is not (8 or 1))
                     return EffectStatus.Missing;
                 if (record.TypeCode == EffectTypeTags.GroundGrid && record.FieldInt(11, 0) != 0)
                     return EffectStatus.Missing;
@@ -112,6 +112,21 @@ public sealed class EffectCoverage
                     && ((record.FieldInt(10, 0) & SpriteSim.FlagOpaque) != 0
                         || ((record.FieldInt(10, 0) & 3) == 3 && (record.FieldInt(10, 0) & SpriteSim.FlagAlphaBlend) != 0)))
                     return EffectStatus.Approximated;
+                // Toggle's 0x1000 (a child with no locator, 100ce912) is made on the Toggle's locator instead.
+                if (record.TypeCode == EffectTypeTags.Toggle && (record.FieldInt(0, 0) & ToggleSim.FlagNoLocator) != 0)
+                    return EffectStatus.Approximated;
+                // Highlight mode 3 skips the body's own node in stock and filters the attachments it
+                // tints; the port tints everything from the root. No record with mode 3 reaches a nano.
+                if (record.TypeCode == EffectTypeTags.Highlight
+                    && record.FieldInt(1, 0) == HighlightSim.ModeSpecular)
+                    return EffectStatus.Approximated;
+                // Shield2's field 20 (0..9) puts the shell on an EP03 mech .abiff instead of the host.
+                if (record.TypeCode == EffectTypeTags.Shield2
+                    && record.FieldInt(20, -1) >= 0 && record.FieldInt(20, -1) <= 9)
+                    return EffectStatus.Approximated;
+                // A negative field 18 is scaled by the CAT mesh's torso sphere, which the port doesn't read.
+                if (record.TypeCode == EffectTypeTags.SkyFlash && record.Field(18, 0f) < 0f)
+                    return EffectStatus.Approximated;
                 return IsVerified(record) ? EffectStatus.Verified : EffectStatus.Unverified;
             default:
                 return record.TypeCode == 0 ? EffectStatus.Verified : EffectStatus.Missing;
@@ -119,8 +134,8 @@ public sealed class EffectCoverage
     }
 
     /// <summary>
-    /// The parts rebuilt from stock and checked live: Meta, Flare, Tracer1, Tracer4, Plasma, Deformer mode 1, Electra mode 1, Suns sunTypes 0, 1 and 4, Shield, Sequencer, Spell1 when field 33
-    /// skips its late windows, Stars starTypes 2, 3, 4, 5, 6, 7, 8, 10, 11, 15, 16, 17, 18, 19, 20 and 22, BPHFSM, BuffPlaceHolder, BParticle2, TParticle, BParticle mode 8, GroundGrid mode 0, EffectMesh, MParticle, Sparks, Fire, Smoke, Spiral, Tracer5, Tracer3, Nano0, ShockWave, VulcanRocks, VolGrid, Sprite and Cord (a Cord
+    /// The parts rebuilt from stock and checked live: Meta, Flare, Tracer1, Tracer4, Plasma, Deformer mode 1, Electra mode 1, Suns sunTypes 0, 1 and 4, Shield, Shield2, Scatter, Highlight (modes 0-2), GroundShake, Sequencer, Spell1 when field 33
+    /// skips its late windows, Stars starTypes 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22 and 28, BPHFSM, BuffPlaceHolder, BParticle2, TParticle, TParticle2, BParticle modes 8 and 1, GroundGrid mode 0, EffectMesh, MParticle, Sparks, Fire, Smoke, Spiral, Tracer5, Tracer3, Nano0, ShockWave, VulcanRocks, VolGrid, Sprite, SkyFlash, Trail2, Toggle, Spiral2, Tracer6, Beam, CrazyCone, Delay, GroundRing, Mesh and Cord (a Cord
     /// without field 0 bit 1 never links, so it is invisible in stock and here).
     /// </summary>
     static bool IsVerified(GfxTweakRecord record)
@@ -128,6 +143,9 @@ public sealed class EffectCoverage
         switch (record.TypeCode)
         {
             case EffectTypeTags.Meta:
+            case EffectTypeTags.Delay:
+            case EffectTypeTags.GroundRing:
+            case EffectTypeTags.Mesh:
             case EffectTypeTags.Flare:
             case EffectTypeTags.Tracer1:
             case EffectTypeTags.Plasma:
@@ -135,13 +153,18 @@ public sealed class EffectCoverage
             case EffectTypeTags.Deformer:
             case EffectTypeTags.Electra:
             case EffectTypeTags.Suns:
+            case EffectTypeTags.GroundShake:
+            case EffectTypeTags.Highlight:
+            case EffectTypeTags.Scatter:
             case EffectTypeTags.Shield:
+            case EffectTypeTags.Shield2:
             case EffectTypeTags.Sequencer:
             case EffectTypeTags.BuffFsm:
             case EffectTypeTags.BuffPlaceHolder:
             case EffectTypeTags.Cord:
             case EffectTypeTags.BParticle2:
             case EffectTypeTags.TParticle:
+            case EffectTypeTags.TParticle2:
             case EffectTypeTags.BParticle:
             case EffectTypeTags.GroundGrid:
             case EffectTypeTags.EffectMesh:
@@ -150,18 +173,25 @@ public sealed class EffectCoverage
             case EffectTypeTags.Fire:
             case EffectTypeTags.Smoke:
             case EffectTypeTags.Spiral:
+            case EffectTypeTags.Spiral2:
+            case EffectTypeTags.Beam:
+            case EffectTypeTags.CrazyCone:
             case EffectTypeTags.Tracer5:
+            case EffectTypeTags.Tracer6:
             case EffectTypeTags.Tracer3:
             case EffectTypeTags.Nano0:
             case EffectTypeTags.ShockWave:
             case EffectTypeTags.VulcanRocks:
             case EffectTypeTags.VolGrid:
             case EffectTypeTags.Sprite:
+            case EffectTypeTags.SkyFlash:
+            case EffectTypeTags.Trail2:
+            case EffectTypeTags.Toggle:
                 return true;
             case EffectTypeTags.Spell1:
                 return record.FieldInt(33, 0) != 0;
             case EffectTypeTags.Stars:
-                return record.FieldInt(10, 0) is 2 or 3 or 4 or 5 or 6 or 7 or 8 or 10 or 11 or 15 or 16 or 17 or 18 or 19 or 20 or 22;
+                return record.FieldInt(10, 0) is 2 or 3 or 4 or 5 or 6 or 7 or 8 or 9 or 10 or 11 or 12 or 13 or 14 or 15 or 16 or 17 or 18 or 19 or 20 or 22 or 28;
             default:
                 return false;
         }
@@ -203,6 +233,8 @@ public sealed class EffectCoverage
                 break;
             }
             case EffectTypeTags.Delay:
+            case EffectTypeTags.Toggle:
+                // Both run field 2 (Toggle: 1011265a).
                 if (record.FieldInt(2, 0) > 0)
                     yield return record.FieldInt(2, 0);
                 break;

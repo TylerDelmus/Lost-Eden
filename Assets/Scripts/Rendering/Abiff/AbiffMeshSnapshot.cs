@@ -86,7 +86,8 @@ public static class AbiffMeshSnapshot
             {
                 Offset = new Vector2(src[i].Offset.X, src[i].Offset.Y),
                 Tiling = new Vector2(src[i].Tiling.X, src[i].Tiling.Y),
-                Time = src[i].Time
+                Time = src[i].Time,
+                Lerp = src[i].Unk2 != 0
             };
         }
 

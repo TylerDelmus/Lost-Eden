@@ -23,8 +23,17 @@ using System;
 /// Flag 0x400 instead turns the model's up axis to the camera; flag 0x800 swaps alpha for a camera
 /// distance ramp (<see cref="DistanceAlpha"/>).
 ///
-/// Not modelled: the host dynel's body scale (0x200), Atrox model and size variants (0x10000, 0x8000),
-/// the vehicle-direction fade (0x2000/0x4000), animated models (0x1000) and the dynel-bound variant.
+/// Built on a dynel (the ctor at <c>1010da22</c>, kind 2, the only one that keeps the dynel at +0xd8), the
+/// loader (<c>1010cce0</c>..<c>1010cd65</c>) reads the dynel's breed (stat 4) and, with 0x200, its body scale
+/// (<c>n3VisualDynel_t::GetBodyScale</c>, stat 360 / 100), which Process reads again every call
+/// (<c>1010cf2d</c>). The model is drawn at body scale × scale, and the locator's frame is divided by the
+/// body scale before its turn is taken (<c>1010d1f5</c>). With 0x8000 an Atrox (breed 4) multiplies field 28
+/// by 1.45 once; with 0x10000 an Atrox takes <see cref="AtroxModelName"/> instead (<c>1010d46a</c>).
+///
+/// With 0x1000 the model's animation plays (<c>1010d265</c>): anim time += dt; above 0, with a tree total
+/// above 0, it wraps by fmod once past the total and goes to <c>VisualMesh_t::SetAnimationTime</c>.
+///
+/// Not modelled: the vehicle-direction fade (0x2000/0x4000).
 ///
 /// No Unity dependency so the recovered maths can be asserted from plain unit tests.
 /// </summary>
@@ -35,8 +44,19 @@ public sealed class EffectMeshSim
     public const int FlagFaceCamera = 0x400;
     public const int FlagDistanceFade = 0x800;
 
-    /// <summary>Body scale, animation, the vehicle fade and the Atrox variants.</summary>
-    public const int UnmodelledFlags = 0x200 | 0x1000 | 0x2000 | 0x4000 | 0x8000 | 0x10000;
+    public const int FlagBodyScale = 0x200;
+    public const int FlagAtroxSize = 0x8000;
+    public const int FlagAtroxModel = 0x10000;
+    public const int FlagAnimated = 0x1000;
+
+    /// <summary>The vehicle fade.</summary>
+    public const int UnmodelledFlags = 0x2000 | 0x4000;
+
+    /// <summary>Stat 4 (breed) of an Atrox.</summary>
+    public const int AtroxBreed = 4;
+
+    /// <summary>1016f0c0: 0x8000's size factor for an Atrox.</summary>
+    public const double AtroxSize = 1.4500000476837158;
 
     /// <summary>
     /// The init's switch (<c>1010d4bb</c>, table <c>0x1010d7f6</c>); MParticle's (<c>1010f4c0</c>) is the
@@ -106,8 +126,42 @@ public sealed class EffectMeshSim
     /// <summary>Stock +0xc8: the vehicle fade, 1 unless flags 0x6000 (not modelled).</summary>
     public float Fade => 1f;
 
-    public EffectMeshSim(float[] fields)
+    /// <summary>The dynel's breed (stat 4), 0 when not built on a dynel.</summary>
+    public int HostBreed { get; }
+
+    /// <summary>Stock +0xd0: the dynel's body scale with 0x200, else 1.</summary>
+    public float BodyScale { get; set; } = 1f;
+
+    /// <summary>The visual's scale (<c>1010d40b</c>): body scale × scale.</summary>
+    public float DrawScale => (float)((double)BodyScale * Scale);
+
+    /// <summary>Stock +0xbc: the animation's time with 0x1000.</summary>
+    public float AnimTime { get; private set; }
+
+    /// <summary>Whether SetAnimationTime has been called (with 0x1000, once the time is past 0).</summary>
+    public bool Animating { get; private set; }
+
+    /// <summary>
+    /// 1010d265: with 0x1000, anim time += dt; when it and <paramref name="treeTotal"/> are above 0 it wraps to
+    /// fmod(time, total) once past the total, and true says SetAnimationTime(anim time) is called.
+    /// </summary>
+    public bool StepAnimation(float dt, float treeTotal)
     {
+        if ((Flags & FlagAnimated) == 0)
+            return false;
+        AnimTime = (float)((double)AnimTime + dt);
+        if (!(0f < AnimTime) || !(0f < treeTotal))
+            return false;
+        if (treeTotal < AnimTime)
+            AnimTime = (float)((double)AnimTime % treeTotal);
+        Animating = true;
+        return true;
+    }
+
+    /// <param name="hostBreed">The dynel's breed when built on one (kind 2), else 0.</param>
+    public EffectMeshSim(float[] fields, int hostBreed = 0)
+    {
+        HostBreed = hostBreed;
         Flags = Int(fields, 0);
         Duration = F(fields, 8);
         Motion = Int(fields, 9);
@@ -128,6 +182,10 @@ public sealed class EffectMeshSim
         int index = 32;
         _curve = StockFloatCurve.Read(fields, ref index);
 
+        // 1010cd41: an Atrox's size, once.
+        if ((Flags & FlagAtroxSize) != 0 && hostBreed == AtroxBreed)
+            Scale = (float)(Scale * AtroxSize);
+
         // 1010d6e4: a zero axis is up; then set to length 1 (100439aa).
         float x = F(fields, 22), y = F(fields, 23), z = F(fields, 24);
         if (x == 0f && y == 0f && z == 0f)
@@ -145,17 +203,42 @@ public sealed class EffectMeshSim
         => index >= 0 && index < ModelNames.Length ? ModelNames[index] : null;
 
     /// <summary>
-    /// Whether the port draws this record as stock does: none of <see cref="UnmodelledFlags"/>, a rendering
-    /// effect it knows (not 1 Holo, 2 Space or 7 ZBias), and effect 4, which is lit and taken at full light,
-    /// only for the blast wave (model 2), whose emissive white makes that exact.
+    /// 1010d46a: with 0x10000 an Atrox host takes models 20, 21 and 27's Atrox versions; any other model gives
+    /// null (stock goes ready). Otherwise <see cref="ModelName(int)"/>.
+    /// </summary>
+    public string Model
+    {
+        get
+        {
+            if ((Flags & FlagAtroxModel) == 0 || HostBreed != AtroxBreed)
+                return ModelName(ModelIndex);
+            return AtroxModelName(ModelIndex);
+        }
+    }
+
+    /// <summary>The Atrox versions (<c>1016f4c8</c>, <c>1016f4f0</c>, <c>1016f518</c>).</summary>
+    public static string AtroxModelName(int index) => index switch
+    {
+        20 => "hoverbike_a_effect_circle_atrox.abiff",
+        21 => "hoverbike_b_effect_circle_atrox.abiff",
+        27 => "hoverbike_b_effect_circle_red_atrox.abiff",
+        _ => null,
+    };
+
+    /// <summary>
+    /// Whether the port draws this record as stock does: none of <see cref="UnmodelledFlags"/> and a
+    /// rendering effect it knows (not 1 Holo, 2 Space or 7 ZBias).
+    ///
+    /// Effect 4 used to be carved out for every model but the blast wave, because the port faked its
+    /// lighting with a constant that is only right when the emissive is white. It is now drawn through
+    /// a lit additive material (<see cref="EffectModels.Part.LitAdditive"/>), matching the render
+    /// states stock's effect object sets, so any model is as faithful as the effect-0 path.
     /// </summary>
     public static bool IsModelled(float[] fields)
     {
         int flags = Int(fields, 0);
         int effect = Int(fields, 31);
-        if ((flags & UnmodelledFlags) != 0 || effect is 1 or 2 or 7)
-            return false;
-        return effect != 4 || Int(fields, 10) == 2;
+        return (flags & UnmodelledFlags) == 0 && effect is not (1 or 2 or 7);
     }
 
     /// <summary>One Process body with the base age already advanced.</summary>

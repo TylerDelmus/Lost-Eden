@@ -129,4 +129,121 @@ public class EffectMeshSimTests
         var curve = new StockFloatCurve(new[] { 0.5f, 1f }, new[] { 1f, 0f });
         Assert.Equal(0f, curve.Evaluate(0.2f)); // before the first key: the last key
     }
+
+    /// <summary>72345 (a vehicle buff's hoverbike circle): flags 0x11203, model 21, effect 6.</summary>
+    static float[] Record72345()
+    {
+        var f = new float[39];
+        f[0] = Bits(0x11203);
+        f[6] = 3.14159274f;
+        f[7] = Bits(2006);
+        f[8] = -1f;
+        f[10] = Bits(21);
+        f[22] = 1f;
+        f[28] = 1f;
+        f[31] = Bits(6);
+        f[32] = Bits(3);
+        f[35] = 0.1f; f[36] = 1f;
+        f[37] = 1f;
+        return f;
+    }
+
+    /// <summary>72452 (a vehicle buff's hoverboard fan): flags 0x8203, model 23, spin 10.</summary>
+    static float[] Record72452()
+    {
+        var f = new float[35];
+        f[0] = Bits(0x8203);
+        f[7] = Bits(2006);
+        f[8] = -1f;
+        f[10] = Bits(23);
+        f[23] = 1f;
+        f[26] = 10f;
+        f[28] = 1f;
+        f[32] = Bits(1);
+        f[34] = 1f;
+        return f;
+    }
+
+    [Fact]
+    public void AtroxSize_Is145Percent_OnlyForAnAtrox()
+    {
+        Assert.Equal((float)(1f * EffectMeshSim.AtroxSize), new EffectMeshSim(Record72452(), hostBreed: 4).Scale);
+        Assert.Equal(1f, new EffectMeshSim(Record72452(), hostBreed: 1).Scale);
+        Assert.Equal(1f, new EffectMeshSim(Record72452()).Scale);
+    }
+
+    [Fact]
+    public void AtroxModel_SwapsTheHoverbikeCircles_AndDropsOthers()
+    {
+        Assert.Equal("hoverbike_b_effect_circle_atrox.abiff", new EffectMeshSim(Record72345(), hostBreed: 4).Model);
+        Assert.Equal("hoverbike_b_effect_circle.abiff", new EffectMeshSim(Record72345(), hostBreed: 2).Model);
+        float[] f = Record72345();
+        f[10] = Bits(22);
+        Assert.Null(new EffectMeshSim(f, hostBreed: 4).Model);
+        Assert.Equal("hoverbike_a_effect_circle_atrox.abiff", EffectMeshSim.AtroxModelName(20));
+        Assert.Equal("hoverbike_b_effect_circle_red_atrox.abiff", EffectMeshSim.AtroxModelName(27));
+    }
+
+    [Fact]
+    public void BodyScale_MultipliesTheDrawnScale()
+    {
+        var sim = new EffectMeshSim(Record72452(), hostBreed: 4);
+        sim.BodyScale = 1.2f;
+        Assert.Equal((float)((double)1.2f * (float)(1f * EffectMeshSim.AtroxSize)), sim.DrawScale);
+    }
+
+    [Fact]
+    public void TheVehicleRecords_AreModelled()
+    {
+        Assert.True(EffectMeshSim.IsModelled(Record72345()));
+        Assert.True(EffectMeshSim.IsModelled(Record72452()));
+    }
+
+    /// <summary>A 32-field record with the given flags, model and rendering effect.</summary>
+    static float[] MeshRecord(int flags, int model, int effect)
+    {
+        var f = new float[32];
+        f[0] = System.BitConverter.Int32BitsToSingle(flags);
+        f[10] = System.BitConverter.Int32BitsToSingle(model);
+        f[31] = System.BitConverter.Int32BitsToSingle(effect);
+        return f;
+    }
+
+    [Fact]
+    public void Effect4_IsModelledOnAnyModelNowItIsDrawnLit()
+    {
+        // 71123, 71224 and 72623 are effect 4 on models 1, 4 and 24. They were carved out while the
+        // port faked the lighting with a constant that is only right for the blast wave's emissive
+        // white; they go through a lit additive material now, so all of them count.
+        Assert.True(EffectMeshSim.IsModelled(MeshRecord(0x3, 1, 4)));
+        Assert.True(EffectMeshSim.IsModelled(MeshRecord(0x403, 4, 4)));
+        Assert.True(EffectMeshSim.IsModelled(MeshRecord(0x3, 24, 4)));
+        Assert.True(EffectMeshSim.IsModelled(MeshRecord(0x3, 2, 4)));
+    }
+
+    [Fact]
+    public void TheEffectsStockDrawsDifferently_AreStillNotModelled()
+    {
+        // 1 Holo, 2 Space and 7 ZBias, and the two flags, are untouched by the effect-4 change.
+        Assert.False(EffectMeshSim.IsModelled(MeshRecord(0x3, 1, 1)));
+        Assert.False(EffectMeshSim.IsModelled(MeshRecord(0x3, 1, 2)));
+        Assert.False(EffectMeshSim.IsModelled(MeshRecord(0x3, 1, 7)));
+        Assert.False(EffectMeshSim.IsModelled(MeshRecord(0x2000, 1, 4)));
+        Assert.False(EffectMeshSim.IsModelled(MeshRecord(0x4000, 1, 4)));
+    }
+
+    [Fact]
+    public void Animation_RunsWith0x1000_WrappingAtTheTreeTotal()
+    {
+        var sim = new EffectMeshSim(Record72345());
+        Assert.False(sim.StepAnimation(0f, 0.8f)); // time 0: not set
+        Assert.True(sim.StepAnimation(0.5f, 0.8f));
+        Assert.Equal(0.5f, sim.AnimTime);
+        Assert.True(sim.StepAnimation(0.5f, 0.8f)); // 1.0 past 0.8: fmod
+        Assert.Equal((float)(1.0 % 0.8f), sim.AnimTime, 5);
+
+        var still = new EffectMeshSim(Record72452()); // no 0x1000
+        Assert.False(still.StepAnimation(0.5f, 0.8f));
+        Assert.Equal(0f, still.AnimTime);
+    }
 }

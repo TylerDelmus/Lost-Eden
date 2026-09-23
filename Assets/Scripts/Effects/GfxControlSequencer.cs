@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -20,6 +21,17 @@ public sealed class GfxControlSequencer : GfxControl
     readonly IEffectSpawnFactory _factory;
     readonly Color _tint;
     readonly Step[] _steps;
+
+    /// <summary>The handles of the steps that have fired so far; nulls for the ones that have not.</summary>
+    public IEnumerable<EffectHandle> Children
+    {
+        get
+        {
+            for (int i = 0; i < _steps.Length; i++)
+                if (_steps[i].Child != null)
+                    yield return _steps[i].Child;
+        }
+    }
     int _flags;
     float _cycleStart;
 

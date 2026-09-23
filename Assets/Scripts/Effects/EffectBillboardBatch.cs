@@ -104,6 +104,12 @@ public sealed class EffectBillboardBatch
         public bool Additive;
 
         /// <summary>
+        /// The texture's tiling and offset (Unity ST: x, y scale, z, w offset) on the textured paths; a model's
+        /// UV animation sets it (EffectMesh flag 0x1000).
+        /// </summary>
+        public Vector4 TextureST = new Vector4(1f, 1f, 0f, 0f);
+
+        /// <summary>
         /// The mesh carries a colour per vertex, multiplied in with <see cref="Color"/> and the texture
         /// (the <c>Hidden/LostEden/EffectVertexColor</c> shader; HDRP/Unlit has no vertex colour).
         /// </summary>
@@ -331,6 +337,8 @@ public sealed class EffectBillboardBatch
                 SetVertexColorBlock(draw.Color, draw.Additive);
             else
                 SetUnlitBlock(material, draw.Color, draw.Additive);
+            if (material.HasProperty(_unlitMapStId))
+                _mpb.SetVector(_unlitMapStId, draw.TextureST);
 
             for (int s = 0; s < draw.Mesh.subMeshCount; s++)
             {

@@ -30,9 +30,6 @@ public sealed class GfxControlSuns : GfxControl
 
     public SunsSim Sim => _sim;
 
-    /// <summary>Built on a hit location: stock sets it no duration and lets it run.</summary>
-    public bool IsHitLocationTracer => _hitLocation != null;
-
     public GfxControlSuns(
         GfxTweakRecord record,
         EffectLocator locator,

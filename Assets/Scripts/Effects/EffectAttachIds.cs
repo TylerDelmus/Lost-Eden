@@ -1,11 +1,12 @@
 /// <summary>
-/// Stock AO attach ids used by gfx locators.
-/// Attractor/bone string tables match Gamecode FUN_10105c44 .rdata (0x102c63f8 / 0x102c63a8).
-/// Attach 0 = CAT mesh RRefFrame (FUN_10106368), not dynel feet — see VisualDynel.TryGetMeshFrameMatrix.
+/// Stock AO attach ids used by gfx locators, resolved by Gamecode <c>10105e6d</c> (see
+/// <c>VisualDynel.TryGetAttachMatrix</c>). The attractor and bone name tables are stock's, entry for entry
+/// (<c>0x102c63f8</c> / <c>0x102c63a8</c>). Attach 0 is the mesh's own frame (<c>FUN_10106368</c>), which for a
+/// character model sits on the ground at the feet.
 /// </summary>
 public static class EffectAttachIds
 {
-    /// <summary>Stock default: keep mesh RRefFrame (mid-body). Not a bone/attractor id.</summary>
+    /// <summary>The mesh's own frame (at a character's feet); also what a locator keeps when a lookup fails.</summary>
     public const int MeshFrame = 0;
 
     public const int BoneMin = 1000;
@@ -19,15 +20,16 @@ public static class EffectAttachIds
     /// <summary>What a missing attractor or bone falls back to (stock <c>0x102c6400</c>).</summary>
     public const string HeadAttractorName = "Attractor01_head";
 
-    // Stock attractor jump table (attachId - 2000).
-    public const int RightHand = 2000; // Attractor02_righthand
-    public const int LeftHand = 2001;  // Attractor03_lefthand
-    public const int Head = 2002;      // Attractor01_head
-    public const int Back = 2003;
-    public const int LeftShoulder = 2004;
-    public const int RightShoulder = 2005;
+    // Attractor ids are 2000 + the index into AttractorNames; the first six are named here, the other 18
+    // (Attractor07_special .. Attractor30_beam) are only reached through the table.
+    public const int RightHand = 2000;     // Attractor02_righthand
+    public const int LeftHand = 2001;      // Attractor03_lefthand
+    public const int Head = 2002;          // Attractor01_head
+    public const int Back = 2003;          // Attractor06_back
+    public const int LeftShoulder = 2004;  // Attractor05_leftshoulder
+    public const int RightShoulder = 2005; // Attractor04_rightshoulder
 
-    // Stock Bip01 bone jump table (attachId - 1000).
+    // Bone ids are 1000 + the index into BoneNames.
     public const int BonePelvis = 1000;
     public const int BoneSpine = 1001;
     public const int BoneSpine1 = 1002;
@@ -126,5 +128,4 @@ public static class EffectAttachIds
         name = BoneNames[index];
         return true;
     }
-
 }

@@ -315,11 +315,16 @@ public sealed class ShockWaveSim
         dest[o + 2] = z;
     }
 
-    /// <summary>GfxVisualCone's build (<c>1000bd0a</c>) and its cos / sin tables (ctor <c>1000c292</c>).</summary>
-    static void BuildCone(Cone cone, int n, float uScale, float vScale, bool swap)
+    /// <summary>
+    /// GfxVisualCone's build (<c>1000bd0a</c>) with its uv offsets at 0: n + 1 pairs (bottom, top) round the
+    /// circle, u running 0 → field u-scale (v with <paramref name="swap"/>). SkyFlash builds its cones the same way.
+    /// </summary>
+    public static void BuildCone(Cone cone, int n, float uScale, float vScale, bool swap)
     {
-        cone.Vertices = new float[(n + 1) * 6];
-        cone.Uvs = new float[(n + 1) * 4];
+        if (cone.Vertices == null || cone.Vertices.Length != (n + 1) * 6)
+            cone.Vertices = new float[(n + 1) * 6];
+        if (cone.Uvs == null || cone.Uvs.Length != (n + 1) * 4)
+            cone.Uvs = new float[(n + 1) * 4];
         float uStep = n > 0 ? (float)((double)(swap ? vScale : uScale) / n) : 0f;
         float along = 0f;
         for (int k = 0; k <= n; k++)

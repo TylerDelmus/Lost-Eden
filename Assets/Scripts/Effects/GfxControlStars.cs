@@ -5,9 +5,9 @@ using UnityEngine;
 /// typeCode 2004 — stock <c>_GfxControlStars_t</c> (ctor <c>Gamecode 100f74ad</c>, Process
 /// <c>FUN_100f8491</c>): up to 128 sprites drawn by one <c>GfxVisualDiaBill</c>.
 ///
-/// starTypes 2, 3, 4, 5, 6, 10, 11, 15, 16, 17, 18, 19, 20 and 22 are recovered in full and replayed call-for-call by
-/// <see cref="StarsCase2"/>, <see cref="StarsCase3"/>, <see cref="StarsCase4"/>, <see cref="StarsSwirl"/> (5, 6, 11), <see cref="StarsCase10"/>,
-/// <see cref="StarsBodySparks"/> (15), <see cref="StarsLineSparks"/> (16 to 20) and <see cref="StarsLimbSparks"/> (22), and starTypes 7 and 8
+/// starTypes 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22 and 28 are recovered in full and replayed call-for-call by
+/// <see cref="StarsCase2"/>, <see cref="StarsCase3"/>, <see cref="StarsCase4"/>, <see cref="StarsSwirl"/> (5, 6, 11), <see cref="StarsCase9"/>, <see cref="StarsCase10"/>, <see cref="StarsCase12"/>, <see cref="StarsCase13"/>, <see cref="StarsCase14"/>,
+/// <see cref="StarsBodySparks"/> (15), <see cref="StarsLineSparks"/> (16 to 20) and <see cref="StarsLimbSparks"/> (22), <see cref="StarsCase28"/>, and starTypes 7 and 8
 /// by <see cref="StarsRing"/>. Every other starType below is still the earlier approximation and has not
 /// been checked against FUN_100f8491.
 ///
@@ -36,6 +36,11 @@ public sealed class GfxControlStars : GfxControl, ICatVertexReader
     readonly StarsSwirl _swirl;
     readonly StarsCase10 _case10;
     readonly StarsCase2 _case2;
+    readonly StarsCase13 _case13;
+    readonly StarsCase12 _case12;
+    readonly StarsCase28 _case28;
+    readonly StarsCase14 _case14;
+    readonly StarsCase9 _case9;
 
     // Cases stepped from the locator position alone (4, 5, 6, 10, 11), and whether expiry drains them.
     readonly System.Action<float, Vector3> _originStep;
@@ -67,6 +72,21 @@ public sealed class GfxControlStars : GfxControl, ICatVertexReader
     /// <summary>The replayed starType 2 state, or null. For debug tooling.</summary>
     public StarsCase2 StockCase2 => _case2;
 
+    /// <summary>The replayed starType 13 state, or null. For debug tooling.</summary>
+    public StarsCase13 StockCase13 => _case13;
+
+    /// <summary>The replayed starType 14 state, or null. For debug tooling.</summary>
+    public StarsCase14 StockCase14 => _case14;
+
+    /// <summary>The replayed starType 12 state, or null. For debug tooling.</summary>
+    public StarsCase12 StockCase12 => _case12;
+
+    /// <summary>The replayed starType 28 state, or null. For debug tooling.</summary>
+    public StarsCase28 StockCase28 => _case28;
+
+    /// <summary>The replayed starType 9 state, or null. For debug tooling.</summary>
+    public StarsCase9 StockCase9 => _case9;
+
     /// <summary>The replayed starType 16-20 state, or null for other starTypes. For debug tooling.</summary>
     public StarsLineSparks StockLineSparks => _line;
 
@@ -75,9 +95,6 @@ public sealed class GfxControlStars : GfxControl, ICatVertexReader
 
     /// <summary>The replayed starType 15 state, or null for other starTypes. For debug tooling.</summary>
     public StarsBodySparks StockBodySparks => _body;
-
-    /// <summary>A starType 16-20 trail built on a hit location: stock sets it no duration and lets it run.</summary>
-    public bool IsHitLocationTracer => _line != null && _hitLocation != null;
 
     float _stockCarry;
     float _stockAge;
@@ -242,6 +259,100 @@ public sealed class GfxControlStars : GfxControl, ICatVertexReader
             return;
         }
 
+        if (_starType == 9 && record != null)
+        {
+            // Loader FUN_100f72a9: 11 size, 26 duration, 28 fall speed, 29 spread, 30 life ms, 31 flash (int).
+            _stockDuration = record.Field(26, 0f);
+            _case9 = new StarsCase9(
+                lifeSeconds: record.FieldInt(30, 0) / 1000f,
+                size: record.Field(11, 0f),
+                fall: record.Field(28, 0f),
+                radius: record.Field(29, 0f),
+                flash: record.FieldInt(31, 0),
+                startArgb: new[] { record.Field(18), record.Field(19), record.Field(20), record.Field(21) },
+                endArgb: new[] { record.Field(22), record.Field(23), record.Field(24), record.Field(25) },
+                rand: () => Random.Range(0, 0x8000));
+            _stock = _case9;
+            _originStep = (age, o) => _case9.Step(age, o.x, o.y, o.z);
+            _originDrains = true;
+            base.SetDuration(InfiniteDuration);
+            return;
+        }
+
+        if (_starType == 13 && record != null)
+        {
+            // Loader FUN_100f72a9: 11 spark size (+0x167c), 26 duration, 28 reach (+0x16d4), 29 turn (+0x16d8).
+            _stockDuration = record.Field(26, 0f);
+            _case13 = new StarsCase13(
+                size: record.Field(11, 0f),
+                reach: record.Field(28, 0f),
+                turn: record.Field(29, 0f),
+                startArgb: new[] { record.Field(18), record.Field(19), record.Field(20), record.Field(21) },
+                endArgb: new[] { record.Field(22), record.Field(23), record.Field(24), record.Field(25) },
+                rand: () => Random.Range(0, 0x8000));
+            _stock = _case13;
+            _originStep = (age, o) => _case13.Step(age, _stockDuration, o.x, o.y, o.z);
+            _originDrains = false;
+            base.SetDuration(InfiniteDuration);
+            return;
+        }
+
+        if (_starType == 28 && record != null)
+        {
+            // Loader FUN_100f72a9: 18-25 ramp, 26 duration, 28 the swell size (+0x16d4), 30 life ms.
+            // The hit location is read every call; without one nothing spawns (100fc28b).
+            _hitLocation = hitLocation;
+            _stockDuration = record.Field(26, 0f);
+            _case28 = new StarsCase28(
+                size: record.Field(28, 0f),
+                lifeMs: record.FieldInt(30, 0),
+                startArgb: new[] { record.Field(18), record.Field(19), record.Field(20), record.Field(21) },
+                endArgb: new[] { record.Field(22), record.Field(23), record.Field(24), record.Field(25) });
+            _stock = _case28;
+            base.SetDuration(InfiniteDuration);
+            return;
+        }
+
+        if (_starType == 12 && record != null)
+        {
+            // Loader FUN_100f72a9: 11 end size (+0x167c), 26 duration, 28 life in SECONDS (copied over
+            // +0x16cc every call at 100f9a8a), 29 reach (+0x16d8), 31 the size gain in hundredths.
+            _stockDuration = record.Field(26, 0f);
+            _case12 = new StarsCase12(
+                sizeEnd: record.Field(11, 0f),
+                lifeSeconds: record.Field(28, 0f),
+                reach: record.Field(29, 0f),
+                gainHundredths: record.FieldInt(31, 0),
+                rand: () => Random.Range(0, 0x8000));
+            _stock = _case12;
+            _originStep = (age, o) => _case12.Step(age, _stockDuration, o.x, o.y, o.z);
+            // Its 0x100fc374 entry is 0, so it drains rather than going at once.
+            _originDrains = true;
+            base.SetDuration(InfiniteDuration);
+            return;
+        }
+
+        if (_starType == 14 && record != null)
+        {
+            // Loader FUN_100f72a9: 11 spark size (+0x167c), 26 duration, 28 reach (+0x16d4),
+            // 29 turn per spawn (+0x16d8), 30 life ms (+0x16dc), 31 spawns per call (+0x16e0).
+            _stockDuration = record.Field(26, 0f);
+            _case14 = new StarsCase14(
+                size: record.Field(11, 0f),
+                reach: record.Field(28, 0f),
+                turn: record.Field(29, 0f),
+                lifeMs: record.FieldInt(30, 0),
+                spawnsPerCall: record.FieldInt(31, 0),
+                startArgb: new[] { record.Field(18), record.Field(19), record.Field(20), record.Field(21) },
+                endArgb: new[] { record.Field(22), record.Field(23), record.Field(24), record.Field(25) });
+            _stock = _case14;
+            _originStep = (age, o) => _case14.Step(age, _stockDuration, o.x, o.y, o.z);
+            // Its 0x100fc374 entry is 0, so it takes the 5 s drain rather than going at once.
+            _originDrains = true;
+            base.SetDuration(InfiniteDuration);
+            return;
+        }
+
         if (StarsLineSparks.Handles(_starType) && record != null)
         {
             // Loader FUN_100f72a9: the duration is field 26. The hit location comes from
@@ -393,7 +504,7 @@ public sealed class GfxControlStars : GfxControl, ICatVertexReader
             return;
         }
 
-        if (_line != null)
+        if (_line != null || _case28 != null)
         {
             ProcessStockLine(dt);
             return;
@@ -602,7 +713,7 @@ public sealed class GfxControlStars : GfxControl, ICatVertexReader
         {
             _stockArmed = true;
             StepStockLine();
-            if (_line.Drained)
+            if (_stock.Drained)
                 ReadyFlag = true;
             return;
         }
@@ -619,7 +730,7 @@ public sealed class GfxControlStars : GfxControl, ICatVertexReader
             }
 
             StepStockLine();
-            if (_line.Drained)
+            if (_stock.Drained)
             {
                 ReadyFlag = true;
                 return;
@@ -631,7 +742,10 @@ public sealed class GfxControlStars : GfxControl, ICatVertexReader
     {
         Vector3 start = default, end = default;
         bool found = _hitLocation != null && _hitLocation.TryGetEndpoints(out start, out end);
-        _line.Step(_stockAge, _stockDuration, found, start.x, start.y, start.z, end.x, end.y, end.z);
+        if (_case28 != null)
+            _case28.Step(_stockAge, _stockDuration, found, start.x, start.y, start.z, end.x, end.y, end.z);
+        else
+            _line.Step(_stockAge, _stockDuration, found, start.x, start.y, start.z, end.x, end.y, end.z);
     }
 
     /// <summary>

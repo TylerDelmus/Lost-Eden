@@ -68,7 +68,8 @@ public static class EffectBodyTable
         return entry;
     }
 
-    static bool TryGetHostStats(EffectLocator locator, out StatCollection stats)
+    /// <summary>The stats of the dynel a locator is on (a character or a visual dynel).</summary>
+    public static bool TryGetHostStats(EffectLocator locator, out StatCollection stats)
     {
         stats = null;
         if (locator.TryGetSourceDynel(out Dynel dynel) && dynel is Character)

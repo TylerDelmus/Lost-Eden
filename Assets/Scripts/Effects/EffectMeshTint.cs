@@ -1,26 +1,36 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering.HighDefinition;
 
 /// <summary>
-/// Applies / clears Highlight (2011) emissive+alpha overrides on all renderers under a root.
-/// Uses MaterialPropertyBlock so shared materials stay intact.
+/// Applies Highlight's (0x7db) tint to the renderers under a root: stock's
+/// <c>RRefFrame_t::SetEmissive</c>, <c>SetTransparency</c> and, in mode 3, <c>SetSpecular</c>.
+///
+/// The body's materials are opaque <c>HDRP/Lit</c>, and HDRP ignores alpha in the opaque pass, so a
+/// property block alone cannot fade anything. While a Highlight is running this swaps each renderer
+/// onto a transparent clone of its own material and restores the originals on <see cref="Clear"/>.
+/// The clones are made once per renderer and destroyed with the tint.
 /// </summary>
 public sealed class EffectMeshTint
 {
     static readonly int EmissiveColorId = Shader.PropertyToID("_EmissiveColor");
-    static readonly int EmissiveIntensityId = Shader.PropertyToID("_EmissiveIntensity");
     static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
     static readonly int SpecularColorId = Shader.PropertyToID("_SpecularColor");
     static readonly int UnlitColorId = Shader.PropertyToID("_UnlitColor");
 
-    readonly List<Renderer> _renderers = new List<Renderer>(16);
-    readonly MaterialPropertyBlock _block = new MaterialPropertyBlock();
+    sealed class Target
+    {
+        public Renderer Renderer;
+        public Material[] Original;
+        public Material[] Clones;
+    }
+
+    readonly List<Target> _targets = new List<Target>(16);
     GameObject _root;
-    bool _applied;
 
     public void Bind(GameObject root)
     {
-        if (root == _root && _renderers.Count > 0)
+        if (root == _root && _targets.Count > 0)
             return;
 
         Clear();
@@ -28,73 +38,100 @@ public sealed class EffectMeshTint
         if (_root == null)
             return;
 
-        _root.GetComponentsInChildren(true, _renderers);
+        var renderers = new List<Renderer>(16);
+        _root.GetComponentsInChildren(true, renderers);
+        for (int i = 0; i < renderers.Count; i++)
+        {
+            Renderer renderer = renderers[i];
+            if (renderer == null || renderer.sharedMaterials == null || renderer.sharedMaterials.Length == 0)
+                continue;
+            _targets.Add(new Target { Renderer = renderer, Original = renderer.sharedMaterials });
+        }
     }
 
     public void Apply(Color emissiveRgb, float transparency, bool writeSpecular)
     {
-        if (_root == null || _renderers.Count == 0)
+        if (_root == null || _targets.Count == 0)
             return;
 
-        // Stock SetEmissive(rgb) + SetTransparency(alpha). Drive HDRP emissive with alpha as intensity weight.
-        float intensity = Mathf.Lerp(0.15f, 2.5f, Mathf.Clamp01(transparency));
-        Color emissive = new Color(
-            Mathf.Max(0f, emissiveRgb.r) * intensity,
-            Mathf.Max(0f, emissiveRgb.g) * intensity,
-            Mathf.Max(0f, emissiveRgb.b) * intensity,
-            1f);
+        float alpha = Mathf.Clamp01(transparency);
 
-        for (int i = 0; i < _renderers.Count; i++)
+        for (int i = 0; i < _targets.Count; i++)
         {
-            Renderer renderer = _renderers[i];
-            if (renderer == null)
+            Target target = _targets[i];
+            if (target.Renderer == null)
                 continue;
 
-            renderer.GetPropertyBlock(_block);
-            _block.SetColor(EmissiveColorId, emissive);
-            _block.SetFloat(EmissiveIntensityId, intensity);
+            if (target.Clones == null)
+                target.Clones = MakeTransparent(target.Original, target.Renderer);
 
-            if (writeSpecular)
-                _block.SetColor(SpecularColorId, new Color(emissiveRgb.r, emissiveRgb.g, emissiveRgb.b, 1f));
-
-            Material mat = renderer.sharedMaterial;
-            if (mat != null && mat.HasProperty(BaseColorId))
+            for (int m = 0; m < target.Clones.Length; m++)
             {
-                Color baseColor = mat.GetColor(BaseColorId);
-                baseColor.a = Mathf.Clamp01(transparency);
-                _block.SetColor(BaseColorId, baseColor);
-            }
-            else if (mat != null && mat.HasProperty(UnlitColorId))
-            {
-                Color c = mat.GetColor(UnlitColorId);
-                c.a = Mathf.Clamp01(transparency);
-                _block.SetColor(UnlitColorId, c);
-            }
+                Material clone = target.Clones[m];
+                if (clone == null)
+                    continue;
 
-            renderer.SetPropertyBlock(_block);
+                // Stock writes the ramp's rgb straight into the material's emissive.
+                if (clone.HasProperty(EmissiveColorId))
+                    clone.SetColor(EmissiveColorId, new Color(emissiveRgb.r, emissiveRgb.g, emissiveRgb.b, 1f));
+
+                if (writeSpecular && clone.HasProperty(SpecularColorId))
+                    clone.SetColor(SpecularColorId, new Color(emissiveRgb.r, emissiveRgb.g, emissiveRgb.b, 1f));
+
+                int colourId = clone.HasProperty(BaseColorId) ? BaseColorId
+                    : clone.HasProperty(UnlitColorId) ? UnlitColorId : 0;
+                if (colourId != 0)
+                {
+                    Color c = clone.GetColor(colourId);
+                    c.a = alpha;
+                    clone.SetColor(colourId, c);
+                }
+            }
+        }
+    }
+
+    /// <summary>A transparent copy of each material the renderer uses, swapped in for the tint's life.</summary>
+    static Material[] MakeTransparent(Material[] source, Renderer renderer)
+    {
+        var clones = new Material[source.Length];
+        for (int i = 0; i < source.Length; i++)
+        {
+            Material original = source[i];
+            if (original == null)
+                continue;
+
+            var clone = new Material(original) { name = original.name + " (Highlight)" };
+            HDMaterial.SetSurfaceType(clone, transparent: true);
+            if (clone.HasProperty("_BlendMode"))
+                clone.SetFloat("_BlendMode", 0f);   // alpha
+            if (clone.HasProperty("_ZWrite"))
+                clone.SetFloat("_ZWrite", 0f);
+            HDMaterial.ValidateMaterial(clone);
+            clones[i] = clone;
         }
 
-        _applied = true;
+        renderer.sharedMaterials = clones;
+        return clones;
     }
 
     public void Clear()
     {
-        if (!_applied && _renderers.Count == 0)
+        for (int i = 0; i < _targets.Count; i++)
         {
-            _root = null;
-            return;
-        }
+            Target target = _targets[i];
+            if (target.Renderer != null && target.Original != null)
+                target.Renderer.sharedMaterials = target.Original;
 
-        for (int i = 0; i < _renderers.Count; i++)
-        {
-            Renderer renderer = _renderers[i];
-            if (renderer == null)
+            if (target.Clones == null)
                 continue;
-            renderer.SetPropertyBlock(null);
+            for (int m = 0; m < target.Clones.Length; m++)
+            {
+                if (target.Clones[m] != null)
+                    Object.Destroy(target.Clones[m]);
+            }
         }
 
-        _renderers.Clear();
+        _targets.Clear();
         _root = null;
-        _applied = false;
     }
 }
