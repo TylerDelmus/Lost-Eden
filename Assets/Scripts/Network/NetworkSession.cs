@@ -201,7 +201,7 @@ class NetworkSession
             {
                 PacketType = messageBody.PacketType,
                 Sender = _client.LocalDynelId,
-                Receiver = messageBody.PacketType == PacketType.SystemMessage ? 1 : 2
+				Receiver = messageBody.PacketType == PacketType.SystemMessage && messageBody is not ZoneLoginMessage ? 1 : 2
             }
         };
 
