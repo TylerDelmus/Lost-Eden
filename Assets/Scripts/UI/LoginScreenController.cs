@@ -239,8 +239,8 @@ public class LoginScreenController : MonoBehaviour
     void OnEnable()
     {
         _playfieldFactory.PlayfieldReady += OnPlayfieldReady;
-        if (_playerController?.CameraController != null)
-            _playerController.CameraController.TargetAttached += OnCameraTargetAttached;
+        if (_playerController?.N3Camera != null)
+            _playerController.N3Camera.TargetAttached += OnCameraTargetAttached;
         _networkClient.CharacterListReceived += OnCharacterListReceived;
         _networkClient.LoginFailed += OnLoginFailed;
         _networkClient.Disconnected += OnDisconnected;
@@ -250,8 +250,8 @@ public class LoginScreenController : MonoBehaviour
     void OnDisable()
     {
         _playfieldFactory.PlayfieldReady -= OnPlayfieldReady;
-        if (_playerController?.CameraController != null)
-            _playerController.CameraController.TargetAttached -= OnCameraTargetAttached;
+        if (_playerController?.N3Camera != null)
+            _playerController.N3Camera.TargetAttached -= OnCameraTargetAttached;
         _networkClient.CharacterListReceived -= OnCharacterListReceived;
         _networkClient.LoginFailed -= OnLoginFailed;
         _networkClient.Disconnected -= OnDisconnected;
@@ -420,7 +420,7 @@ public class LoginScreenController : MonoBehaviour
 
         if (_awaitingPlayfieldReady && _state == LoginScreenState.EnteringGame)
         {
-            // Zone geometry is ready; keep loading until CameraController resolves its target.
+            // Zone geometry is ready; keep loading until N3Camera resolves its target.
             Debug.Log($"[LoginScreen] Zone ready, awaiting camera attach (id={zoneId})");
         }
     }

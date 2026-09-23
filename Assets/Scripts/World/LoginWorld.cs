@@ -78,7 +78,7 @@ public sealed class LoginWorld : MonoBehaviour
 
     void Awake()
     {
-        // Its own camera, not Camera.main: the gameplay CameraController owns that one and
+        // Its own camera, not Camera.main: the gameplay N3Camera owns that one and
         // rewrites it every frame, so a pose set here would be overwritten immediately.
         // Stock does the same — LoginWorld_c news up its own VisualCamera_t.
         if (_camera == null)

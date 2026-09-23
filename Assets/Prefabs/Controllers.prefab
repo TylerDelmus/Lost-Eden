@@ -1,5 +1,51 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!1 &1583927462019384756
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6738291045829103746}
+  - component: {fileID: 4192837461029384751}
+  m_Layer: 0
+  m_Name: CursorController
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6738291045829103746
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1583927462019384756}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 4872940711862382171}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &4192837461029384751
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1583927462019384756}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0ceccf3c545a6d142aed3f1220137f6c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CursorController
+  color: 0
+  hotspot: {x: 0, y: 0}
 --- !u!1 &1786777642781728451
 GameObject:
   m_ObjectHideFlags: 0
@@ -292,7 +338,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
   _inputController: {fileID: 1211909670351485114}
-  CameraController: {fileID: 4376990713135409540}
+  N3Camera: {fileID: 4376990713135409540}
   TargetingController: {fileID: 7920281024853337595}
 --- !u!1 &4700295867776623180
 GameObject:
@@ -305,7 +351,7 @@ GameObject:
   - component: {fileID: 9919751692366303}
   - component: {fileID: 4376990713135409540}
   m_Layer: 0
-  m_Name: CameraController
+  m_Name: N3Camera
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -338,22 +384,14 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 790e43312e7d20440867951c797d1664, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CameraController
-  _reorientSharpness: 0
-  _minPitch: -80
-  _maxPitch: 80
-  _rotationSpeed: 120
-  _rotationSharpness: 25
-  _followSharpness: 10
-  _distanceSharpness: 10
-  _defaultFollowDistance: 2
-  _minFollowDistance: 1
-  _maxFollowDistance: 15
-  _zoomStep: 2
+  m_EditorClassIdentifier: Assembly-CSharp::N3Camera
+  _lookSensitivity: {x: 5, y: 5}
+  _zoomStep: 4
   _collisionMask:
     serializedVersion: 2
-    m_Bits: 0
+    m_Bits: 64
   Camera: {fileID: 6632926322940167517}
+  _viewMode: 3
 --- !u!1 &5949149866056764121
 GameObject:
   m_ObjectHideFlags: 0
@@ -435,49 +473,3 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TargetingController
   _camera: {fileID: 6632926322940167517}
   _maxTargetDistance: 50
---- !u!1 &1583927462019384756
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 6738291045829103746}
-  - component: {fileID: 4192837461029384751}
-  m_Layer: 0
-  m_Name: CursorController
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &6738291045829103746
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1583927462019384756}
-  serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 4872940711862382171}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &4192837461029384751
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1583927462019384756}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0ceccf3c545a6d142aed3f1220137f6c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CursorController
-  color: 0
-  hotspot: {x: 0, y: 0}

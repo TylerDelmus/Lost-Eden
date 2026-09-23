@@ -70,8 +70,8 @@ public class PlayfieldFactory : MonoBehaviour
         _networkClient.CastNanoSpellReceived += OnCastNanoSpell;
         _networkClient.BuffReceived += OnBuff;
 
-        if (_playerController?.CameraController != null)
-            _playerController.CameraController.TargetAttached += OnCameraTargetAttached;
+        if (_playerController?.N3Camera != null)
+            _playerController.N3Camera.TargetAttached += OnCameraTargetAttached;
     }
 
     void OnDisable()
@@ -91,8 +91,8 @@ public class PlayfieldFactory : MonoBehaviour
         _networkClient.CastNanoSpellReceived -= OnCastNanoSpell;
         _networkClient.BuffReceived -= OnBuff;
 
-        if (_playerController?.CameraController != null)
-            _playerController.CameraController.TargetAttached -= OnCameraTargetAttached;
+        if (_playerController?.N3Camera != null)
+            _playerController.N3Camera.TargetAttached -= OnCameraTargetAttached;
     }
 
     void OnCameraTargetAttached()

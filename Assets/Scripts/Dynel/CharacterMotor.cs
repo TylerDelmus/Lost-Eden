@@ -616,8 +616,23 @@ public class CharacterMotor : MonoBehaviour
         if (jumpRising)
             TryStartJump();
 
-        if ((flags & MovementFlags.MouseTurn) != 0)
-            SetYaw(rotation.eulerAngles.y);
+        // NOTE: stock does not snap the character's heading to the camera. Mouse-look applies a
+        // *delta* to the character's forward (n3Dynel_t::VehicleForwardUpdate, reached from
+        // Gamecode's N3Msg_MouseMovement), which PlayerController now does via ApplyYawDelta.
+        // Snapping every frame made the character chase the camera whenever the right button was
+        // down, standing or not. See Docs/Camera.md.
+    }
+
+    /// <summary>
+    /// Turn the character by <paramref name="degrees"/>. This is how stock's mouse-look steers:
+    /// a delta applied to the body's forward, not an absolute heading.
+    /// </summary>
+    public void ApplyYawDelta(float degrees)
+    {
+        if (_state == MovementState.Sit)
+            return;
+
+        RotateYaw(degrees);
     }
 
     public void ApplyAction(MovementAction action)

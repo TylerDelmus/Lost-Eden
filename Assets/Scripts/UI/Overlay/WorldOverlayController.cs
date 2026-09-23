@@ -129,8 +129,8 @@ public class WorldOverlayController : MonoBehaviour
 
     Camera ResolveCamera()
     {
-        if (_playerController != null && _playerController.CameraController != null)
-            return _playerController.CameraController.Camera;
+        if (_playerController != null && _playerController.N3Camera != null)
+            return _playerController.N3Camera.Camera;
         return null;
     }
 

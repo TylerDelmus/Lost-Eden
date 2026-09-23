@@ -21,8 +21,8 @@ public sealed class EffectRuntimeHost : MonoBehaviour
             return;
 
         Camera camera = null;
-        if (_playerController != null && _playerController.CameraController != null)
-            camera = _playerController.CameraController.Camera;
+        if (_playerController != null && _playerController.N3Camera != null)
+            camera = _playerController.N3Camera.Camera;
         if (camera == null)
             camera = Camera.main;
         _handler.Tick(Time.deltaTime, camera);

@@ -34,7 +34,8 @@ public class PlayerController : MonoBehaviour
     private InputController _inputController;
 
     [SerializeField]
-    internal CameraController CameraController;
+    [UnityEngine.Serialization.FormerlySerializedAs("CameraController")]
+    internal N3Camera N3Camera;
 
     [SerializeField]
     internal TargetingController TargetingController;
@@ -110,12 +111,18 @@ public class PlayerController : MonoBehaviour
         if (_localPlayer == null)
             return;
 
-        CameraController.SetInputs(_inputController.ActorInput);
+        N3Camera.SetInputs(_inputController.ActorInput);
         TargetingController.Tick(_inputController.ActorInput);
 
-        var cameraYaw = Quaternion.AngleAxis(CameraController.GetViewAngles().y, Vector3.up);
+        var cameraYaw = Quaternion.AngleAxis(N3Camera.GetViewAngles().y, Vector3.up);
         var flags = _inputController.ActorInput.ToMovementFlags();
         _localPlayer.Motor.SetInputs(flags, cameraYaw);
+
+        // Right-drag mouse-look turns the character by a delta; the camera follows because it is
+        // stay-behind. Left-drag orbits the camera only and contributes nothing here.
+        float mouseYaw = N3Camera.ConsumeCharacterYaw();
+        if (mouseYaw != 0f)
+            _localPlayer.Motor.ApplyYawDelta(mouseYaw);
 
         // Network heading is character facing, not camera look (they diverge without mouse-turn).
         var facing = Quaternion.AngleAxis(_localPlayer.transform.eulerAngles.y, Vector3.up);
@@ -280,7 +287,7 @@ public class PlayerController : MonoBehaviour
         _lastSentFlags = MovementFlags.None;
         _lastSentRotation = player != null ? player.transform.rotation : Quaternion.identity;
         // _localPlayer.Nameplate.Hide();
-        CameraController.SetTarget(_localPlayer);
+        N3Camera.SetTarget(_localPlayer);
         TargetingController.Initialize(_localPlayer);
         TargetingController.TargetChanged += OnTargetChanged;
     }

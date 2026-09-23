@@ -1125,7 +1125,7 @@ PrefabInstance:
       objectReference: {fileID: -944628639613478452, guid: 35845fe01580c41289b024647b1d1c53, type: 3}
     - target: {fileID: 4376990713135409540, guid: 0840f0fb60bd91f4a86f0427b957dddb, type: 3}
       propertyPath: _zoomStep
-      value: 1
+      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: 4376990713135409540, guid: 0840f0fb60bd91f4a86f0427b957dddb, type: 3}
       propertyPath: _rotationSpeed
