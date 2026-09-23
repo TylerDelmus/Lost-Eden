@@ -2792,10 +2792,15 @@ spawn them). A tree is as good as its worst record. Two scan pitfalls that have 
 Stars field 30 is the spark life, not a child id; and Spell1 spawns fields 31/32 only when field
 33 == 0.
 
-As of 2026-09-22 (after 71016's types, Stars starTypes 18, 2, 15 and 20, Sparks, Tracer5, Fire, Smoke, Spiral, Suns sunTypes 0 and 1, Shield's per-vertex alpha, Tracer3 with Nano0, ShockWave, VulcanRocks, VolGrid, Sprite, Stars #5, #9 and #13, SkyFlash, Trail2, EffectMesh's dynel variants, Toggle and TParticle2), with the buff slot counted:
-**7,756 nanos have effects. 7,714 are verified, 15 unverified, 4 approx, 23 missing.** Shield2 moved
-25 nanos off Missing onto Scatter, rebuilding Scatter cleared them, and Highlight — once its fade
-actually rendered — cleared the last unverified port of any size. Missing rose earlier, when buff effects started being counted.
+As of 2026-09-23 (after the goal run: GroundGrid modes 1 and 2, Tracer8, EnergyBall, GlobalSmoke
+kinds 0 and 2, and GroundImpact), with the buff slot counted:
+**7,756 nanos have effects. 7,755 are verified and 1 is approximated. Nothing is unverified and
+nothing is missing.** The one approximation is SkyFlash's negative field 18 on 256069 Xenosquad,
+left on purpose because the sphere it wants is an RDB gap (§9).
+
+Getting there: Shield2 moved 25 nanos off Missing onto Scatter and rebuilding Scatter cleared them;
+Highlight — once its fade actually rendered — cleared the last unverified port of any size; and the
+final run closed the last six gaps. Missing had risen earlier, when buff effects started being counted.
 
 **Ids that aren't in gfxtweak.bin count as Verified** (user's decision, 2026-09-22; it replaces the earlier
 rule that kept them Missing). Stock draws nothing for them, and the port draws nothing too:
@@ -2812,13 +2817,14 @@ rule that kept them Missing). Stock draws nothing for them, and the port draws n
   - 71025 is one Meta child of 71016 (the big explosion). The rest of the explosion plays; that piece
     never appeared in stock either.
 
-Next targets, by nano count (the scratch coverage tool's `rank` mode counts each gap across all nanos):
-- Spiral2 (8 / 1), CrazyCone (7 / 0), Beam (6 / 0), Stars #14 and #12 (6 / 6 each), GroundRing (5 / 0)
-- Stars #14 and #12 (6 / 6 each) are the largest unverified ports left
-- ~~EffectMesh's last approx: effect 4 lighting on 71123, 71224 and 72623~~ — fixed 2026-09-23 with a lit additive material; the only approximation left anywhere is SkyFlash's negative field 18 (1 nano)
-- The other Stars starTypes (14 and 12: 6 each)
-- Deformer modes 0/4; Electra modes 0/2
-- The buff-slot gaps, which haven't been ranked yet: sort the Nanos tab by the B dot.
+Next targets, by nano count (the scratch coverage tool's `rank` mode counts each gap across all
+nanos). The list is down to one line:
+- `1 nanos  1 sole  SkyFlash approx  e.g. 256069 Xenosquad` — and that one is parked, not pending.
+
+Everything else that is still unported is unported because **no nano reaches it**: Deformer modes 0
+and 4, Electra modes 0 and 2, the Stars starTypes outside the verified set, GlobalSmoke's other five
+kinds, and the types marked Missing in §7's table. They cost nothing until something reaches them,
+so the next real work is whatever the user names, not a rank position.
 
 ---
 
