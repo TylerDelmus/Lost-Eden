@@ -449,7 +449,7 @@ public class Character : Dynel
         // where the body learns which of CharVehicle_t's two subclasses it is. NPCs get NPCVehicle_t,
         // which steers at a Path_t through a PathGuide_t and ignores the input axes; players get
         // PlayerVehicle_t and its four axes. The server already sends NPC paths as
-        // FollowTargetMessage.PathInfo, which SetPath routes into the Path_t. See Docs/Movement.md §3.2.
+        // FollowTargetMessage.PathInfo, which SetPath routes into the Path_t. See N3Lite/docs/Movement.md §3.2.
         _motor.SelectVehicleKind(IsNpc);
 
         _motor.Warp(transform.position, transform.rotation);

@@ -32,7 +32,7 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
         public bool Desired;
         public int CellId;
         public SurfaceCollisionBuilder.MeshData MeshData;
-        public LostEden.Vehicles.Surfaces.TriangleMeshSurface Surface;
+        public N3Lite.Surfaces.TriangleMeshSurface Surface;
     }
 
     sealed class PreparedSurface
@@ -67,10 +67,10 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
     /// no longer goes through Unity physics at all — it goes through <c>Surface_i</c>, so the colliders
     /// were a second, parallel copy of the same RDB 1000013 geometry. Streaming into
     /// <c>SetSurfaceForCell</c>/<c>RemoveSurfaceForCell</c> is also what stock does: <c>n3Zone_t</c> has
-    /// both <c>LoadSurface</c> and <c>UnLoadSurface</c>. See Docs/Movement.md §8.
+    /// both <c>LoadSurface</c> and <c>UnLoadSurface</c>. See N3Lite/docs/Movement.md §8.
     /// </para>
     /// </summary>
-    public LostEden.Vehicles.Surfaces.CellSurface CollisionSurface { get; set; }
+    public N3Lite.Surfaces.CellSurface CollisionSurface { get; set; }
 
     public SurfaceCellLoader(ResourceDatabase database, IPlayfieldCellLayout layout, Transform parent)
     {
@@ -337,12 +337,12 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
         if (CollisionSurface == null)
             return false;
 
-        var vertices = new LostEden.Vehicles.Vec3[data.Vertices.Length];
+        var vertices = new N3Lite.Vec3[data.Vertices.Length];
         for (int i = 0; i < data.Vertices.Length; i++)
-            vertices[i] = new LostEden.Vehicles.Vec3(
+            vertices[i] = new N3Lite.Vec3(
                 data.Vertices[i].x, data.Vertices[i].y, data.Vertices[i].z);
 
-        LostEden.Vehicles.Surfaces.TriangleMeshSurface mesh =
+        N3Lite.Surfaces.TriangleMeshSurface mesh =
             LostEden.Vehicles.PlayfieldCellSurface.BuildCell(vertices, data.Triangles);
         if (mesh == null)
             return false;
@@ -466,7 +466,7 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
             // The cell's world bounds. There is no Unity Mesh any more -- the geometry lives in a
             // TriangleMeshSurface inside CellSurface_t -- so the box is what is left to show, and it is
             // what the gizmo was for: which cells are loaded and which are warm-cached.
-            entry.Surface.GetBounds(out LostEden.Vehicles.Vec3 min, out LostEden.Vehicles.Vec3 max);
+            entry.Surface.GetBounds(out N3Lite.Vec3 min, out N3Lite.Vec3 max);
             var lo = new Vector3(min.X, min.Y, min.Z);
             var hi = new Vector3(max.X, max.Y, max.Z);
             Gizmos.DrawWireCube((lo + hi) * 0.5f, hi - lo);

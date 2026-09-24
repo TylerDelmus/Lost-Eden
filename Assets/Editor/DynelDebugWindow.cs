@@ -4,6 +4,7 @@ using System.Linq;
 using AOSharp.Common.GameData;
 using UnityEditor;
 using UnityEngine;
+using MovementFlags = N3Lite.MovementFlags;
 
 enum DynelDebugTab
 {
@@ -309,7 +310,6 @@ public sealed class DynelDebugWindow : EditorWindow
             DrawMovementFlag("Turn Left", flags, MovementFlags.TurnLeft);
             DrawMovementFlag("Turn Right", flags, MovementFlags.TurnRight);
             DrawMovementFlag("Jump", flags, MovementFlags.Jump);
-            DrawMovementFlag("Mouse Turn", flags, MovementFlags.MouseTurn);
 
             EditorGUILayout.Space(4f);
             EditorGUILayout.FloatField("Current Vel", _motor.CurrentSpeed);

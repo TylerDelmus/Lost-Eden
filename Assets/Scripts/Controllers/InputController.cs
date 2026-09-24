@@ -1,6 +1,7 @@
 using Reflex.Attributes;
 using System;
 using UnityEngine;
+using MovementFlags = N3Lite.MovementFlags;
 using UnityEngine.InputSystem;
 
 public readonly struct ActorInput
@@ -47,8 +48,6 @@ public readonly struct ActorInput
                 flags |= MovementFlags.StrafeLeft;
             else if (moveInput.x > 0)
                 flags |= MovementFlags.StrafeRight;
-
-            flags |= MovementFlags.MouseTurn;
         }
         else
         {

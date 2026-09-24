@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
+using MovementFlags = N3Lite.MovementFlags;
 
 /// <summary>
 /// typeCode 3036 (0xbdc), stock <c>GfxControlToggle_t</c>: one child effect run while its conditions hold. The

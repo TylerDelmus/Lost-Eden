@@ -23,6 +23,14 @@
       "dependencies": {},
       "hash": "55423389e8d443f18090720891af52d9952d6e5e"
     },
+    "com.malishade.n3lite": {
+      "version": "file:../../N3Lite/package",
+      "depth": 0,
+      "source": "local",
+      "dependencies": {
+        "com.unity.burst": "1.8.17"
+      }
+    },
     "com.unity.2d.sprite": {
       "version": "1.0.0",
       "depth": 1,

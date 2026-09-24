@@ -1,29 +1,31 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using LostEden.Vehicles;
-using LostEden.Vehicles.Surfaces;
+using N3Lite;
+using N3Lite.Surfaces;
 using SmokeLounge.AOtomation.Messaging.GameData;
 using UnityEngine;
+using CharCore = N3Lite.N3CharVehicle;
 using MovementAction = AOSharp.Common.GameData.MovementAction;
 using MovementState = AOSharp.Common.GameData.MovementState;
 
 /// <summary>
-/// Binds a <see cref="CharVehicleSim"/> to a transform — the character's counterpart to
-/// <see cref="N3Camera"/>. In stock both the camera and every character are the same kind of object
-/// under <c>DummyVehicle_t</c>, so both sit on the same integrator.
-/// See <c>Docs/Movement.md</c> §4 and §7.
+/// Binds an N3Lite <see cref="CharCore"/> — the character's movement — to a transform, and translates
+/// the network's movement messages into it. The camera's counterpart is <see cref="N3Camera"/>.
+/// See <c>N3Lite/docs/Movement.md</c> §4 and §7.
 ///
 /// <para>
-/// This <b>replaces</b> <c>CharacterMotor</c>, which was the previous developer's invention. All
-/// motion now comes from the reversed vehicle: four input axes, the per-state speed curve, and
-/// ground contact through <c>Vehicle_t::EnsureSurfaceAlignment</c> against an <see cref="ISurface"/>.
-/// <b>There is no <c>CharacterController</c> and no collider.</b>
+/// What lives here and not in N3Lite: the transform sync, the protocol mapping
+/// (<see cref="MovementAction"/>, <see cref="CharMovementStatus"/>, <see cref="MovementState"/>), the
+/// movement state and stats — turned into a <see cref="MovementProfile"/> by
+/// <see cref="CharMovementRules"/> — the player-side path follower, and the animation queries. <b>There is no <c>CharacterController</c>
+/// and no collider.</b>
 /// </para>
 ///
 /// <para>
 /// <b>The animation-clip naming below is NOT ported</b> and is carried over from the deleted file only
 /// so the game keeps working. It is marked and needs its own reversing pass — see
-/// <c>Docs/Movement.md</c> §9. The jump is stock's (<see cref="CharVehicleSim.Jump"/>).
+/// <c>N3Lite/docs/Movement.md</c> §9.
 /// </para>
 /// </summary>
 public class N3CharVehicle : MonoBehaviour
@@ -43,8 +45,8 @@ public class N3CharVehicle : MonoBehaviour
     [SerializeField] MovementConfig _movementConfig;
 
     [Header("Body (the player factory's constants, 10057826)")]
-    [SerializeField] float _mass = 50f;
-    [SerializeField] float _radius = 0.5f;
+    [SerializeField] float _mass = CharCore.DefaultMass;
+    [SerializeField] float _radius = CharCore.DefaultRadius;
 
     /// <summary>
     /// The transform the surface's coordinates are expressed in — the terrain root. The rendered
@@ -52,15 +54,10 @@ public class N3CharVehicle : MonoBehaviour
     /// </summary>
     [SerializeField] Transform _surfaceRoot;
 
-    CharVehicleSim _sim;
-    MovementFlags _flags;
+    CharCore _core;
     MovementState _state = MovementState.Run;
     MovementState _lastSpeedMode = MovementState.Run;
-    VelocityLimits _runLimits;
-    int _jumpStrength;
-    int _jumpAgility;
-    int _jumpGmLevel;
-    float _bodyScale = 1f;
+    float _runSpeedStat;
 
     readonly List<Vector3> _path = new();
     int _pathIndex = -1;
@@ -68,16 +65,15 @@ public class N3CharVehicle : MonoBehaviour
     public event Action JumpStarted;
     public event Action JumpLanded;
 
-    /// <summary>The vehicle itself.</summary>
-    public CharVehicleSim Vehicle => _sim;
+    /// <summary>The movement core this component drives.</summary>
+    public CharCore Core => _core;
 
-    public bool HasSurface => _sim != null && _sim.Surface != null;
+    /// <summary>The vehicle itself.</summary>
+    public CharVehicleSim Vehicle => _core?.Vehicle;
+
+    public bool HasSurface => _core != null && _core.Surface != null;
 
     bool HasPath => _pathIndex >= 0 && _pathIndex < _path.Count;
-
-    static readonly MovementFlags TranslationFlags =
-        MovementFlags.Forward | MovementFlags.Backward |
-        MovementFlags.StrafeLeft | MovementFlags.StrafeRight;
 
     public MovementConfig Config
     {
@@ -89,95 +85,72 @@ public class N3CharVehicle : MonoBehaviour
         }
     }
 
-    public MovementFlags MovementFlags => _flags;
+    public MovementFlags MovementFlags => _core.Flags;
 
     public MovementState State => _state;
 
-    public float CurrentSpeed => _sim != null ? _sim.Speed : 0f;
+    public float CurrentSpeed => _core != null ? _core.CurrentSpeed : 0f;
 
-    public float DesiredSpeed => _sim != null ? _sim.MaxVel : 0f;
+    public float DesiredSpeed => _core != null ? _core.MaxVel : 0f;
 
-    public float MaxForce => _sim != null ? _sim.MaxForce : 0f;
+    public float MaxForce => _core != null ? _core.MaxForce : 0f;
 
     /// <summary>
     /// The active speed cap. <see cref="N3Camera"/> reads this for its catch-up constraint
-    /// (<c>Docs/Camera.md</c> §5.3), so it must be the vehicle's real <c>MaxVel</c>.
+    /// (<c>N3Lite/docs/Camera.md</c> §5.3), so it must be the vehicle's real <c>MaxVel</c>.
     /// </summary>
-    public float LocomotionMaxSpeed => _sim != null ? _sim.MaxVel : 0f;
+    public float LocomotionMaxSpeed => _core != null ? _core.MaxVel : 0f;
 
-    public bool IsMoving => CurrentSpeed > 0.001f || (_flags & TranslationFlags) != 0 || HasPath;
+    public bool IsMoving => CurrentSpeed > 0.001f || _core.IsTranslating || HasPath;
 
-    bool IsTranslating => (_flags & TranslationFlags) != 0;
+    bool IsTranslating => _core.IsTranslating;
 
     // ---- lifecycle -------------------------------------------------------
 
     void Awake()
     {
-        if (_sim == null)
-            BuildSim(_isNpcVehicle);
+        if (_core != null)
+            return;
+
+        _core = new CharCore(isNpc: false, _mass, _radius);
+
+        // UNPORTED: the keyboard turn rates are the previous developer's, not stock. Stock scales a
+        // +/-0.02 rad rate by MouseTurnSensitivity (100229ff).
+        MovementConfig config = Config;
+        if (config != null)
+        {
+            _core.TurnRateMoving = config.TurnRateRadiansMoving;
+            _core.TurnRateStopped = config.TurnRateRadiansStopped;
+        }
+
+        _core.JumpStarted += () => JumpStarted?.Invoke();
+        _core.JumpLanded += () => JumpLanded?.Invoke();
+        _core.PathCleared += ClearPlayerPath;
+
+        ApplyRules();
+        PushTransformToSim();
     }
 
     /// <summary>
-    /// Which of `CharVehicle_t`'s two subclasses this body is. False is `PlayerVehicle_t` (the four
-    /// input axes); true is `NPCVehicle_t`, which has no strafe and no turn channel and follows a path
-    /// instead. See Docs/Movement.md §3.2.
+    /// Which of <c>CharVehicle_t</c>'s two subclasses this body is. See N3Lite/docs/Movement.md §3.2.
     /// </summary>
-    public bool IsNpcVehicle => _isNpcVehicle;
-
-    bool _isNpcVehicle;
+    public bool IsNpcVehicle => _core.IsNpcVehicle;
 
     /// <summary>The NPC vehicle, or null when this body is a player's.</summary>
-    public NpcVehicleSim Npc => _sim as NpcVehicleSim;
+    public NpcVehicleSim Npc => _core?.Npc;
 
     /// <summary>
     /// Pick the subclass. Called from <c>Character.Apply</c> once the spawn message's
     /// <c>IsNpc</c> flag is known — <c>Awake</c> runs before that, so the default is the player's and
-    /// this rebuilds if the flag says otherwise.
-    ///
-    /// <para>
-    /// Rebuilding is safe at spawn because <c>Apply</c> warps the body immediately afterwards, and on
-    /// later updates the kind does not change so this is a no-op.
-    /// </para>
+    /// this rebuilds if the flag says otherwise. <c>Apply</c> warps the body immediately afterwards.
     /// </summary>
     public void SelectVehicleKind(bool isNpc)
     {
-        if (_sim != null && isNpc == _isNpcVehicle)
-            return;
+        if (_core == null)
+            Awake();
 
-        BuildSim(isNpc);
-    }
-
-    void BuildSim(bool isNpc)
-    {
-        _isNpcVehicle = isNpc;
-
-        // The factory constants are shared: the NPC block at 1005796f has the same shape and the same
-        // visible constants as the player factory at 10057826.
-        _sim = isNpc ? new NpcVehicleSim() : new CharVehicleSim();
-        _sim.Mass = _mass;
-        _sim.MaxForce = 10f;
-        _sim.MaxVel = 1f;
-        _sim.NearProbeOffset = _radius;
-        _sim.SlowingDistance = 1.5f;
-        _sim.MovementState = ToVehicleState(_state);
-        _sim.OwnerIsNpc = isNpc;
-        _sim.OwnerBodyScale = _bodyScale;
-        _sim.JumpLanded += OnVehicleJumpLanded;
-
-        _sim.EnableFalling();
-        _sim.DisableSurfaceHug();
-
-        // DummyVehicle_t::UseSurfaceNormal (N3 100011b7), which Gamecode calls for character
-        // vehicles at 1006eb9d / 1006ec56 / 1006ee00. This aligns the body to the ground, which is
-        // what tilts its forward along a slope -- and that tilt is what lets the swept solver see an
-        // uphill move and refuse it. Without it, holding forward climbs anything.
-        _sim.UseSurfaceNormal();
-
-        _sim.UpdateMotionConstraints();
-
-        _runLimits = new VelocityLimits(_sim.MaxVel, _sim.MaxVel, _sim.StrafeSpeed(_sim.MovementState));
-
-        PushTransformToSim();
+        _core.SelectVehicleKind(isNpc);
+        ApplyRules();
     }
 
     /// <summary>
@@ -186,44 +159,64 @@ public class N3CharVehicle : MonoBehaviour
     /// </summary>
     public void SetSurface(ISurface surface, Transform surfaceRoot = null)
     {
-        if (_sim == null)
+        if (_core == null)
             Awake();
 
-        _sim.Surface = surface;
+        _core.Surface = surface;
         if (surfaceRoot != null)
             _surfaceRoot = surfaceRoot;
     }
 
-    void Update()
-    {
-        if (_sim == null)
-            return;
+    // ---- the step, driven by VehicleSystem ------------------------------
 
-        float dt = Time.deltaTime;
+    /// <summary>This body's slot in <see cref="VehicleSystem"/>, or -1 when not registered.</summary>
+    internal int SystemIndex = -1;
+
+    void OnEnable() => VehicleSystem.Register(this);
+
+    void OnDisable() => VehicleSystem.Unregister(this);
+
+    /// <summary>Pass 1, main thread: the transform into the sim, and the path glue that turns it.</summary>
+    internal void BeginStep(float dt)
+    {
+        if (_core == null)
+            return;
 
         PushTransformToSim();
 
-        // Stock drives the guide from the AI tick, not from Run. There is no AI here -- the path comes
-        // from the server -- so the frame is the tick.
-        Npc?.AdvanceGuide(dt);
-
+        // The carried-over follower. Only a player's body has one (an NPC's path is the sim's own),
+        // so this and the NPC guide never both act on the same body.
         if (HasPath)
             SteerAlongPath(dt);
+    }
 
-        _sim.Run(dt);
+    /// <summary>Pass 2: the sim alone.</summary>
+    internal void RunStep(float dt)
+    {
+        if (_core == null)
+            return;
+
+        _core.Tick(dt);
+    }
+
+    /// <summary>Pass 3, main thread: the result back onto the transform.</summary>
+    internal void EndStep()
+    {
+        if (_core == null)
+            return;
 
         PullSimToTransform();
     }
 
     void PushTransformToSim()
     {
-        _sim.Position = ToSurfaceSpace(transform.position).ToVec3();
+        _core.Position = ToSurfaceSpace(transform.position).ToVec3();
 
         // Only the heading goes back in. The vehicle's own body rotation carries the surface tilt
         // (orientation mode 1), and re-reading a level transform into it each frame would throw that
         // tilt away every step.
         if (!_headingOnly)
-            _sim.BodyRotation = transform.rotation.ToQuat();
+            _core.Vehicle.BodyRotation = transform.rotation.ToQuat();
     }
 
     void PullSimToTransform()
@@ -233,12 +226,12 @@ public class N3CharVehicle : MonoBehaviour
         // But the visible character does NOT bank: in the real client a character stays upright on
         // any slope, because the dynel's own rotation is not the vehicle's. So the transform gets the
         // HEADING only, and the tilt stays inside the sim where the steering uses it.
-        Vec3 forward = _sim.GetBodyForward();
+        Vec3 forward = _core.Vehicle.GetBodyForward();
         Quaternion rotation = transform.rotation;
         if (Mathf.Abs(forward.X) > 1e-5f || Mathf.Abs(forward.Z) > 1e-5f)
             rotation = Quaternion.LookRotation(new Vector3(forward.X, 0f, forward.Z).normalized, Vector3.up);
 
-        transform.SetPositionAndRotation(FromSurfaceSpace(_sim.Position.ToUnity()), rotation);
+        transform.SetPositionAndRotation(FromSurfaceSpace(_core.Position.ToUnity()), rotation);
     }
 
     /// <summary>
@@ -253,151 +246,30 @@ public class N3CharVehicle : MonoBehaviour
     Vector3 FromSurfaceSpace(Vector3 local)
         => _surfaceRoot != null ? _surfaceRoot.TransformPoint(local) : local;
 
-    // ---- input: flags to the four axes ------------------------------------
+    // ---- input -----------------------------------------------------------
 
     /// <summary>
-    /// Translate the input layer's flags into the vehicle's four axes — the point where our input
-    /// vocabulary meets stock's. Stock's own input path calls the axis setters directly
-    /// (<c>100717ef</c>, <c>1007180f</c>, <c>100717ff</c>, <c>10071840</c>).
+    /// The input layer's flags, into the core's four axes.
     ///
     /// <para>
     /// The camera yaw is <b>not</b> applied to the body: stock never snaps a character's heading to
     /// the camera, it applies a delta through <c>VehicleForwardUpdate</c>
-    /// (<c>Docs/Camera.md</c> §5.9). <see cref="N3Camera"/> does that via
+    /// (<c>N3Lite/docs/Camera.md</c> §5.9). <see cref="N3Camera"/> does that via
     /// <see cref="ApplyYawDelta"/>.
     /// </para>
     /// </summary>
     public void SetInputs(MovementFlags flags, Quaternion cameraYaw)
     {
-        // An NPC body has no input axes to drive -- NPCVehicle_t's lateral and turn channels are
-        // `xor eax,eax; ret 4` and its longitudinal reads a path, not +0x360. Nothing should be
-        // feeding player input to one, so say so rather than writing values that do nothing.
-        if (_isNpcVehicle)
-        {
+        // Nothing should be feeding player input to an NPC body, which has no input axes; say so
+        // rather than writing values that do nothing.
+        if (!_core.SetInputs(flags))
             Debug.LogWarning($"[Vehicle] SetInputs on the NPC vehicle of '{name}' -- ignored.", this);
-            return;
-        }
-
-        ClearPath();
-
-        if (_state == MovementState.Sit)
-        {
-            SetFlags(MovementFlags.None);
-            return;
-        }
-
-        bool jumpRising = (flags & MovementFlags.Jump) != 0 && (_flags & MovementFlags.Jump) == 0;
-
-        SetFlags(flags);
-
-        if (jumpRising)
-            TryStartJump();
-    }
-
-    void SetFlags(MovementFlags flags)
-    {
-        _flags = flags;
-        ApplyFlagsToAxes();
-    }
-
-    void ApplyFlagsToAxes()
-    {
-        // An NPC body has no input axes -- NPCVehicle_t's lateral and turn channels are
-        // `xor eax,eax; ret 4` and its longitudinal reads a Path_t, not +0x360. The flags are still
-        // stored (the animation reads them), but translating them into axis writes would be
-        // meaningless AND harmful: the release branch below halts, which would fight the path guide
-        // every time the server reported the NPC stopped.
-        if (_isNpcVehicle)
-            return;
-
-        if (_sim == null)
-            return;
-
-        // +0x360 is a GATE, not a speed: the speed comes from MaxVel.
-        float drive = 0f;
-        if ((_flags & MovementFlags.Forward) != 0)
-            drive += 1f;
-        if ((_flags & MovementFlags.Backward) != 0)
-            drive -= 1f;
-
-        // Direction selects the forward or reverse speed curve (FUN_10070a37: 2 is reverse).
-        int direction = drive < 0f ? 2 : 1;
-        if (_sim.CurveDirection != direction)
-        {
-            _sim.CurveDirection = direction;
-            _sim.UpdateMotionConstraints();
-        }
-
-        // The three stock command handlers, each read in full from disassembly. Every one of them
-        // pairs the drive with SetDirection, and the release handler also halts:
-        //
-        //   forward   1006ef8d:  SetDirection(1);  SetForwardDrive(1)
-        //   backward  1006f122:  SetForwardDrive(-1);  SetDirection(-1)
-        //   release   1006f23a:  SetForwardDrive(0);  Halt();  SetDirection(1)
-        //
-        // Neither half is optional.
-        //
-        // The halt: with the drive at zero the longitudinal channel returns None, the integrator
-        // skips the force->velocity step entirely (Docs/Camera.md §4.2 step 3) and never touches
-        // Velocity — so without it the body coasts at its last speed forever. That was the "keeps
-        // sliding after releasing the key" bug.
-        //
-        // The direction: it is what tells the orientation update the body is travelling BACKWARDS,
-        // so the body keeps facing the way it came from instead of turning to look down its own
-        // velocity. Without it, mode 1 faces the body backwards, SteeringReverse then pushes it the
-        // other way, and the character oscillates on the spot instead of backing up. SetDirection
-        // halts by itself when the value changes (FUN_1000a688), which is what makes a reversal
-        // start from rest — so the forward handler needs no halt of its own.
-        if (drive != _sim.ForwardDrive)
-        {
-            if (drive > 0f)
-            {
-                _sim.SetDirection(1);
-                _sim.SetForwardDrive(drive);
-            }
-            else if (drive < 0f)
-            {
-                _sim.SetForwardDrive(drive);
-                _sim.SetDirection(-1);
-            }
-            else
-            {
-                _sim.SetForwardDrive(0f);
-                _sim.Halt();
-                _sim.SetDirection(1);
-            }
-        }
-
-        // +0x364 is a SPEED, and SetStrafe keeps only the sign of its argument.
-        float strafe = 0f;
-        if ((_flags & MovementFlags.StrafeRight) != 0)
-            strafe += 1f;
-        if ((_flags & MovementFlags.StrafeLeft) != 0)
-            strafe -= 1f;
-        _sim.SetStrafe(strafe);
-
-        // +0x368 is radians per second about world Y.
-        float turn = 0f;
-        if ((_flags & MovementFlags.TurnRight) != 0)
-            turn += 1f;
-        if ((_flags & MovementFlags.TurnLeft) != 0)
-            turn -= 1f;
-        _sim.SetTurnRate(turn * GetTurnRateRadians());
     }
 
     /// <summary>
     /// Turn the character by a yaw delta — the camera's right-drag in Lock mode. A delta applied to
-    /// the body's facing, never an absolute heading.
-    ///
-    /// <para>
-    /// It goes through <see cref="VehicleSim.SetRelRot"/> and <b>must</b>. Writing the body rotation
-    /// on its own only works while the body is standing still: orientation mode 1 rebuilds the
-    /// rotation from the cached forward when stopped, but from the <b>velocity</b> when moving
-    /// (<c>1000c88c</c>), so a running character's new heading was thrown away on the same frame.
-    /// <c>Vehicle_t::SetRelRot</c> (<c>1000d11d</c>) is stock's answer: it sets the rotation and
-    /// re-aims the velocity along the new facing, <c>bodyForward * |velocity| * Direction</c>. The
-    /// <c>Direction</c> factor is what keeps a backpedalling character turning the right way.
-    /// </para>
+    /// the body's facing, never an absolute heading, and through <c>SetRelRot</c> so a running
+    /// body's velocity turns with it.
     /// </summary>
     public void ApplyYawDelta(float degrees)
     {
@@ -405,34 +277,34 @@ public class N3CharVehicle : MonoBehaviour
             return;
 
         transform.Rotate(0f, degrees, 0f);
-        if (_sim != null)
-            _sim.SetRelRot(Quat.LookRotation(transform.forward.ToVec3(), _sim.SurfaceNormal));
+        _core.SetRelRot(Quat.LookRotation(transform.forward.ToVec3(), _core.Vehicle.SurfaceNormal));
     }
 
     public void ApplyAction(MovementAction action)
     {
-        ClearPath();
+        _core.ClearPath();
 
+        MovementFlags flags = _core.Flags;
         switch (action)
         {
-            case MovementAction.ForwardStart: SetFlags(_flags | MovementFlags.Forward); break;
-            case MovementAction.ForwardStop: SetFlags(_flags & ~MovementFlags.Forward); break;
-            case MovementAction.BackwardStart: SetFlags(_flags | MovementFlags.Backward); break;
-            case MovementAction.BackwardStop: SetFlags(_flags & ~MovementFlags.Backward); break;
-            case MovementAction.StrafeLeftStart: SetFlags(_flags | MovementFlags.StrafeLeft); break;
-            case MovementAction.StrafeLeftStop: SetFlags(_flags & ~MovementFlags.StrafeLeft); break;
-            case MovementAction.StrafeRightStart: SetFlags(_flags | MovementFlags.StrafeRight); break;
-            case MovementAction.StrafeRightStop: SetFlags(_flags & ~MovementFlags.StrafeRight); break;
-            case MovementAction.TurnLeftStart: SetFlags(_flags | MovementFlags.TurnLeft); break;
-            case MovementAction.TurnLeftStop: SetFlags(_flags & ~MovementFlags.TurnLeft); break;
-            case MovementAction.TurnRightStart: SetFlags(_flags | MovementFlags.TurnRight); break;
-            case MovementAction.TurnRightStop: SetFlags(_flags & ~MovementFlags.TurnRight); break;
+            case MovementAction.ForwardStart: _core.SetFlags(flags | MovementFlags.Forward); break;
+            case MovementAction.ForwardStop: _core.SetFlags(flags & ~MovementFlags.Forward); break;
+            case MovementAction.BackwardStart: _core.SetFlags(flags | MovementFlags.Backward); break;
+            case MovementAction.BackwardStop: _core.SetFlags(flags & ~MovementFlags.Backward); break;
+            case MovementAction.StrafeLeftStart: _core.SetFlags(flags | MovementFlags.StrafeLeft); break;
+            case MovementAction.StrafeLeftStop: _core.SetFlags(flags & ~MovementFlags.StrafeLeft); break;
+            case MovementAction.StrafeRightStart: _core.SetFlags(flags | MovementFlags.StrafeRight); break;
+            case MovementAction.StrafeRightStop: _core.SetFlags(flags & ~MovementFlags.StrafeRight); break;
+            case MovementAction.TurnLeftStart: _core.SetFlags(flags | MovementFlags.TurnLeft); break;
+            case MovementAction.TurnLeftStop: _core.SetFlags(flags & ~MovementFlags.TurnLeft); break;
+            case MovementAction.TurnRightStart: _core.SetFlags(flags | MovementFlags.TurnRight); break;
+            case MovementAction.TurnRightStop: _core.SetFlags(flags & ~MovementFlags.TurnRight); break;
             case MovementAction.JumpStart:
-                SetFlags(_flags | MovementFlags.Jump);
-                TryStartJump();
+                _core.SetFlags(flags | MovementFlags.Jump);
+                _core.TryStartJump();
                 break;
-            case MovementAction.JumpStop: SetFlags(_flags & ~MovementFlags.Jump); break;
-            case MovementAction.FullStop: SetFlags(MovementFlags.None); break;
+            case MovementAction.JumpStop: _core.SetFlags(flags & ~MovementFlags.Jump); break;
+            case MovementAction.FullStop: _core.SetFlags(MovementFlags.None); break;
             case MovementAction.SwitchToFrozen: EnterMovementState(MovementState.Rooted); break;
             case MovementAction.SwitchToWalk: EnterMovementState(MovementState.Walk); break;
             case MovementAction.SwitchToRun: EnterMovementState(MovementState.Run); break;
@@ -456,7 +328,7 @@ public class N3CharVehicle : MonoBehaviour
 
     public void ApplyMovementStatus(CharMovementStatus status)
     {
-        ClearPath();
+        _core.ClearPath();
         EnterMovementState(ToMovementState(status.ModeId));
         _lastSpeedMode = ToMovementState(status.LastSpeedMode);
 
@@ -483,44 +355,28 @@ public class N3CharVehicle : MonoBehaviour
         if (status.JumpState == JumpActive)
             flags |= MovementFlags.Jump;
 
-        SetFlags(flags);
+        _core.SetFlags(flags);
     }
 
     // ---- movement state --------------------------------------------------
-
-    /// <summary>
-    /// Maps the network's <c>MovementState</c> onto stock's vehicle state
-    /// (<c>FUN_10070a2f</c>). <b>The correspondence is not fully recovered</b> — only that 7 is Fly
-    /// and that 1, 8 and 9 refuse forward drive. See <c>Docs/Movement.md</c> §9.
-    /// </summary>
-    static int ToVehicleState(MovementState state) => (int)state;
 
     void EnterMovementState(MovementState state)
     {
         if (_state == MovementState.Walk || _state == MovementState.Run)
             _lastSpeedMode = _state;
 
-        if (state == MovementState.Sit)
-        {
-            SetFlags(MovementFlags.None);
-            ClearPath();
-        }
-
         _state = state;
-
-        if (_sim != null)
-        {
-            _sim.MovementState = ToVehicleState(state);
-            _sim.UpdateMotionConstraints();
-            _runLimits = new VelocityLimits(_sim.MaxVel, _sim.MaxVel, _sim.StrafeSpeed(_sim.MovementState));
-            ApplyFlagsToAxes();
-        }
+        ApplyRules();
     }
 
     void LeaveMovementState()
         => EnterMovementState(_lastSpeedMode is MovementState.Walk or MovementState.Run
             ? _lastSpeedMode
             : MovementState.Run);
+
+    /// <summary>The state, the stat and the vehicle kind, into the core's profile.</summary>
+    void ApplyRules()
+        => _core.SetProfile(CharMovementRules.Profile((int)_state, _runSpeedStat, _core.IsNpcVehicle));
 
     static MovementState ToMovementState(uint modeId)
         => Enum.IsDefined(typeof(MovementState), (int)modeId) ? (MovementState)modeId : MovementState.Run;
@@ -535,32 +391,27 @@ public class N3CharVehicle : MonoBehaviour
     /// </summary>
     public void UpdateRunLimitsFromStats(int runSpeed, int currentHealth, int maxHealth)
     {
-        if (_sim == null)
-            return;
-
-        _sim.RunSpeedStat = runSpeed;
-        _sim.UpdateMotionConstraints();
-        _runLimits = new VelocityLimits(_sim.MaxVel, _sim.MaxVel, _sim.StrafeSpeed(_sim.MovementState));
-        ApplyFlagsToAxes();
+        _runSpeedStat = runSpeed;
+        if (_core != null)
+            ApplyRules();
     }
 
     /// <summary>
     /// The owner's stats the jump reads: Strength, Agility and GmLevel for
-    /// <see cref="CharVehicleSim.JumpHeightFromStats"/>, and the body scale for the ceiling clamp.
+    /// <see cref="CharMovementRules.JumpHeight"/>, and the body scale for the ceiling clamp.
     /// </summary>
     public void UpdateJumpStatsFromStats(int strength, int agility, int gmLevel, float bodyScale)
     {
-        _jumpStrength = strength;
-        _jumpAgility = agility;
-        _jumpGmLevel = gmLevel;
-        _bodyScale = bodyScale;
-        if (_sim != null)
-            _sim.OwnerBodyScale = bodyScale;
+        if (_core == null)
+            Awake();
+
+        _core.JumpHeight = CharMovementRules.JumpHeight(strength, agility, gmLevel);
+        _core.BodyHeight = CharMovementRules.BodyHeight(bodyScale);
     }
 
     public void Halt()
     {
-        _sim?.Halt();
+        _core?.Halt();
     }
 
     /// <summary>
@@ -569,23 +420,15 @@ public class N3CharVehicle : MonoBehaviour
     /// </summary>
     public void Warp(Vector3 position, Quaternion rotation, bool resetVelocity = true)
     {
-        if (_sim == null)
+        if (_core == null)
             Awake();
 
         transform.SetPositionAndRotation(position, rotation);
-        _sim.Position = ToSurfaceSpace(position).ToVec3();
 
         // SetRelRot so a warp that keeps its velocity carries it into the new facing instead of
         // holding the old world-space direction. Stock's teleport is SetRelPosRot (1000e2af), which
         // is UNREAD — this is SetRelRot's verified behaviour applied to the rotation half.
-        _sim.SetRelRot(Quat.LookRotation(
-            (rotation * Vector3.forward).ToVec3(), _sim.SurfaceNormal));
-
-        if (resetVelocity)
-        {
-            _sim.Halt();
-            SetFlags(MovementFlags.None);
-        }
+        _core.Warp(ToSurfaceSpace(position).ToVec3(), (rotation * Vector3.forward).ToVec3(), resetVelocity);
     }
 
     /// <summary>
@@ -594,7 +437,7 @@ public class N3CharVehicle : MonoBehaviour
     /// </summary>
     public void RequestSurfacePriorityForSpawn(Vector3 worldPosition)
     {
-        if (_sim == null)
+        if (_core == null)
             Awake();
 
         transform.position = worldPosition;
@@ -607,29 +450,23 @@ public class N3CharVehicle : MonoBehaviour
     /// The server's waypoint list, from <c>FollowTargetMessage.PathInfo</c>.
     ///
     /// <para>
-    /// On an NPC body this fills the reversed <c>Path_t</c> and restarts the guide, so
-    /// <c>NPCVehicle_t</c>'s longitudinal channel steers at it with <c>SteeringDirArrive</c> — stock's
+    /// On an NPC body the core follows it with the reversed <c>Path_t</c> and its guide — stock's
     /// model. On a player's body it falls back to the carried-over follower below, which is the
     /// previous developer's and drives the input axes instead.
     /// </para>
     /// </summary>
     public void SetPath(IReadOnlyList<Vector3> waypoints)
     {
-        ClearPath();
-        SetFlags(MovementFlags.None);
+        var surfaceWaypoints = new List<Vec3>(waypoints?.Count ?? 0);
+        if (waypoints != null)
+            for (int i = 0; i < waypoints.Count; i++)
+                surfaceWaypoints.Add(ToSurfaceSpace(waypoints[i]).ToVec3());
+
+        if (_core.SetPath(surfaceWaypoints))
+            return;
 
         if (waypoints == null || waypoints.Count == 0)
             return;
-
-        NpcVehicleSim npc = Npc;
-        if (npc != null)
-        {
-            npc.Path.Clear();
-            for (int i = 0; i < waypoints.Count; i++)
-                npc.Path.AddWaypoint(ToSurfaceSpace(waypoints[i]).ToVec3());
-            npc.RestartPath();
-            return;
-        }
 
         for (int i = 0; i < waypoints.Count; i++)
             _path.Add(waypoints[i]);
@@ -637,20 +474,23 @@ public class N3CharVehicle : MonoBehaviour
         _pathIndex = 0;
     }
 
-    public void ClearPath()
+    public void ClearPath() => _core.ClearPath();
+
+    /// <summary>The player-side path, cleared whenever the core clears its own.</summary>
+    void ClearPlayerPath()
     {
         _path.Clear();
         _pathIndex = -1;
-        Npc?.Path.Clear();
     }
 
     /// <summary>
-    /// Follows a waypoint list by pointing the body at the next one and driving forward. Stock's
-    /// equivalent is the follow-target branch of the longitudinal channel
+    /// UNPORTED. Follows a waypoint list by pointing the body at the next one and driving forward.
+    /// Stock's equivalent is the follow-target branch of the longitudinal channel
     /// (<c>SteeringDirArrive</c> at <c>10071537</c>), which is not ported.
     /// </summary>
     void SteerAlongPath(float dt)
     {
+        CharVehicleSim sim = _core.Vehicle;
         float arrival = Config != null ? Config.WaypointArrivalRadius : 0.5f;
 
         while (HasPath)
@@ -665,9 +505,9 @@ public class N3CharVehicle : MonoBehaviour
                 _pathIndex++;
                 if (!HasPath)
                 {
-                    _sim.SetForwardDrive(0f);
-                    _sim.SetTurnRate(0f);
-                    _sim.Halt();
+                    sim.SetForwardDrive(0f);
+                    sim.SetTurnRate(0f);
+                    sim.Halt();
                     return;
                 }
                 continue;
@@ -680,67 +520,24 @@ public class N3CharVehicle : MonoBehaviour
             // SetRelRot, not a raw body rotation: this turns the body while it is *running* (the
             // drive goes to 1 on the next line), and mode 1 would otherwise rebuild the rotation from
             // the unchanged velocity and undo the turn. See ApplyYawDelta.
-            _sim.SetRelRot(transform.rotation.ToQuat());
-            _sim.SetForwardDrive(1f);
+            sim.SetRelRot(transform.rotation.ToQuat());
+            sim.SetForwardDrive(1f);
             return;
         }
     }
 
     // =====================================================================
-    // UNPORTED GLUE — carried over from the deleted CharacterMotor so the game
-    // keeps working. None of this is reverse-engineered; it is the previous
-    // developer's model and needs its own pass. Docs/Movement.md §8.
+    // UNPORTED GLUE — animation selection carried over from the deleted
+    // CharacterMotor so the game keeps working. None of this is
+    // reverse-engineered. N3Lite/docs/Movement.md §8.
     // =====================================================================
-
-    /// <summary>
-    /// UNPORTED. Stock's keyboard turn is scaled from a +/-0.02 rad rate by
-    /// <c>MouseTurnSensitivity</c> (<c>100229ff</c>); these two numbers are the previous
-    /// developer's and are not stock.
-    /// </summary>
-    float GetTurnRateRadians()
-    {
-        MovementConfig config = Config;
-        float moving = config != null ? config.TurnRateRadiansMoving : 1.5f;
-        float stopped = config != null ? config.TurnRateRadiansStopped : 3.5f;
-        return IsMoving ? moving : stopped;
-    }
-
-    /// <summary>
-    /// <c>JumpStartTransitionAction_t</c> (<c>1006dcdb</c>): the owner's jump height into the vehicle's
-    /// <see cref="CharVehicleSim.Jump"/>. Stock then plays the take-off animation (0x9c or 0x9d, picked
-    /// from the state machine's state), which <see cref="JumpStarted"/> hands to <c>Character</c>.
-    ///
-    /// <para>
-    /// Stock's character state machine decides whether the action runs at all; it is not ported, so
-    /// the sit check and raising <see cref="JumpStarted"/> only when the vehicle took the jump stand in
-    /// for it.
-    /// </para>
-    /// </summary>
-    bool TryStartJump()
-    {
-        if (_sim == null || _state == MovementState.Sit)
-            return false;
-
-        float height = CharVehicleSim.JumpHeightFromStats(_jumpStrength, _jumpAgility, _jumpGmLevel);
-        if (!_sim.Jump(height))
-            return false;
-
-        JumpStarted?.Invoke();
-        return true;
-    }
-
-    void OnVehicleJumpLanded()
-    {
-        _flags &= ~MovementFlags.Jump;
-        JumpLanded?.Invoke();
-    }
 
     /// <summary>UNPORTED. Animation clip selection — not a vehicle concern in stock.</summary>
     public bool SuppressLocomotionPlay
     {
         get
         {
-            int mode = (int)_state;
+            int mode = (int)State;
             return mode == 8 || mode == 9;
         }
     }
@@ -754,22 +551,23 @@ public class N3CharVehicle : MonoBehaviour
     /// <summary>UNPORTED. Animation clip selection.</summary>
     public int GetJumpLandKind()
     {
-        bool forward = HasPath || (_flags & MovementFlags.Forward) != 0;
+        bool forward = HasPath || (MovementFlags & MovementFlags.Forward) != 0;
         if (!forward)
             return 0;
 
-        return _state == MovementState.Walk ? AnimKindIds.JumpLandWalk : AnimKindIds.JumpLandRun;
+        return State == MovementState.Walk ? AnimKindIds.JumpLandWalk : AnimKindIds.JumpLandRun;
     }
 
     /// <summary>UNPORTED. Animation clip selection.</summary>
     public int GetStrafeOverlayKind()
     {
-        if ((_flags & (MovementFlags.Forward | MovementFlags.Backward)) == 0)
+        MovementFlags flags = MovementFlags;
+        if ((flags & (MovementFlags.Forward | MovementFlags.Backward)) == 0)
             return 0;
 
-        if ((_flags & MovementFlags.StrafeLeft) != 0)
+        if ((flags & MovementFlags.StrafeLeft) != 0)
             return AnimKindIds.WalkLeft;
-        if ((_flags & MovementFlags.StrafeRight) != 0)
+        if ((flags & MovementFlags.StrafeRight) != 0)
             return AnimKindIds.WalkRight;
         return 0;
     }
@@ -778,16 +576,18 @@ public class N3CharVehicle : MonoBehaviour
     public bool TryGetLocomotionKind(AnimHolder holder, out int kind)
     {
         kind = 0;
-        if (holder == null || _state == MovementState.Sit)
+        MovementState state = State;
+        MovementFlags flags = MovementFlags;
+        if (holder == null || state == MovementState.Sit)
             return false;
 
-        int mode = (int)_state;
+        int mode = (int)state;
         if (mode == 8 || mode == 9)
             return false;
 
         bool translating = IsTranslating || HasPath;
 
-        switch (_state)
+        switch (state)
         {
             case MovementState.Swim:
                 kind = translating ? AnimKindIds.Swim : AnimKindIds.IdleSwim;
@@ -805,13 +605,13 @@ public class N3CharVehicle : MonoBehaviour
 
         if (!translating)
         {
-            if ((_flags & MovementFlags.TurnLeft) != 0 && _state == MovementState.Walk)
+            if ((flags & MovementFlags.TurnLeft) != 0 && state == MovementState.Walk)
             {
                 kind = AnimKindIds.TurnLeft;
                 return true;
             }
 
-            if ((_flags & MovementFlags.TurnRight) != 0 && _state == MovementState.Walk)
+            if ((flags & MovementFlags.TurnRight) != 0 && state == MovementState.Walk)
             {
                 kind = AnimKindIds.TurnRight;
                 return true;
@@ -821,31 +621,31 @@ public class N3CharVehicle : MonoBehaviour
             return kind != 0;
         }
 
-        if (HasPath || (_flags & MovementFlags.Forward) != 0)
+        if (HasPath || (flags & MovementFlags.Forward) != 0)
         {
-            kind = _state == MovementState.Walk ? holder.WalkForward : holder.RunForward;
+            kind = state == MovementState.Walk ? holder.WalkForward : holder.RunForward;
             return kind != 0;
         }
 
-        if ((_flags & MovementFlags.Backward) != 0)
+        if ((flags & MovementFlags.Backward) != 0)
         {
-            kind = _state == MovementState.Walk ? AnimKindIds.WalkBack : AnimKindIds.RunBack;
+            kind = state == MovementState.Walk ? AnimKindIds.WalkBack : AnimKindIds.RunBack;
             return true;
         }
 
-        if ((_flags & MovementFlags.StrafeLeft) != 0)
+        if ((flags & MovementFlags.StrafeLeft) != 0)
         {
             kind = AnimKindIds.WalkLeft;
             return true;
         }
 
-        if ((_flags & MovementFlags.StrafeRight) != 0)
+        if ((flags & MovementFlags.StrafeRight) != 0)
         {
             kind = AnimKindIds.WalkRight;
             return true;
         }
 
-        kind = _state == MovementState.Walk ? holder.WalkForward : holder.RunForward;
+        kind = state == MovementState.Walk ? holder.WalkForward : holder.RunForward;
         return kind != 0;
     }
 
@@ -858,16 +658,17 @@ public class N3CharVehicle : MonoBehaviour
         float runBackwardBase = config != null ? config.RunBackwardBase : 3f;
         float runStrafeBase = config != null ? config.RunStrafeBase : 2.5f;
 
-        if (_state == MovementState.Walk)
+        MovementFlags flags = MovementFlags;
+        if (State == MovementState.Walk)
             return walkBase;
 
-        if (HasPath || (_flags & MovementFlags.Forward) != 0)
+        if (HasPath || (flags & MovementFlags.Forward) != 0)
             return runForwardBase;
 
-        if ((_flags & MovementFlags.Backward) != 0)
+        if ((flags & MovementFlags.Backward) != 0)
             return runBackwardBase;
 
-        if ((_flags & (MovementFlags.StrafeLeft | MovementFlags.StrafeRight)) != 0)
+        if ((flags & (MovementFlags.StrafeLeft | MovementFlags.StrafeRight)) != 0)
             return runStrafeBase;
 
         return runForwardBase;
@@ -910,7 +711,7 @@ public class N3CharVehicle : MonoBehaviour
     /// The reversed NPC path: the waypoint list from the server, split at the distance the
     /// <c>PathGuide_t</c> has consumed, plus the guide point itself — which is what the longitudinal
     /// channel actually steers at, so it is the thing worth seeing when an NPC misbehaves.
-    /// See Docs/Movement.md §3.2.
+    /// See N3Lite/docs/Movement.md §3.2.
     /// </summary>
     void DrawNpcPathGizmo()
     {

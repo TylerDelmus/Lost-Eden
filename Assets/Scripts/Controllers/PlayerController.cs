@@ -4,6 +4,7 @@ using Reflex.Attributes;
 using SmokeLounge.AOtomation.Messaging.GameData;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
 using UnityEngine;
+using MovementFlags = N3Lite.MovementFlags;
 using MovementAction = AOSharp.Common.GameData.MovementAction;
 using MovementState = AOSharp.Common.GameData.MovementState;
 using Quaternion = UnityEngine.Quaternion;
@@ -123,10 +124,11 @@ public class PlayerController : MonoBehaviour
 
         // Network heading is character facing, not camera look (they diverge without mouse-turn).
         var facing = Quaternion.AngleAxis(_localPlayer.transform.eulerAngles.y, Vector3.up);
-        SyncMovementToServer(flags, facing);
+        SyncMovementToServer(flags, facing, _inputController.ActorInput.RightClickHeld);
     }
 
-    void SyncMovementToServer(MovementFlags flags, Quaternion rotation)
+    /// <param name="mouseTurn">Right mouse held: the heading follows the mouse, so every change is sent.</param>
+    void SyncMovementToServer(MovementFlags flags, Quaternion rotation, bool mouseTurn)
     {
         if (_networkClient == null || !_networkClient.InPlay)
             return;
@@ -161,7 +163,6 @@ public class PlayerController : MonoBehaviour
             _lastSentFlags = networkFlags;
         }
 
-        bool mouseTurn = (flags & MovementFlags.MouseTurn) != 0;
         if (mouseTurn && rotation != _lastSentRotation)
         {
             SendMove(MovementAction.Update, rotation);

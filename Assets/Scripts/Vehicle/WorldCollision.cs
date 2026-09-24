@@ -1,4 +1,6 @@
-using LostEden.Vehicles.Surfaces;
+using N3Lite;
+using N3Lite.Surfaces;
+using N3Lite.Surfaces;
 using UnityEngine;
 
 namespace LostEden.Vehicles
@@ -12,7 +14,7 @@ namespace LostEden.Vehicles
     /// <c>CameraVehicleFixedThird_t::RecalcOptimalPos</c>'s occlusion search calls a line-of-sight
     /// predicate that is a <c>Surface_i::GetLineIntersection</c> underneath, and the playfield's surface
     /// is reached from a global map in stock too (<c>DummyVehicle_t::GetSurface</c> looks the playfield
-    /// up by id in <c>N3 0x1005b7e8</c>). See <c>Docs/Movement.md</c> §9.
+    /// up by id in <c>N3 0x1005b7e8</c>). See <c>N3Lite/docs/Movement.md</c> §9.
     /// </para>
     ///
     /// <para>
