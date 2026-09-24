@@ -46,7 +46,6 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
     readonly IPlayfieldCellLayout _layout;
     readonly Transform _parent;
     readonly Dictionary<int, CellEntry> _entries = new();
-    readonly HashSet<int> _unavailable = new();
     readonly List<int> _queue = new();
     readonly List<int> _warmOrder = new();
     readonly List<int> _scratch = new();
@@ -89,43 +88,6 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
         ResortQueue();
     }
 
-    public SurfaceCollisionState GetCollisionState(Vector3 worldPosition)
-    {
-        if (_layout.IsIndoor)
-            return SurfaceCollisionState.Unavailable;
-
-        if (!_layout.TryGetCellId(worldPosition, out int cellId))
-            return SurfaceCollisionState.Unavailable;
-
-        return GetCollisionState(cellId);
-    }
-
-    public SurfaceCollisionState GetCollisionState(int cellId)
-    {
-        if (_layout.IsIndoor)
-            return SurfaceCollisionState.Unavailable;
-
-        if (_unavailable.Contains(cellId))
-            return SurfaceCollisionState.Unavailable;
-
-        if (!_entries.TryGetValue(cellId, out CellEntry entry))
-            return SurfaceCollisionState.Pending;
-
-        switch (entry.State)
-        {
-            case CellState.Ready:
-                return entry.Surface != null
-                    ? SurfaceCollisionState.Ready
-                    : SurfaceCollisionState.Pending;
-            case CellState.Cached:
-            case CellState.Queued:
-            case CellState.Loading:
-                return SurfaceCollisionState.Pending;
-            default:
-                return SurfaceCollisionState.Pending;
-        }
-    }
-
     /// <summary>
     /// Request the standing cell (and near neighbors), bump them to the front of the
     /// load queue, and grant a one-shot burst so zone-enter clears quickly.
@@ -139,13 +101,11 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
             return;
 
         _referenceCellId = cellId;
-        _unavailable.Remove(cellId);
 
         _layout.CollectNeighbors(cellId, PriorityNeighborRadius, _priorityNeighbors);
         for (int i = 0; i < _priorityNeighbors.Count; i++)
         {
             int id = _priorityNeighbors[i];
-            _unavailable.Remove(id);
             RequestDesired(id);
         }
 
@@ -193,12 +153,11 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
         _queue.Clear();
         _warmOrder.Clear();
         _prepared.Clear();
-        _unavailable.Clear();
         _burstLoads = 0;
         _burstApplies = 0;
 
         foreach (var kv in _entries)
-            DestroyCollider(kv.Value);
+            UnloadSurface(kv.Value);
 
         _entries.Clear();
     }
@@ -347,12 +306,11 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
     {
         if (_entries.TryGetValue(cellId, out CellEntry entry))
         {
-            DestroyCollider(entry);
+            UnloadSurface(entry);
             _entries.Remove(cellId);
         }
 
         _queue.Remove(cellId);
-        _unavailable.Add(cellId);
     }
 
     void BumpQueueFront(int cellId)
@@ -394,7 +352,7 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
         return true;
     }
 
-    void DestroyCollider(CellEntry entry)
+    void UnloadSurface(CellEntry entry)
     {
         if (entry?.Surface == null)
         {
@@ -433,7 +391,7 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
             _warmOrder.RemoveAt(0);
             if (_entries.TryGetValue(evictId, out CellEntry entry) && entry.State == CellState.Cached && !entry.Desired)
             {
-                DestroyCollider(entry);
+                UnloadSurface(entry);
                 _entries.Remove(evictId);
             }
         }

@@ -58,11 +58,6 @@ public class N3Camera : MonoBehaviour
     float _zoomStep = 4f;
 
     [SerializeField]
-    [UnityEngine.Serialization.FormerlySerializedAs("_aimLayerMask")]
-    [Tooltip("What blocks the camera's line of sight. Defaults to the Ground layer.")]
-    LayerMask _collisionMask;
-
-    [SerializeField]
     internal Camera Camera;
 
     [Header("View")]
@@ -248,8 +243,6 @@ public class N3Camera : MonoBehaviour
 
     CameraViewMode _lastThirdPerson = DefaultViewMode;
 
-    int OcclusionMask => _collisionMask.value != 0 ? _collisionMask.value : GameLayers.GroundMask;
-
     bool HasLineOfSight(Vec3 from, Vec3 to)
     {
         Vector3 a = from.ToUnity();
@@ -260,14 +253,8 @@ public class N3Camera : MonoBehaviour
             return true;
 
         // Surface_i, not Unity physics: this is stock's own occlusion predicate
-        // (CameraVehicleFixedThird_t::RecalcOptimalPos's binary search), and it sees the statel cells
-        // that no longer have colliders. Falls back to physics only when no surface is bound -- the
-        // login backdrop has none.
-        if (LostEden.Vehicles.WorldCollision.HasSurface)
-            return !LostEden.Vehicles.WorldCollision.Blocked(a, b);
-
-        return !Physics.Raycast(a, delta / distance, distance, OcclusionMask,
-            QueryTriggerInteraction.Ignore);
+        // (CameraVehicleFixedThird_t::RecalcOptimalPos's binary search), and it sees the statel cells.
+        return !LostEden.Vehicles.WorldCollision.Blocked(a, b);
     }
 
     internal void SetInputs(ActorInput playerInput)
@@ -357,7 +344,7 @@ public class N3Camera : MonoBehaviour
 
         // A surface is only bound once there is something to occlude against; first person never
         // has one.
-        _vehicle.HasSurface = _third != null && OcclusionMask != 0;
+        _vehicle.HasSurface = _third != null && LostEden.Vehicles.WorldCollision.HasSurface;
 
         ApplyZoom();
 

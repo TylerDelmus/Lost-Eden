@@ -228,10 +228,9 @@ are the rest of the set; only `Arrive`/`Halt` are needed for the camera's first 
 ### 4.5 `EnsureSurfaceAlignment`
 
 `Vehicle_t::EnsureSurfaceAlignment` (`1000d1aa`, ordinal 110) is the ground clamp and collision
-gate, and at 4206 bytes it is the largest function in `Vehicle.dll`. It is **deliberately not
-ported**: its interior queries a `Surface_i` the port does not have, and Lost Eden already has its
-own terrain and collision (`PlayfieldLocality`, mesh colliders). Porting it faithfully would mean
-porting AO's surface representation too, which buys nothing for the camera.
+gate, and at 4206 bytes it is the largest function in `Vehicle.dll`. It is ported, together with
+the `Surface_i` stack it queries (terrain and statel cells); `Docs/Movement.md` §6 and §8 are the
+reference. The camera does not run it — it never enables falling.
 
 What was recovered and *is* worth honouring at the seam:
 
