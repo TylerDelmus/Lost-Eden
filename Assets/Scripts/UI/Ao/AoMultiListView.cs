@@ -38,13 +38,17 @@ public partial class AoMultiListView : AoView
 
     public AoMultiListView()
     {
+        AddToClassList("ao-multi-list-view");
+
+        // Stock styles the header through the path multilistview/columnheader.
         _header = new VisualElement { name = "columnheader" };
         _header.style.flexDirection = FlexDirection.Row;
-        _header.AddToClassList("multilistview__columnheader");
+        _header.AddToClassList("ao-multi-list-view__header");
         hierarchy.Add(_header);
 
         _body = new AoScrollView { name = "listbody" };
         _body.style.flexGrow = 1f;
+        _body.AddToClassList("ao-multi-list-view__body");
         hierarchy.Add(_body);
     }
 
@@ -150,6 +154,9 @@ public partial class AoMultiListView : AoView
         }
 
         ApplySort();
+        for (int i = 0; i < _header.childCount; i++)
+            if (_header[i] is AoColumnHeaderView head)
+                head.SetSorted(i == _sortColumn, _sortAscending);
         SortChanged?.Invoke(_sortColumn, _sortAscending);
     }
 
@@ -186,17 +193,36 @@ public partial class AoMultiListView : AoView
 [UxmlElement]
 public partial class AoColumnHeaderView : AoView
 {
-    readonly Label _label;
+    readonly AoLabel _label;
+    readonly AoCaret _caret;
 
     public event Action Clicked;
 
     public AoColumnHeaderView()
     {
-        AddToClassList("multilistview__columnheader__cell");
-        _label = new Label { pickingMode = PickingMode.Ignore };
+        AddToClassList("ao-column-header-view");
+        style.flexDirection = FlexDirection.Row;
+        _label = new AoLabel();
+        _label.AddToClassList("ao-column-header-view__label");
         Add(_label);
+        _caret = new AoCaret();
+        _caret.AddToClassList("ao-column-header-view__caret");
+        _caret.style.display = DisplayStyle.None;
+        Add(_caret);
         pickingMode = PickingMode.Position;
         RegisterCallback<ClickEvent>(_ => Clicked?.Invoke());
+    }
+
+    /// <summary>
+    /// Marks this column as the sort key. Published as <c>ao-column-header-view--sorted</c>
+    /// (and <c>--descending</c>), and shown by the caret.
+    /// </summary>
+    public void SetSorted(bool sorted, bool ascending)
+    {
+        EnableInClassList("ao-column-header-view--sorted", sorted);
+        EnableInClassList("ao-column-header-view--descending", sorted && !ascending);
+        _caret.style.display = sorted ? DisplayStyle.Flex : DisplayStyle.None;
+        _caret.PointsUp = ascending;
     }
 
     /// <summary>Stock <c>column_id</c>: stable identity so column order can be persisted.</summary>
@@ -206,8 +232,8 @@ public partial class AoColumnHeaderView : AoView
     [UxmlAttribute("title")]
     public string Title
     {
-        get => _label?.text;
-        set { if (_label != null) _label.text = value ?? string.Empty; }
+        get => _label?.RawText;
+        set { if (_label != null) _label.RawText = value; }
     }
 }
 
@@ -228,7 +254,7 @@ public partial class AoMultiListViewItem : AoView
 
     public AoMultiListViewItem()
     {
-        AddToClassList("multilistview__item");
+        AddToClassList("ao-multi-list-view-item");
         style.flexDirection = FlexDirection.Row;
         pickingMode = PickingMode.Position;
         RegisterCallback<ClickEvent>(OnClick);
@@ -250,6 +276,7 @@ public partial class AoMultiListViewItem : AoView
         for (int i = 0; i < cells.Count; i++)
         {
             var cell = new Label(cells[i] ?? string.Empty) { pickingMode = PickingMode.Ignore };
+            cell.AddToClassList("ao-multi-list-view-item__cell");
             if (i < columns.Count)
                 cell.style.width = columns[i].Width;
 
@@ -264,7 +291,7 @@ public partial class AoMultiListViewItem : AoView
     internal void SetSelected(bool selected)
     {
         IsSelected = selected;
-        EnableInClassList("multilistview__item--selected", selected);
+        EnableInClassList("ao-multi-list-view-item--selected", selected);
     }
 
     /// <summary>Arbitrary payload the owner hangs off a row (an item id, a mission ref…).</summary>

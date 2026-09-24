@@ -1,0 +1,458 @@
+/* ============================================================================
+   Phosphor — Lost Eden's default skin.
+
+   The same design language as the PHOSPHOR kit in malis-ao-toolkit-web: flat
+   near-black surfaces, 1px lines, amber for anything you can act on, cyan
+   for numbers, and stock AO's own 1-bit Verdana for every glyph.
+
+   A skin is a stylesheet over the Ao* views. It decides how each view looks.
+   It does not decide what the views are or how they behave. That lives in
+   the C# (Assets/Scripts/UI/Ao), and a skin cannot change it.
+
+   ── What a skin can reach ──────────────────────────────────────────────
+
+   Every view carries `ao-view` plus its own block class, named after the
+   stock class it ports (AoButton -> .ao-button, AoTextView -> .ao-text-view).
+   Its parts are `block__part` and its states `block--state`:
+
+     .ao-button            __label   --pressed  --on (toggled)   :hover :disabled
+     .ao-text-button       __label   --pressed  --on
+     .ao-text-view         __label
+     .ao-border-view                                       the framed box
+     .ao-scroll-view       __scroller
+     .ao-text-input-view   __field
+     .ao-combo-box         __field  __toggle  __popup  __entry   --open
+     .ao-multi-list-view   __header  __body
+     .ao-column-header-view  __label  __caret  --sorted  --descending
+     .ao-multi-list-view-item  __cell  --selected
+     .ao-item-container-view
+     .ao-item-slot-view    --empty
+     .ao-item-icon-view    __stack
+     .ao-caret             --up         (drawn in its `color`)
+     .ao-font--<key>       stock's font keys: small, normal, large, huge, cc17
+
+   UI Toolkit has no text-transform. Set `--ao-text-transform: uppercase`
+   on a __label instead and the view applies it.
+
+   ── Pixel-exact text ───────────────────────────────────────────────────
+
+   The fonts are bitmaps. Each one is exact only at its own cell height,
+   through the standard text generator, on a whole-number panel scale.
+   So a font is always set as a triple: family, size, generator. See
+   Docs/UI.md §8a.
+   ========================================================================= */
+
+/* ─── Tokens ───────────────────────────────────────────────────────────── */
+
+:root {
+    /* Surfaces, near-black through to raised. */
+    --ao-bg-0: #06080b;
+    --ao-bg-1: #0c1016;
+    --ao-bg-2: #121821;
+    --ao-bg-3: #1a222d;
+    --ao-bg-4: #24303e;
+
+    --ao-line: #223040;
+    --ao-line-hi: #35465a;
+
+    /* Text */
+    --ao-fg: #ccd6e0;
+    --ao-fg-hi: #ffffff;
+    --ao-fg-dim: #7c8b9c;
+    --ao-fg-mute: #4d5a6a;
+
+    /* Amber drives interaction, cyan marks data. */
+    --ao-accent: #ffb454;
+    --ao-accent-lo: #4a3720;
+    --ao-info: #56d4e8;
+    --ao-info-lo: #17383f;
+    --ao-good: #8ce99a;
+    --ao-warn: #ffd43b;
+    --ao-bad: #ff6b6b;
+
+    --ao-window: #0c1016;
+    --ao-panel: #121821;
+    --ao-selection: rgba(255, 180, 84, 0.35);
+}
+
+/* ─── Type ─────────────────────────────────────────────────────────────── */
+
+/* The combo box's open list is listed too: while open it sits at the top of
+   the panel, outside every view, so it would not inherit a view's font. */
+.ao-view,
+.ao-combo-box__popup {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Verdana/verdana-13.pixelfont");
+    font-size: 13px;
+    -unity-text-generator: standard;
+    -unity-font-style: normal;
+}
+
+/* Stock font keys. Which face each key maps to is this skin's choice; stock's
+   own mapping has not been recovered. */
+.ao-view.ao-font--small {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Verdana/verdana-12.pixelfont");
+    font-size: 12px;
+}
+
+.ao-view.ao-font--normal {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Verdana/verdana-13.pixelfont");
+    font-size: 13px;
+}
+
+.ao-view.ao-font--cc17 {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Verdana/verdana-14.pixelfont");
+    font-size: 14px;
+}
+
+.ao-view.ao-font--large {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Verdana/verdana-16.pixelfont");
+    font-size: 16px;
+}
+
+.ao-view.ao-font--huge {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Verdana/verdana-bold-20.pixelfont");
+    font-size: 20px;
+}
+
+/* Every text element under a view starts from nothing: the default theme's
+   label padding would put glyphs on half pixels once centred. */
+.ao-view .unity-label {
+    padding: 0;
+    margin: 0;
+}
+
+/* ─── Text ─────────────────────────────────────────────────────────────── */
+
+.ao-text-view {
+    color: var(--ao-fg);
+}
+
+/* ─── Border view: the framed box ───────────────────────────────────────── */
+
+.ao-border-view {
+    background-color: var(--ao-panel);
+    border-width: 1px;
+    border-color: var(--ao-line);
+}
+
+/* ─── Buttons ──────────────────────────────────────────────────────────── */
+
+.ao-button {
+    /* Views flow as a column (stock's default layout), so the label is
+       centred across by align-items and down by justify-content. */
+    align-items: center;
+    justify-content: center;
+    height: 20px;
+    padding: 0 8px;
+    background-color: var(--ao-bg-3);
+    border-width: 1px;
+    border-color: var(--ao-line);
+    color: var(--ao-fg);
+}
+
+.ao-button__label {
+    --ao-text-transform: uppercase;
+    -unity-text-align: middle-center;
+}
+
+.ao-button:hover {
+    background-color: var(--ao-bg-4);
+    border-color: var(--ao-line-hi);
+    color: var(--ao-fg-hi);
+}
+
+.ao-button.ao-button--pressed {
+    background-color: var(--ao-bg-2);
+}
+
+.ao-button.ao-button--on {
+    background-color: var(--ao-accent-lo);
+    border-color: var(--ao-accent);
+    color: var(--ao-accent);
+}
+
+.ao-button:disabled {
+    background-color: var(--ao-bg-3);
+    border-color: var(--ao-line);
+    color: var(--ao-fg-mute);
+    opacity: 1;
+}
+
+.ao-text-button {
+    color: var(--ao-fg-dim);
+}
+
+.ao-text-button:hover {
+    color: var(--ao-fg-hi);
+}
+
+.ao-text-button.ao-text-button--pressed,
+.ao-text-button.ao-text-button--on {
+    color: var(--ao-accent);
+}
+
+/* ─── Text input ───────────────────────────────────────────────────────── */
+
+.ao-text-input-view__field,
+.ao-combo-box__field {
+    margin: 0;
+    flex-grow: 1;
+}
+
+.ao-text-input-view__field > .unity-base-text-field__input,
+.ao-combo-box__field > .unity-base-text-field__input {
+    height: 20px;
+    margin: 0;
+    padding: 0 4px;
+    background-color: var(--ao-bg-0);
+    border-width: 1px;
+    border-radius: 0;
+    border-color: var(--ao-line);
+    color: var(--ao-fg);
+    --unity-cursor-color: var(--ao-accent);
+    --unity-selection-color: var(--ao-selection);
+}
+
+.ao-text-input-view__field:hover > .unity-base-text-field__input,
+.ao-combo-box__field:hover > .unity-base-text-field__input {
+    border-color: var(--ao-line-hi);
+}
+
+.ao-text-input-view__field:focus > .unity-base-text-field__input,
+.ao-combo-box__field:focus > .unity-base-text-field__input {
+    border-color: var(--ao-accent);
+}
+
+.ao-text-input-view__field > .unity-base-field__label {
+    min-width: 0;
+    padding: 0;
+    margin: 0 8px 0 0;
+    color: var(--ao-fg-dim);
+    -unity-text-align: middle-left;
+}
+
+/* ─── Combo box ────────────────────────────────────────────────────────── */
+
+/* The toggle shares the field's frame: no left edge, so the two read as one
+   control. */
+.ao-combo-box__toggle {
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--ao-bg-3);
+    border-width: 1px 1px 1px 0;
+    border-radius: 0;
+    border-color: var(--ao-line);
+    color: var(--ao-fg-mute);
+}
+
+.ao-combo-box__toggle:hover {
+    background-color: var(--ao-bg-4);
+    color: var(--ao-fg);
+}
+
+.ao-combo-box.ao-combo-box--open > .ao-combo-box__toggle {
+    color: var(--ao-accent);
+}
+
+.ao-combo-box__popup {
+    margin-top: -1px;
+    background-color: var(--ao-bg-2);
+    border-width: 1px;
+    border-color: var(--ao-line-hi);
+}
+
+.ao-combo-box__entry {
+    height: 20px;
+    margin: 0;
+    padding: 0 4px;
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+    border-radius: 0;
+    color: var(--ao-fg);
+    -unity-text-align: middle-left;
+}
+
+.ao-combo-box__entry:hover {
+    background-color: var(--ao-bg-4);
+    color: var(--ao-fg-hi);
+}
+
+/* ─── Scroll view ──────────────────────────────────────────────────────── */
+
+/* 8px bars, flat track, a thumb with a 1px edge, and no arrow buttons. */
+.ao-scroll-view .unity-scroller--vertical {
+    width: 8px;
+}
+
+.ao-scroll-view .unity-scroller--horizontal {
+    height: 8px;
+}
+
+.ao-scroll-view .unity-scroller__low-button,
+.ao-scroll-view .unity-scroller__high-button {
+    display: none;
+}
+
+.ao-scroll-view .unity-scroller > .unity-scroller__slider {
+    margin: 0;
+    min-width: 0;
+    min-height: 0;
+    flex-grow: 1;
+}
+
+.ao-scroll-view .unity-scroller--vertical > .unity-scroller__slider {
+    width: 8px;
+}
+
+.ao-scroll-view .unity-scroller--horizontal > .unity-scroller__slider {
+    height: 8px;
+}
+
+.ao-scroll-view .unity-scroller__slider .unity-base-slider__input,
+.ao-scroll-view .unity-scroller__slider .unity-base-slider__drag-container {
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    min-height: 0;
+}
+
+.ao-scroll-view .unity-base-slider__tracker {
+    margin: 0;
+    background-color: var(--ao-bg-0);
+    border-width: 0;
+    border-radius: 0;
+}
+
+.ao-scroll-view .unity-base-slider__dragger {
+    margin: 0;
+    background-color: var(--ao-bg-4);
+    border-width: 1px;
+    border-radius: 0;
+    border-color: var(--ao-line);
+}
+
+.ao-scroll-view .unity-base-slider__dragger:hover {
+    background-color: var(--ao-line-hi);
+}
+
+.ao-scroll-view .unity-scroller--vertical .unity-base-slider__tracker,
+.ao-scroll-view .unity-scroller--vertical .unity-base-slider__dragger {
+    left: 0;
+    width: 8px;
+}
+
+.ao-scroll-view .unity-scroller--horizontal .unity-base-slider__tracker,
+.ao-scroll-view .unity-scroller--horizontal .unity-base-slider__dragger {
+    top: 0;
+    height: 8px;
+}
+
+.ao-scroll-view .unity-base-slider__dragger-border {
+    display: none;
+}
+
+/* ─── Multi-column list ────────────────────────────────────────────────── */
+
+.ao-multi-list-view {
+    background-color: var(--ao-panel);
+    border-width: 1px;
+    border-color: var(--ao-line);
+}
+
+.ao-multi-list-view__header {
+    height: 20px;
+    background-color: var(--ao-bg-3);
+    border-bottom-width: 1px;
+    border-color: var(--ao-line);
+}
+
+.ao-column-header-view {
+    align-items: center;
+    padding: 0 8px;
+    border-right-width: 1px;
+    border-color: var(--ao-line);
+    color: var(--ao-fg-dim);
+}
+
+.ao-column-header-view__label {
+    --ao-text-transform: uppercase;
+    flex-grow: 1;
+    flex-shrink: 1;
+    overflow: hidden;
+}
+
+.ao-column-header-view:hover {
+    background-color: var(--ao-bg-4);
+    color: var(--ao-fg);
+}
+
+.ao-column-header-view.ao-column-header-view--sorted {
+    color: var(--ao-accent);
+}
+
+.ao-column-header-view__caret {
+    margin-left: 4px;
+}
+
+.ao-multi-list-view-item {
+    align-items: center;
+    min-height: 20px;
+    border-bottom-width: 1px;
+    border-color: var(--ao-line);
+    color: var(--ao-fg);
+}
+
+.ao-multi-list-view-item:hover {
+    background-color: var(--ao-bg-3);
+}
+
+.ao-multi-list-view-item.ao-multi-list-view-item--selected {
+    background-color: var(--ao-bg-4);
+    color: var(--ao-fg-hi);
+}
+
+.ao-multi-list-view-item__cell {
+    padding: 0 8px;
+    overflow: hidden;
+    -unity-text-overflow-position: end;
+    text-overflow: ellipsis;
+}
+
+/* ─── Items ────────────────────────────────────────────────────────────── */
+
+.ao-item-container-view {
+    padding: 4px;
+}
+
+/* 48px: stock icon art is 48x48, and only whole divisors of it stay sharp. */
+.ao-item-slot-view {
+    width: 48px;
+    height: 48px;
+    margin: 0 4px 4px 0;
+    background-color: var(--ao-bg-0);
+    border-width: 1px;
+    border-color: var(--ao-line);
+}
+
+.ao-item-slot-view:hover {
+    border-color: var(--ao-line-hi);
+}
+
+.ao-item-slot-view.ao-item-slot-view--empty {
+    border-color: var(--ao-bg-3);
+}
+
+.ao-item-icon-view {
+    flex-grow: 1;
+    justify-content: flex-end;
+    align-items: flex-end;
+}
+
+.ao-item-icon-view__stack {
+    margin: 0 2px 1px 0;
+    color: var(--ao-info);
+}

@@ -3,13 +3,13 @@
 
     <!-- Built from the Ao* widget classes ported from GUI.dll. Stock's LoginWindow.xml covers
          the username/password/buttons; the AO-path step and the dimension picker are ours,
-         since the real client ships in place and picks its dimension elsewhere. USS class
-         names are unchanged so the existing LoginScreen.uss still styles it. -->
+         since the real client ships in place and picks its dimension elsewhere. The panels
+         are AoBorderViews so the skin frames them; LoginScreen.uss only lays them out. -->
     <AoView name="root" class="login-root" view_layout="vertical">
 
-        <AoView name="aopath-panel" class="panel aopath-panel" view_layout="vertical">
+        <AoBorderView name="aopath-panel" class="panel aopath-panel" view_layout="vertical">
             <AoView name="aopath-content" class="login-content" view_layout="vertical">
-                <AoTextView value="Locate Anarchy Online" class="title"/>
+                <AoTextView value="Locate Anarchy Online" font="HUGE" class="title"/>
                 <AoTextView value="Select your Anarchy Online installation folder." class="field-label"/>
                 <AoTextInputView name="aopath-field" class="text-field"/>
                 <AoButton name="browse-button" label="Browse..." class="browse-button"/>
@@ -17,9 +17,9 @@
                 <AoTextView name="aopath-status-text" value="" class="status-text"/>
             </AoView>
             <AoButton name="aopath-confirm-button" label="Continue" class="connect-button"/>
-        </AoView>
+        </AoBorderView>
 
-        <AoView name="login-panel" class="panel login-panel" view_layout="vertical">
+        <AoBorderView name="login-panel" class="panel login-panel" view_layout="vertical">
             <AoView name="login-content" class="login-content" view_layout="vertical">
                 <AoTextView value="Username" class="field-label"/>
                 <AoComboBox name="username-field" class="text-field"/>
@@ -31,18 +31,18 @@
                 <AoTextView name="status-text" value="" class="status-text"/>
             </AoView>
             <AoButton name="connect-button" label="Login" class="connect-button"/>
-        </AoView>
+        </AoBorderView>
 
-        <AoView name="character-panel" class="panel character-panel" view_layout="vertical">
+        <AoBorderView name="character-panel" class="panel character-panel" view_layout="vertical">
             <AoView name="character-content" class="character-content" view_layout="vertical">
-                <AoTextView value="Select Character" class="title"/>
+                <AoTextView value="Select Character" font="HUGE" class="title"/>
                 <AoScrollView name="character-scroll" class="character-scroll" v_scrollbar_mode="auto">
                     <AoScrollViewChild name="character-list" class="character-list" view_layout="vertical"/>
                 </AoScrollView>
                 <AoTextView name="character-status-text" value="" class="status-text"/>
             </AoView>
             <AoButton name="back-button" label="Back" class="back-button"/>
-        </AoView>
+        </AoBorderView>
 
     </AoView>
 </ui:UXML>

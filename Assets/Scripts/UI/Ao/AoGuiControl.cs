@@ -14,6 +14,8 @@ using UnityEngine.UIElements;
 [UxmlElement]
 public partial class AoGuiControl : AoView
 {
+    public AoGuiControl() => AddToClassList("ao-gui-control");
+
     /// <summary>
     /// Stock <c>source_name</c>: the key this control binds to in the owning view's data,
     /// which is how stock wires a control to a DistributedValue_c without an explicit hookup.

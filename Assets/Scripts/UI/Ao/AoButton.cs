@@ -41,8 +41,20 @@ public abstract class AoButtonBase : AoGuiControl
     /// </summary>
     public bool IsToggle { get; set; }
 
-    protected AoButtonBase()
+    readonly string _pressedClass;
+    readonly string _onClass;
+
+    /// <param name="block">
+    /// The concrete button's USS block name. Hover and disabled come from the <c>:hover</c> and
+    /// <c>:disabled</c> pseudo-classes; the two states UI Toolkit has no pseudo-class for are
+    /// published as <c>block--pressed</c> and <c>block--on</c> (toggled).
+    /// </param>
+    protected AoButtonBase(string block)
     {
+        AddToClassList(block);
+        _pressedClass = block + "--pressed";
+        _onClass = block + "--on";
+
         focusable = true;
         pickingMode = PickingMode.Position;
 
@@ -71,8 +83,15 @@ public abstract class AoButtonBase : AoGuiControl
         Clicked?.Invoke();
     }
 
+    void OnStateChanged()
+    {
+        EnableInClassList(_pressedClass, _pressed);
+        EnableInClassList(_onClass, _toggled);
+        OnButtonStateChanged();
+    }
+
     /// <summary>Hook for derived buttons to repaint on press/hover/toggle changes.</summary>
-    protected virtual void OnStateChanged()
+    protected virtual void OnButtonStateChanged()
     {
     }
 }
@@ -85,15 +104,13 @@ public abstract class AoButtonBase : AoGuiControl
 [UxmlElement]
 public partial class AoButton : AoButtonBase
 {
-    readonly Label _label;
+    readonly AoLabel _label;
 
-    public AoButton()
+    public AoButton() : base("ao-button")
     {
-        _label = new Label { pickingMode = PickingMode.Ignore };
+        _label = new AoLabel();
+        _label.AddToClassList("ao-button__label");
         Add(_label);
-        style.flexDirection = FlexDirection.Row;
-        style.justifyContent = Justify.Center;
-        style.alignItems = Align.Center;
     }
 
     string _labelText;
@@ -104,7 +121,7 @@ public partial class AoButton : AoButtonBase
     public string Label
     {
         get => _labelText;
-        set { _labelText = value; OnStateChanged(); }
+        set { _labelText = value; OnButtonStateChanged(); }
     }
 
     /// <summary>Stock <c>toggled_label</c>: replaces the label while toggled.</summary>
@@ -112,16 +129,15 @@ public partial class AoButton : AoButtonBase
     public string ToggledLabel
     {
         get => _toggledLabel;
-        set { _toggledLabel = value; OnStateChanged(); }
+        set { _toggledLabel = value; OnButtonStateChanged(); }
     }
 
-    protected override void OnStateChanged()
+    protected override void OnButtonStateChanged()
     {
         if (_label == null)
             return;
 
-        _label.text = (Toggled && !string.IsNullOrEmpty(_toggledLabel) ? _toggledLabel : _labelText)
-                      ?? string.Empty;
+        _label.RawText = Toggled && !string.IsNullOrEmpty(_toggledLabel) ? _toggledLabel : _labelText;
     }
 }
 
@@ -132,54 +148,71 @@ public partial class AoButton : AoButtonBase
 [UxmlElement]
 public partial class AoTextButton : AoButtonBase
 {
-    readonly Label _label;
+    readonly AoLabel _label;
 
-    public AoTextButton()
+    public AoTextButton() : base("ao-text-button")
     {
-        _label = new Label { pickingMode = PickingMode.Ignore };
+        _label = new AoLabel();
+        _label.AddToClassList("ao-text-button__label");
         Add(_label);
     }
 
     [UxmlAttribute("text")]
     public string Text
     {
-        get => _label?.text;
-        set { if (_label != null) _label.text = value ?? string.Empty; }
+        get => _label?.RawText;
+        set { if (_label != null) _label.RawText = value; }
     }
 
-    [UxmlAttribute("font")] public string Font { get; set; }
+    string _font;
+
+    /// <summary>Stock <c>font</c> key, applied as <c>ao-font--key</c>; see <see cref="AoTextView.Font"/>.</summary>
+    [UxmlAttribute("font")]
+    public string Font
+    {
+        get => _font;
+        set { SwapFontClass(this, _font, value); _font = value; }
+    }
 
     // Stock ships these as AO literals (0x0080E9F3) or GUIColors.xml names, neither of which
     // Unity's Color attribute understands — see AoColors.
+    //
+    // A state with no colour of its own falls back to the skin rather than to white, so a
+    // button authored without colours is styled entirely by .ao-text-button and its states.
     string _colorSpec, _hoverSpec, _pressedSpec;
-    Color _normal = Color.white, _hover = Color.white, _pressed = Color.white;
+    Color? _normal, _hover, _pressed;
 
     [UxmlAttribute("color")]
     public string ColorSpec
     {
         get => _colorSpec;
-        set { _colorSpec = value; _normal = AoColors.Resolve(value, Color.white); OnStateChanged(); }
+        set { _colorSpec = value; _normal = Parse(value); OnButtonStateChanged(); }
     }
 
     [UxmlAttribute("hover_color")]
     public string HoverColorSpec
     {
         get => _hoverSpec;
-        set { _hoverSpec = value; _hover = AoColors.Resolve(value, Color.white); OnStateChanged(); }
+        set { _hoverSpec = value; _hover = Parse(value); OnButtonStateChanged(); }
     }
 
     [UxmlAttribute("pressed_color")]
     public string PressedColorSpec
     {
         get => _pressedSpec;
-        set { _pressedSpec = value; _pressed = AoColors.Resolve(value, Color.white); OnStateChanged(); }
+        set { _pressedSpec = value; _pressed = Parse(value); OnButtonStateChanged(); }
     }
 
-    protected override void OnStateChanged()
+    static Color? Parse(string spec) => AoColors.TryParse(spec, out Color c) ? c : null;
+
+    protected override void OnButtonStateChanged()
     {
         if (_label == null)
             return;
 
-        _label.style.color = IsPressed ? _pressed : IsHovered ? _hover : _normal;
+        Color? color = IsPressed ? _pressed ?? _hover ?? _normal
+                     : IsHovered ? _hover ?? _normal
+                     : _normal;
+        _label.style.color = color.HasValue ? new StyleColor(color.Value) : new StyleColor(StyleKeyword.Null);
     }
 }

@@ -14,6 +14,8 @@ public partial class AoFadingTextView : AoTextView
 {
     IVisualElementScheduledItem _fade;
 
+    public AoFadingTextView() => AddToClassList("ao-fading-text-view");
+
     /// <summary>Seconds the text stays fully opaque before the fade starts.</summary>
     [UxmlAttribute("hold_seconds")]
     public float HoldSeconds { get; set; } = 3f;

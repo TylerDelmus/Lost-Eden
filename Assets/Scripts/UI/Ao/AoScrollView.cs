@@ -24,10 +24,12 @@ public partial class AoScrollView : AoGuiControl
 
     public AoScrollView()
     {
+        AddToClassList("ao-scroll-view");
         _scroll = new ScrollView(ScrollViewMode.Vertical)
         {
             style = { flexGrow = 1f }
         };
+        _scroll.AddToClassList("ao-scroll-view__scroller");
         hierarchy.Add(_scroll);
         ApplyScrollbarModes();
     }
@@ -84,6 +86,7 @@ public partial class AoScrollView : AoGuiControl
 [UxmlElement]
 public partial class AoScrollViewChild : AoView
 {
+    public AoScrollViewChild() => AddToClassList("ao-scroll-view-child");
 }
 
 public enum AoScrollbarMode

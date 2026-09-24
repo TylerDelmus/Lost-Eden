@@ -9,6 +9,8 @@ using UnityEngine.UIElements;
 [UxmlElement]
 public partial class AoItemListViewBase : AoMultiListView
 {
+    public AoItemListViewBase() => AddToClassList("ao-item-list-view-base");
+
     /// <summary>Stock <c>listview_flags</c>, kept raw until the bits are recovered.</summary>
     [UxmlAttribute("listview_flags")]
     public int ListViewFlags { get; set; }
@@ -29,6 +31,17 @@ public partial class AoItemContainerView : AoView
     public event Action<int, int> SlotDropped;
 
     int _capacity;
+
+    public AoItemContainerView()
+    {
+        AddToClassList("ao-item-container-view");
+
+        // A container of slots is a grid: rows fill left to right and wrap. That arrangement
+        // is the view's rule, not its look, so a skin can space the slots but not unflow them.
+        style.flexDirection = FlexDirection.Row;
+        style.flexWrap = Wrap.Wrap;
+        style.alignContent = Align.FlexStart;
+    }
 
     /// <summary>Number of slots; rebuilding is the owner's job via <see cref="Rebuild"/>.</summary>
     public int Capacity => _capacity;
@@ -69,7 +82,8 @@ public partial class AoItemSlotView : AoView
 
     public AoItemSlotView()
     {
-        AddToClassList("itemslot");
+        AddToClassList("ao-item-slot-view");
+        AddToClassList("ao-item-slot-view--empty");
         pickingMode = PickingMode.Position;
         _icon = new AoItemIconView { pickingMode = PickingMode.Ignore };
         Add(_icon);
@@ -91,6 +105,7 @@ public partial class AoItemSlotView : AoView
         _icon.ItemId = itemId;
         _icon.IconId = iconId;
         _icon.StackCount = stackCount;
+        EnableInClassList("ao-item-slot-view--empty", itemId == 0);
     }
 
     public void ClearItem() => SetItem(0, 0, 0);
@@ -119,9 +134,9 @@ public partial class AoItemIconView : AoView
 
     public AoItemIconView()
     {
-        AddToClassList("itemicon");
+        AddToClassList("ao-item-icon-view");
         _stackLabel = new Label { pickingMode = PickingMode.Ignore };
-        _stackLabel.AddToClassList("itemicon__stack");
+        _stackLabel.AddToClassList("ao-item-icon-view__stack");
         _stackLabel.style.display = DisplayStyle.None;
         Add(_stackLabel);
     }

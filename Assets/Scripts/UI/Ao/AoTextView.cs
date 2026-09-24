@@ -15,11 +15,15 @@ using UnityEngine.UIElements;
 [UxmlElement]
 public partial class AoTextView : AoScrollView
 {
-    readonly Label _label;
+    readonly AoLabel _label;
 
     public AoTextView()
     {
-        _label = new Label { style = { whiteSpace = WhiteSpace.Normal } };
+        AddToClassList("ao-text-view");
+        // Wrapping is stock behaviour (a TextView is a scroll view around wrapped text), not a
+        // look, so it is set here rather than left to the skin.
+        _label = new AoLabel { style = { whiteSpace = WhiteSpace.Normal } };
+        _label.AddToClassList("ao-text-view__label");
         Add(_label);
     }
 
@@ -34,7 +38,7 @@ public partial class AoTextView : AoScrollView
         {
             _value = value;
             if (_label != null)
-                _label.text = value ?? string.Empty;
+                _label.RawText = value;
         }
     }
 
@@ -43,6 +47,7 @@ public partial class AoTextView : AoScrollView
 
     /// <summary>
     /// Stock <c>color</c>: a GUIColors.xml name or an AO literal. See <see cref="AoColors"/>.
+    /// Only an explicit colour is written inline; without one the skin's text colour stands.
     /// </summary>
     [UxmlAttribute("color")]
     public string ColorSpec
@@ -53,19 +58,25 @@ public partial class AoTextView : AoScrollView
             _colorSpec = value;
             _color = AoColors.Resolve(value, Color.white);
             if (_label != null)
-                _label.style.color = _color;
+                _label.style.color = AoColors.TryParse(value, out Color c) ? new StyleColor(c) : new StyleColor(StyleKeyword.Null);
         }
     }
 
     /// <summary>The resolved text colour.</summary>
     public Color ResolvedColor => _color;
 
+    string _font;
+
     /// <summary>
-    /// Stock <c>font</c>: a GUI font key such as <c>CC17</c>, resolved from the client's font
-    /// table. Carried until the font pass maps those keys to assets.
+    /// Stock <c>font</c>: a GUI font key such as <c>LARGE</c> or <c>CC17</c>. Applied as the
+    /// class <c>ao-font--large</c>; the skin maps each key to a face and size.
     /// </summary>
     [UxmlAttribute("font")]
-    public string Font { get; set; }
+    public string Font
+    {
+        get => _font;
+        set { SwapFontClass(this, _font, value); _font = value; }
+    }
 
     /// <summary>Stock <c>use_macros</c>: run the value through stock's macro expansion.</summary>
     [UxmlAttribute("use_macros")]
@@ -76,5 +87,5 @@ public partial class AoTextView : AoScrollView
     public int FeatureFlags { get; set; }
 
     /// <summary>The label element, for callers that need to style it directly.</summary>
-    public Label TextElement => _label;
+    public AoLabel TextElement => _label;
 }

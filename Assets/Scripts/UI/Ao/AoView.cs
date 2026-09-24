@@ -35,8 +35,17 @@ public partial class AoView : VisualElement
     string _widthGroup;
     string _heightGroup;
 
+    /// <summary>
+    /// USS class every Ao* view carries. Each derived class adds its own block name as well
+    /// (<c>ao-button</c>, <c>ao-text-view</c>, ...) and names its parts <c>block__part</c> and
+    /// its states <c>block--state</c>. Those names are what a skin styles, so they are API.
+    /// </summary>
+    public const string UssClassName = "ao-view";
+
     public AoView()
     {
+        AddToClassList(UssClassName);
+
         // Stock View is a plain box that lays its children out through a LayoutNode; the
         // default node is vertical.
         style.flexDirection = FlexDirection.Column;
@@ -407,6 +416,23 @@ public partial class AoView : VisualElement
     /// </summary>
     [UxmlAttribute("view_enable_expression")]
     public string EnableExpression { get; set; }
+
+    // ---- stock: font -------------------------------------------------------------------
+
+    /// <summary>
+    /// Stock's <c>font</c> attribute names a GUI font key (<c>NORMAL</c>, <c>LARGE</c>,
+    /// <c>HUGE</c>, <c>CC17</c> ...). It becomes the class <c>ao-font--large</c> and so on, and
+    /// the skin decides which face and size each key draws with.
+    /// </summary>
+    protected static void SwapFontClass(VisualElement element, string oldKey, string newKey)
+    {
+        if (!string.IsNullOrEmpty(oldKey))
+            element.RemoveFromClassList(FontClass(oldKey));
+        if (!string.IsNullOrEmpty(newKey))
+            element.AddToClassList(FontClass(newKey));
+    }
+
+    static string FontClass(string key) => "ao-font--" + key.Trim().ToLowerInvariant();
 
     // ---- visibility ---------------------------------------------------------------------
 

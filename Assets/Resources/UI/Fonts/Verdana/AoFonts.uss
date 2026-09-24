@@ -1,0 +1,54 @@
+/*
+ * Stock AO's Verdana, one class per entry in GUI.dll's font table (0x10272df0).
+ *
+ * Each class sets all three properties together because the font only comes out pixel-exact
+ * when all three hold:
+ *   - the standard text generator (the advanced one refuses static bitmap fonts);
+ *   - font-size equal to the atlas cell height, so every glyph is a 1:1 blit;
+ *   - a whole-number panel scale (1, 2, ...), which is the panel's job, not this sheet's.
+ *
+ * verdana-bold-24 is the table's 24; GDI's font mapper yields a 23px cell for it, and so
+ * does the game.
+ */
+
+.ao-font-verdana-12 {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Verdana/verdana-12.pixelfont");
+    font-size: 12px;
+    -unity-text-generator: standard;
+}
+
+.ao-font-verdana-13 {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Verdana/verdana-13.pixelfont");
+    font-size: 13px;
+    -unity-text-generator: standard;
+}
+
+.ao-font-verdana-14 {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Verdana/verdana-14.pixelfont");
+    font-size: 14px;
+    -unity-text-generator: standard;
+}
+
+.ao-font-verdana-16 {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Verdana/verdana-16.pixelfont");
+    font-size: 16px;
+    -unity-text-generator: standard;
+}
+
+.ao-font-verdana-bold-13 {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Verdana/verdana-bold-13.pixelfont");
+    font-size: 13px;
+    -unity-text-generator: standard;
+}
+
+.ao-font-verdana-bold-20 {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Verdana/verdana-bold-20.pixelfont");
+    font-size: 20px;
+    -unity-text-generator: standard;
+}
+
+.ao-font-verdana-bold-24 {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Verdana/verdana-bold-24.pixelfont");
+    font-size: 23px;
+    -unity-text-generator: standard;
+}

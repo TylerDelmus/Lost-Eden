@@ -19,6 +19,7 @@ public partial class AoViewSelector : AoGuiControl
 
     public AoViewSelector()
     {
+        AddToClassList("ao-view-selector");
         RegisterCallback<AttachToPanelEvent>(_ => ApplySelection());
     }
 
