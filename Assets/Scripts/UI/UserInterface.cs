@@ -120,10 +120,10 @@ public static class UserInterface
             Debug.LogError("[UserInterface] No Theme Style Sheet available. UI may not render properly.");
 
         var panelSettings = ScriptableObject.CreateInstance<PanelSettings>();
-        panelSettings.scaleMode = PanelScaleMode.ScaleWithScreenSize;
-        panelSettings.referenceResolution = new Vector2Int(1920, 1080);
-        panelSettings.screenMatchMode = PanelScreenMatchMode.MatchWidthOrHeight;
-        panelSettings.match = 0.5f;
+        // One UI pixel is one screen pixel, whatever the resolution: the fonts are bitmaps and
+        // only draw exactly at a whole-number scale (Docs/UI.md §8a).
+        panelSettings.scaleMode = PanelScaleMode.ConstantPixelSize;
+        panelSettings.scale = 1f;
         panelSettings.themeStyleSheet = theme;
         panelSettings.textSettings = LoadDefaultTextSettings();
         return panelSettings;

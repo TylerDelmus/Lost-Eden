@@ -19,7 +19,9 @@ public partial class AoTextInputView : AoView
 
     public AoTextInputView()
     {
+        AddToClassList("ao-text-input-view");
         _field = new TextField { isDelayed = false };
+        _field.AddToClassList("ao-text-input-view__field");
         _field.RegisterValueChangedCallback(evt => ValueChanged?.Invoke(evt.newValue));
         // TrickleDown so Return is seen before the field commits focus, matching stock's
         // capture_enter behaviour.

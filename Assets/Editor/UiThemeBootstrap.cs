@@ -21,9 +21,12 @@ static class UiThemeBootstrap
         EnsurePanelSettingsAsset();
     }
 
+    // Both checks are on the file, not on the loaded asset. This runs on every domain reload,
+    // and mid-reimport the asset can fail to load for a moment. A load check then overwrote
+    // the real theme (which imports the skin) with this stub.
     static void EnsureThemeAsset()
     {
-        if (AssetDatabase.LoadAssetAtPath<ThemeStyleSheet>(ThemePath) != null)
+        if (File.Exists(ThemePath))
             return;
 
         Directory.CreateDirectory(Path.GetDirectoryName(ThemePath)!);
@@ -33,7 +36,7 @@ static class UiThemeBootstrap
 
     static void EnsurePanelSettingsAsset()
     {
-        if (AssetDatabase.LoadAssetAtPath<PanelSettings>(PanelSettingsPath) != null)
+        if (File.Exists(PanelSettingsPath))
             return;
 
         ThemeStyleSheet theme = AssetDatabase.LoadAssetAtPath<ThemeStyleSheet>(ThemePath);
@@ -41,10 +44,10 @@ static class UiThemeBootstrap
             return;
 
         var panelSettings = ScriptableObject.CreateInstance<PanelSettings>();
-        panelSettings.scaleMode = PanelScaleMode.ScaleWithScreenSize;
-        panelSettings.referenceResolution = new Vector2Int(1920, 1080);
-        panelSettings.screenMatchMode = PanelScreenMatchMode.MatchWidthOrHeight;
-        panelSettings.match = 0.5f;
+        // One UI pixel is one screen pixel, whatever the resolution: the fonts are bitmaps and
+        // only draw exactly at a whole-number scale (Docs/UI.md §8a).
+        panelSettings.scaleMode = PanelScaleMode.ConstantPixelSize;
+        panelSettings.scale = 1f;
         panelSettings.sortingOrder = 0;
         panelSettings.themeStyleSheet = theme;
 

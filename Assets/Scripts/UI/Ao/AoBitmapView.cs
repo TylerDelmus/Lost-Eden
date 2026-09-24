@@ -9,6 +9,8 @@ using UnityEngine.UIElements;
 [UxmlElement]
 public partial class AoBitmapView : AoGuiControl
 {
+    public AoBitmapView() => AddToClassList("ao-bitmap-view");
+
     int _bitmapId;
 
     /// <summary>Stock <c>bitmap_id</c>: numeric GUI art id.</summary>

@@ -1,5 +1,7 @@
+using N3Lite;
+using N3Lite.Surfaces;
 using AODB.Common.RDBObjects;
-using LostEden.Vehicles.Surfaces;
+using N3Lite.Surfaces;
 
 namespace LostEden.Vehicles
 {
@@ -7,7 +9,7 @@ namespace LostEden.Vehicles
     /// Builds a playfield's <see cref="CellSurface"/> — the non-terrain collision grid — from AODB
     /// record type <b>1000013</b> (<c>SurfaceResource</c>). This is the port of what
     /// <c>n3TilemapSurface_t::Init</c> (<c>N3 1001879d</c>) plus the per-zone
-    /// <c>n3Zone_t::LoadSurface</c> (<c>N3 1001a947</c>) loop does. See Docs/Movement.md §8.
+    /// <c>n3Zone_t::LoadSurface</c> (<c>N3 1001a947</c>) loop does. See N3Lite/docs/Movement.md §8.
     ///
     /// <para>
     /// The grid starts <b>empty</b>: <c>SurfaceCellLoader</c> streams cells into it by locality and

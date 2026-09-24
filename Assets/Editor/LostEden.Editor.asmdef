@@ -3,6 +3,7 @@
     "rootNamespace": "",
     "references": [
         "LostEden.Runtime",
+        "N3Lite",
         "Reflex",
         "Unity.RenderPipelines.Core.Runtime",
         "Unity.RenderPipelines.HighDefinition.Runtime"

@@ -24,10 +24,17 @@ public partial class AoScrollView : AoGuiControl
 
     public AoScrollView()
     {
+        AddToClassList("ao-scroll-view");
         _scroll = new ScrollView(ScrollViewMode.Vertical)
         {
             style = { flexGrow = 1f }
         };
+        _scroll.AddToClassList("ao-scroll-view__scroller");
+
+        // Tab is for text inputs only: keep the scrollbars' slider and arrow buttons out of it.
+        _scroll.verticalScroller.Query<VisualElement>().ForEach(e => e.tabIndex = -1);
+        _scroll.horizontalScroller.Query<VisualElement>().ForEach(e => e.tabIndex = -1);
+
         hierarchy.Add(_scroll);
         ApplyScrollbarModes();
     }
@@ -84,6 +91,7 @@ public partial class AoScrollView : AoGuiControl
 [UxmlElement]
 public partial class AoScrollViewChild : AoView
 {
+    public AoScrollViewChild() => AddToClassList("ao-scroll-view-child");
 }
 
 public enum AoScrollbarMode

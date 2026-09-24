@@ -199,6 +199,102 @@ Both subscribe to `UvgaTextureSource.Changed` on attach and unsubscribe on detac
 
 ---
 
+## 8a. Fonts: stock's 1-bit Verdana
+
+Stock draws text as one-bit glyphs: `FontInfo_t::GetGlyph` (GUI.dll `0x1012e828`) has GDI
+rasterise each character into a monochrome bitmap, so there is no antialiasing at all. Lost Eden
+reproduces those exact pixels. Nothing in Unity rasterises Verdana, and no `.ttf` ships.
+
+**Source data.** `Assets/Resources/UI/Fonts/Verdana/*.pixelfont` are `pixelfont-1` atlases made
+by `export_font.py` in the `aowebui` repo. It replicates stock's `CreateFontA` + `TextOut` call,
+so it has to run on Windows. There is one file per entry in GUI.dll's font table at `0x10272df0`:
+Verdana 12, 13, 14 and 16, and Verdana Bold 13, 20 and 24. For Bold 24, GDI's font mapper gives a
+23 px cell, and the game gets the same 23 px.
+
+    python export_font.py --face verdana --size 13 [--bold] --out <dir>
+    # then copy <dir>/verdana-13.json to Fonts/Verdana/verdana-13.pixelfont
+
+**Importer.** `Assets/Editor/Fonts/PixelFontImporter.cs` (a `ScriptedImporter` for
+`.pixelfont`) turns each file into a static, bitmap `FontAsset`. It holds an Alpha8 atlas with
+point filtering and the glyphs cropped to their ink, and `faceInfo.pointSize` is the cell height.
+
+**Using it.** `Fonts/Verdana/AoFonts.uss` has one class per font, e.g.
+`.ao-font-verdana-13`. The output is only pixel-exact while all of these hold:
+
+- `-unity-text-generator: standard`. The advanced generator (the 6000.6 default) refuses static
+  font assets and draws nothing, apart from a console error.
+- `font-size` is exactly the cell height, so every glyph is drawn at 1:1.
+- The panel scale is a whole number. `DefaultPanelSettings`, the template every panel is
+  cloned from, is `ConstantPixelSize` at scale 1: the UI does not grow or shrink with the
+  resolution. Scale 2 is also exact. Any non-integer scale keeps hard edges but draws stems
+  unevenly, and so does a Game view zoomed away from 1x in the editor.
+
+Fractional element positions are safe, because UI Toolkit snaps them to whole pixels.
+
+Verified by rendering each font through a runtime panel into a RenderTexture and diffing it
+against the atlas composited the way stock does it (ink only, pen advancing by `adv`). Every
+font came out with zero pixel mismatches and no grey pixels, at element offsets of 0, .25, .5
+and .75, and at panel scale 2.
+
+Unity has deprecated `AtlasPopulationMode.Static`. If the standard generator or static assets are
+ever removed, the fallback is to draw the glyph quads directly with `generateVisualContent`,
+which is what stock does anyway.
+
+---
+
+## 8b. Skins: how the Ao* views look
+
+The `Ao*` classes in `Scripts/UI/Ao/` port stock's class structure: what each view is, what
+it holds and how it behaves. They do not port stock's look. Every view's look comes from a
+**skin**, which is one USS file. Players will eventually write their own skins, so the split
+between the two is strict:
+
+- **C# owns structure and rules**: the view hierarchy, a container being a wrapping grid, text
+  views wrapping, where the combo list floats, every state. A skin cannot change these.
+- **The skin owns looks**: colour, borders, spacing, control heights, fonts, case.
+
+**Where the skin plugs in.** `UnityDefaultRuntimeTheme.tss`, the theme every panel uses,
+imports the default theme and then `Skins/Phosphor/Phosphor.uss`. Switching skin means
+switching which theme a `PanelSettings` carries.
+
+**What a skin styles.** Each view adds `ao-view` plus a block class named after its class
+(`AoButton` → `.ao-button`), with its parts as `block__part` and its states as `block--state`.
+UI Toolkit has pseudo-classes for hover and disabled but none for pressed or toggled, so those
+two are published as classes (`--pressed`, `--on`). The full list is in the header of
+`Phosphor.uss`. These class names are API: renaming one silently breaks every skin.
+
+**Two things USS can't do, and how the skin does them anyway:**
+
+- *Case.* UI Toolkit has no `text-transform`. A skin sets `--ao-text-transform: uppercase` on
+  a `__label`, and `AoLabel` reads that custom property and applies it.
+- *Glyphs outside latin1.* The pixel fonts have no triangle, so dropdown and sort arrows are an
+  `AoCaret`. It draws three solid rows in its own `color`, and repaints when that colour changes.
+
+**Stock's `font` attribute** (`LARGE`, `HUGE`, `CC17`...) becomes the class `ao-font--large`
+and so on. Which face each key maps to is the skin's choice; stock's own mapping is unknown.
+
+**Phosphor**, the default skin, uses the design language of `malis-ao-toolkit-web`'s PHOSPHOR
+kit. Its colours are tokens on `:root` (`--ao-bg-0`...`--ao-accent`), so a recolour only has to
+change the tokens.
+
+**Composites are layout only.** A composite's own sheet, e.g. `LoginScreen.uss`, only places
+its views. If it needs a colour it uses a skin token. The reason is precedence: a sheet
+attached in UXML outranks the theme, so any look written there could never be reskinned.
+
+Two traps:
+
+- **`AoView` writes `flex-direction` inline** (stock's `view_layout`, default vertical), and an
+  inline style beats USS. So a view is a column even if the skin says `row`. Align its
+  children in column terms: `align-items` is the horizontal axis.
+- **Re-importing a stylesheet rebuilds any live `UIDocument` built on it** and empties that
+  document's tree.
+
+Verified by rendering the login panels and a gallery of every view into a RenderTexture,
+through a real runtime panel with the theme applied. Every text region came out as exactly
+background, one ink colour and the 1px line colours, with no grey.
+
+---
+
 ## 9. Pointer arbitration
 
 `UI/UIInteractionManager.cs` implements `IUINotifyService`, registered in the container by
@@ -229,6 +325,8 @@ renaming one breaks it at runtime, not at compile time.
 | `Unit/HitIndicator.uxml` / `.uss` | `HitIndicatorOverlay` |
 | `UnityDefaultRuntimeTheme.tss` | fallback theme, `UserInterface.LoadDefaultTheme` |
 | `DefaultPanelSettings.asset` | the template every panel's `PanelSettings` is cloned from |
+| `Fonts/Verdana/*.pixelfont` + `AoFonts.uss` | stock's 1-bit Verdana (§8a) |
+| `Skins/Phosphor/Phosphor.uss` | the default skin, imported by the theme (§8b) |
 
 ---
 
@@ -240,6 +338,15 @@ renaming one breaks it at runtime, not at compile time.
 - **`LoadingScreenView` bypasses `UiMenu`** (§2) and duplicates its fade/visibility logic.
 - **`AoWindow` is fixed-size and can't be dragged** (§6).
 - **`UIInteractionManager` still exposes its DEV collections** (§9).
+- **Stock font keys aren't mapped yet** (§8a). `AoTextView`/`AoButton` carry `font="LARGE"`,
+  `HUGE`, `CC17`, … raw. Their mapping to `FontID_e` and so to a font-table row hasn't been
+  recovered. GUI.dll also lists two `.fnt` bitmap fonts (`FontTooltip9`, `FontGameShell12`) and
+  a user-set chat font (`ChatFontSize` in MainPrefs.xml); neither is ported.
+- **Player skins can't be loaded at runtime yet** (§8b). A skin is a USS asset, and a built
+  player has no USS compiler, so a skin a player writes needs either a runtime USS parser or
+  a skin format of our own.
+- **`AoWindow` is not skinned** (§6). It still draws stock art through `UvgaBackground` rather
+  than being built from `AoBorderView`.
 - **Serialized component state.** `PanelRenderer` components added by `[RequireComponent]` at load
   carry stale or empty `panelSettings` / `visualTreeAsset` in `GameScene.unity` and
   `SceneScope.prefab`. Harmless — `UserInterface.Load` assigns both at runtime — but save both

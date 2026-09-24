@@ -465,15 +465,15 @@ public class PlayfieldFactory : MonoBehaviour
 
         // Collision comes from the same heightmap the terrain mesh was just built from, so the two
         // can never disagree. Characters keep falling until this lands, which is what stock does
-        // with a null surface (Docs/Movement.md 6).
-        LostEden.Vehicles.Surfaces.TilemapSurface collisionSurface =
+        // with a null surface (N3Lite/docs/Movement.md 6).
+        N3Lite.Surfaces.TilemapSurface collisionSurface =
             LostEden.Vehicles.PlayfieldTileSurface.CreateForPlayfield(_resourceDatabase, zoneId);
         _current.SetCollisionSurface(collisionSurface, _playfieldRoot);
 
         // The statel half of collision is streamed by locality rather than loaded up front, exactly as
         // stock does (n3Zone_t has LoadSurface AND UnLoadSurface). Hand the empty grid to the streamer;
-        // it registers and removes cells as they come and go. Docs/Movement.md §8.
-        _pendingCellSurface = collisionSurface?.Child as LostEden.Vehicles.Surfaces.CellSurface;
+        // it registers and removes cells as they come and go. N3Lite/docs/Movement.md §8.
+        _pendingCellSurface = collisionSurface?.Child as N3Lite.Surfaces.CellSurface;
         AttachCellSurfaceToLocality();
 
         var waterBuilder = new PlayfieldWaterBuilder(_resourceDatabase, _renderConfig);
@@ -649,7 +649,7 @@ public class PlayfieldFactory : MonoBehaviour
         AttachCellSurfaceToLocality();
     }
 
-    LostEden.Vehicles.Surfaces.CellSurface _pendingCellSurface;
+    N3Lite.Surfaces.CellSurface _pendingCellSurface;
 
     /// <summary>
     /// Gives the locality streamer the playfield's collision grid. Called from both ends because the

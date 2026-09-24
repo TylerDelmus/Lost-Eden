@@ -1,5 +1,7 @@
+using N3Lite;
+using N3Lite.Surfaces;
 using AODB.Common.RDBObjects;
-using LostEden.Vehicles.Surfaces;
+using N3Lite.Surfaces;
 using UnityEngine;
 
 namespace LostEden.Vehicles
@@ -20,7 +22,7 @@ namespace LostEden.Vehicles
     /// <para>
     /// <b>Outdoor only.</b> Indoor tilemaps (<c>GNDA</c>/<c>UOHA</c>, <c>Tilemap.IsIndoor</c>) store
     /// their floor heights differently and stock samples them through a different path
-    /// (<c>10016454</c>, unported) — see <c>Docs/Movement.md</c> §5.2a.
+    /// (<c>10016454</c>, unported) — see <c>N3Lite/docs/Movement.md</c> §5.2a.
     /// </para>
     /// </summary>
     public static class PlayfieldTileSurface
@@ -129,7 +131,7 @@ namespace LostEden.Vehicles
             TilemapSurface surface = CreateOrWarn(tilemap, playfieldId);
 
             // The heightmap alone is terrain-only. Stock reaches statels through the same Surface_i by
-            // hanging a CellSurface off the tilemap surface (N3 1001879d) -- see Docs/Movement.md §8.
+            // hanging a CellSurface off the tilemap surface (N3 1001879d) -- see N3Lite/docs/Movement.md §8.
             // The grid is created empty here; SurfaceCellLoader streams cells into it.
             if (surface != null)
                 PlayfieldCellSurface.AttachEmptyGrid(surface, tilemap);

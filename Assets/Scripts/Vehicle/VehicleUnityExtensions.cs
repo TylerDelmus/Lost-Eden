@@ -1,10 +1,12 @@
+using N3Lite;
+using N3Lite.Surfaces;
 using UnityEngine;
 
 namespace LostEden.Vehicles
 {
     /// <summary>
     /// Conversions between the Unity-free vehicle maths and Unity's types. Kept in its own file so
-    /// <c>Vec3</c> and <c>Quat</c> stay compilable by <c>Tests/Vehicle</c>, which has no Unity
+    /// <c>Vec3</c> and <c>Quat</c> stay in the N3Lite package, which the server builds with no Unity
     /// reference.
     ///
     /// Both sides use the same left-handed, Y-up, X-right, Z-forward convention and the same x/y/z/w

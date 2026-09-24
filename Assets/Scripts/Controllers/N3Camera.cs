@@ -1,5 +1,6 @@
 using System;
 using LostEden.Vehicles;
+using N3Lite;
 using UnityEngine;
 
 /// <summary>
@@ -12,7 +13,7 @@ using UnityEngine;
 /// <see cref="CameraVehicleSim"/> hierarchy, the same split the effects port uses between a
 /// <c>GfxControl*</c> binding and its <c>*Sim</c>.
 ///
-/// See <c>Docs/Camera.md</c>.
+/// See <c>N3Lite/docs/Camera.md</c>.
 /// </summary>
 [DefaultExecutionOrder(20000)]
 public class N3Camera : MonoBehaviour
@@ -74,7 +75,7 @@ public class N3Camera : MonoBehaviour
     /// <summary>
     /// Mode used until a stored preference exists. Stock persists the mode as the int pref
     /// "PreferredCameraMode" (N3 10020032) and never writes mode 0, so the game never starts in
-    /// first person; its fresh-install value is not recovered (Docs/Camera.md §8).
+    /// first person; its fresh-install value is not recovered (N3Lite/docs/Camera.md §8).
     /// </summary>
     const CameraViewMode DefaultViewMode = CameraViewMode.Lock;
 
@@ -155,7 +156,7 @@ public class N3Camera : MonoBehaviour
         if (_viewMode == CameraViewMode.FirstPerson)
         {
             var fp = new CameraVehicleFirstPersonSim();
-            fp.ApplyStockCameraSettings();
+            fp.ApplyDefaultSettings();
             fp.HasSurface = false;        // GetSurface returns null (10007572)
             _first = fp;
             _third = null;
@@ -171,7 +172,7 @@ public class N3Camera : MonoBehaviour
                 Frozen = _viewMode == CameraViewMode.Lock,
                 LineOfSight = HasLineOfSight,
             };
-            third.ApplyStockDefaults();
+            third.ApplyDefaults();
             if (follow > 0f)
                 third.FollowDistance = follow;
             _third = third;

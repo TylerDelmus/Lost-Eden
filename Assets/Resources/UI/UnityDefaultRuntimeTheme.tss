@@ -1,1 +1,2 @@
 @import url("unity-theme://default");
+@import url("project://database/Assets/Resources/UI/Skins/Phosphor/Phosphor.uss");

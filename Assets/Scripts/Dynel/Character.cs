@@ -40,12 +40,10 @@ public class Character : Dynel
     N3CharVehicle _motor;
     VisualDynel _visual;
     string _locomotionLogicalName;
-    string _strafeOverlayLogicalName;
     readonly EquippedWeaponHands _hands = new EquippedWeaponHands();
     readonly AnimHolder _animHolder = new AnimHolder();
     bool _fightStance;
     int _locomotionKind;
-    int _strafeOverlayKind;
     bool _appearanceStale;
     MovementState _lastMotorState;
     SitTransitionPhase _sitPhase = SitTransitionPhase.None;
@@ -449,7 +447,7 @@ public class Character : Dynel
         // where the body learns which of CharVehicle_t's two subclasses it is. NPCs get NPCVehicle_t,
         // which steers at a Path_t through a PathGuide_t and ignores the input axes; players get
         // PlayerVehicle_t and its four axes. The server already sends NPC paths as
-        // FollowTargetMessage.PathInfo, which SetPath routes into the Path_t. See Docs/Movement.md §3.2.
+        // FollowTargetMessage.PathInfo, which SetPath routes into the Path_t. See N3Lite/docs/Movement.md §3.2.
         _motor.SelectVehicleKind(IsNpc);
 
         _motor.Warp(transform.position, transform.rotation);
@@ -569,9 +567,7 @@ public class Character : Dynel
         // (that races with SyncSitStateFromMotor and sticks seated chars in idle).
         _visual.RequestUpdateAppearance(playIdle: false);
         _locomotionLogicalName = null;
-        _strafeOverlayLogicalName = null;
         _locomotionKind = 0;
-        _strafeOverlayKind = 0;
     }
 
     void RefreshMovementSpeed()
@@ -643,7 +639,6 @@ public class Character : Dynel
             }
 
             PlayLocomotionKind(player, desiredKind);
-            SyncStrafeOverlay(player);
             UpdateLocomotionPlaybackRate();
             return;
         }
@@ -660,7 +655,6 @@ public class Character : Dynel
         }
 
         PlayLocomotionKind(player, desiredKind);
-        SyncStrafeOverlay(player);
         UpdateLocomotionPlaybackRate();
     }
 
@@ -680,39 +674,6 @@ public class Character : Dynel
             _locomotionKind = kind;
             _locomotionLogicalName = $"kind:{kind}";
         }
-    }
-
-    void SyncStrafeOverlay(CatAnimPlayer player)
-    {
-        int strafeKind = _sitPhase == SitTransitionPhase.None
-            && _jumpPhase != JumpAnimPhase.Airborne
-            ? _motor.GetStrafeOverlayKind()
-            : 0;
-
-        if (_strafeOverlayKind == strafeKind)
-            return;
-
-        if (strafeKind == 0)
-        {
-            player.CancelStrafe(LocomotionAnimBlendSeconds);
-            _strafeOverlayKind = 0;
-            _strafeOverlayLogicalName = null;
-            return;
-        }
-
-        if (!_visual.TryResolveKind(strafeKind, out int animId)
-            || !player.PlayStrafeKind(strafeKind, animId, LocomotionAnimBlendSeconds))
-            return;
-
-        _strafeOverlayKind = strafeKind;
-        _strafeOverlayLogicalName = $"kind:{strafeKind}";
-    }
-
-    void ClearStrafeOverlay(CatAnimPlayer player, float blendSeconds = 0f)
-    {
-        _strafeOverlayLogicalName = null;
-        _strafeOverlayKind = 0;
-        player?.CancelStrafe(blendSeconds);
     }
 
     void HandleMotorStateChange()
@@ -741,10 +702,7 @@ public class Character : Dynel
 
         CancelStandUpTransition();
         if (_visual.TryGetAnimPlayer(out CatAnimPlayer existing))
-        {
             existing.CancelOverlay();
-            ClearStrafeOverlay(existing);
-        }
 
         _jumpPhase = JumpAnimPhase.Airborne;
         _jumpLandLogicalName = null;
@@ -780,9 +738,6 @@ public class Character : Dynel
             && _visual.TryGetAnimPlayer(out CatAnimPlayer basePlayer))
             PlayLocomotionKind(basePlayer, locoKind);
 
-        if (_visual.TryGetAnimPlayer(out CatAnimPlayer landPlayer))
-            SyncStrafeOverlay(landPlayer);
-
         int landKind = _motor.GetJumpLandKind();
         _jumpPhase = JumpAnimPhase.Landing;
         _jumpLandLogicalName = landKind == 0 ? "jump-land-idle" : $"kind:{landKind}";
@@ -817,7 +772,6 @@ public class Character : Dynel
 
         _locomotionKind = 0;
         PlayLocomotionKind(player, desiredKind);
-        SyncStrafeOverlay(player);
     }
 
     void CancelJumpTransition()
@@ -832,7 +786,6 @@ public class Character : Dynel
         {
             player.CancelOneShot();
             player.CancelOverlay();
-            ClearStrafeOverlay(player);
         }
     }
 
@@ -862,8 +815,6 @@ public class Character : Dynel
     void BeginSitDown()
     {
         CancelJumpTransition();
-        if (_visual.TryGetAnimPlayer(out CatAnimPlayer player))
-            ClearStrafeOverlay(player);
         _sitPhase = SitTransitionPhase.Entering;
         _locomotionLogicalName = "sit-start";
         if (!_visual.PlayOnce("sit-start", LocomotionAnimBlendSeconds, OnSitDownComplete))

@@ -7,12 +7,15 @@ using UnityEngine.UIElements;
 ///
 /// The nine attribute names below are stock's own, taken from actual usage across
 /// <c>cd_image/gui/Default/**/*.xml</c>: four corners, four edges and a centre fill, each
-/// naming a UVGA entry. Painting is deferred (visual pass), so the slices are carried and
-/// exposed but only the tint and a flat fallback are applied for now.
+/// naming a UVGA entry. Lost Eden does not draw stock's art: the frame's look belongs to the
+/// skin (<c>.ao-border-view</c>), so the slices are carried for fidelity and only the tint is
+/// applied.
 /// </summary>
 [UxmlElement]
 public partial class AoBorderView : AoView
 {
+    public AoBorderView() => AddToClassList("ao-border-view");
+
     [UxmlAttribute("tl_gfx")] public string TopLeftGfx { get; set; }
     [UxmlAttribute("top_gfx")] public string TopGfx { get; set; }
     [UxmlAttribute("tr_gfx")] public string TopRightGfx { get; set; }

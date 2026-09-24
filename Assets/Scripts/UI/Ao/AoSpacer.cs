@@ -11,6 +11,7 @@ public partial class AoSpacer : VisualElement
 {
     public AoSpacer()
     {
+        AddToClassList("ao-spacer");
         style.flexGrow = 1f;
         style.flexShrink = 1f;
         pickingMode = PickingMode.Ignore;
