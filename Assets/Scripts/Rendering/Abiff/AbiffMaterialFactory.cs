@@ -17,6 +17,7 @@ public sealed class AbiffMaterialFactory
 
     readonly ResourceDatabase _database;
     readonly Dictionary<AbiffMaterialDesc, Material> _materialCache = new Dictionary<AbiffMaterialDesc, Material>();
+    readonly Dictionary<LitKey, Material> _litCache = new Dictionary<LitKey, Material>();
     readonly Dictionary<AbiffMaterialDesc, Material> _skyUnlitCache = new Dictionary<AbiffMaterialDesc, Material>();
     readonly Dictionary<int, Texture2D> _textureCache = new Dictionary<int, Texture2D>();
 
@@ -30,9 +31,164 @@ public sealed class AbiffMaterialFactory
         if (_materialCache.TryGetValue(desc, out Material cached))
             return cached;
 
-        Material material = CreateLitMaterial(desc);
+        // Descs that differ only in what never reaches the material -- the FAF name, or a shininess
+        // that remaps to the same smoothness -- share one Material. On pf 4310 that is 431 -> 259.
+        // Distinct Materials cannot share a draw, so every duplicate cost a draw call per pass.
+        LitKey key = LitKey.From(desc);
+        if (!_litCache.TryGetValue(key, out Material material))
+        {
+            material = CreateLitMaterial(desc);
+            _litCache[key] = material;
+        }
+
         _materialCache[desc] = material;
         return material;
+    }
+
+    // ---- texture-array materials (AOLit shader graph) ------------------------
+
+    /// <summary>The AOLit shader graph (<c>Assets/Scripts/Material/AOLit.shadergraph</c>).</summary>
+    const string ArrayShaderName = "Shader Graphs/AOLit";
+
+    readonly AbiffTextureArrays _arrays = new AbiffTextureArrays();
+    readonly Dictionary<(bool alpha, bool twoSided, int set, Color tint, float smoothness), Material> _arrayMaterials =
+        new Dictionary<(bool, bool, int, Color, float), Material>();
+    Shader _arrayShader;
+    bool _arrayShaderResolved;
+
+    Shader ArrayShader
+    {
+        get
+        {
+            if (!_arrayShaderResolved)
+            {
+                _arrayShader = Shader.Find(ArrayShaderName);
+                _arrayShaderResolved = true;
+                if (_arrayShader == null)
+                    Debug.LogWarning($"AbiffMaterialFactory: '{ArrayShaderName}' not found; statels stay on HDRP/Lit.");
+            }
+            return _arrayShader;
+        }
+    }
+
+    /// <summary>
+    /// A desc the array path can draw: a base texture and nothing the AOLit graph lacks -- no emission
+    /// map and no emissive colour. Everything else stays on <see cref="Get"/>.
+    /// </summary>
+    public static bool IsArrayCandidate(AbiffMaterialDesc desc)
+        => desc.DiffuseTextureId > 0
+           && desc.EmissionTextureId <= 0
+           && desc.Emissive.r == 0f && desc.Emissive.g == 0f && desc.Emissive.b == 0f;
+
+    /// <summary>Loads every candidate's base texture into the arrays, in one batch.</summary>
+    public void PrepareArrays(IEnumerable<AbiffMaterialDesc> descs)
+    {
+        if (ArrayShader == null)
+            return;
+
+        var ids = new List<int>();
+        foreach (AbiffMaterialDesc desc in descs)
+        {
+            if (IsArrayCandidate(desc))
+                ids.Add(desc.DiffuseTextureId);
+        }
+
+        _arrays.Add(ids, LoadTexture);
+    }
+
+    /// <summary>
+    /// The shared array material for <paramref name="desc"/> and the slice its texture sits in. One
+    /// material per (alpha clip, two-sided, array, tint, smoothness): the texture no longer splits
+    /// materials. False when the desc is not a candidate or its texture was never prepared.
+    /// </summary>
+    public bool TryGetArrayMaterial(AbiffMaterialDesc desc, out Material material, out int slice)
+    {
+        material = null;
+        slice = -1;
+        if (ArrayShader == null || !IsArrayCandidate(desc)
+            || !_arrays.TryGetSlice(desc.DiffuseTextureId, out int set, out slice))
+            return false;
+
+        float smoothness = RemapSmoothness(desc);
+        var key = (desc.ApplyAlpha, desc.TwoSided, set, desc.Diffuse, smoothness);
+        if (_arrayMaterials.TryGetValue(key, out material))
+            return true;
+
+        material = new Material(ArrayShader)
+        {
+            name = $"AOLitArray_{(set == 0 ? AbiffTextureArrays.SmallSize : AbiffTextureArrays.LargeSize)}"
+                   + (desc.ApplyAlpha ? "_Clip" : "") + (desc.TwoSided ? "_2S" : ""),
+        };
+        material.SetColor("_BaseColor", desc.Diffuse);
+        material.SetFloat("_Smoothness", smoothness);
+
+        HDMaterial.SetAlphaClipping(material, desc.ApplyAlpha);
+        if (desc.ApplyAlpha)
+            HDMaterial.SetAlphaCutoff(material, 0.5f);      // HdrpLitMaterialFactory.CreateAlphaClip's cutoff
+
+        if (desc.TwoSided)
+        {
+            material.SetFloat("_DoubleSidedEnable", 1f);
+            material.SetFloat("_CullMode", (float)CullMode.Off);
+            material.SetFloat("_CullModeForward", (float)CullMode.Off);
+            material.doubleSidedGI = true;
+        }
+
+        HDMaterial.ValidateMaterial(material);
+        _arrays.Bind(material, set);
+        _arrayMaterials[key] = material;
+        return true;
+    }
+
+    /// <summary>Everything <see cref="CreateLitMaterial"/> reads from a desc, as it reads it.</summary>
+    readonly struct LitKey : IEquatable<LitKey>
+    {
+        readonly bool _applyAlpha;
+        readonly bool _twoSided;
+        readonly int _diffuseTexture;
+        readonly int _emissionTexture;
+        readonly Color _baseColor;
+        readonly Color _emissive;
+        readonly float _smoothness;
+
+        LitKey(AbiffMaterialDesc desc)
+        {
+            _applyAlpha = desc.ApplyAlpha;
+            _twoSided = desc.TwoSided;
+            _diffuseTexture = desc.DiffuseTextureId > 0 ? desc.DiffuseTextureId : 0;
+            _emissionTexture = desc.EmissionTextureId > 0 ? desc.EmissionTextureId : 0;
+            _baseColor = desc.Diffuse;
+            _emissive = desc.Emissive;
+            _smoothness = RemapSmoothness(desc);
+        }
+
+        public static LitKey From(AbiffMaterialDesc desc) => new LitKey(desc);
+
+        public bool Equals(LitKey other)
+            => _applyAlpha == other._applyAlpha
+               && _twoSided == other._twoSided
+               && _diffuseTexture == other._diffuseTexture
+               && _emissionTexture == other._emissionTexture
+               && _baseColor == other._baseColor
+               && _emissive == other._emissive
+               && _smoothness.Equals(other._smoothness);
+
+        public override bool Equals(object obj) => obj is LitKey other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = _diffuseTexture * 397;
+                hash = (hash * 397) ^ _emissionTexture;
+                hash = (hash * 397) ^ (_applyAlpha ? 1 : 0);
+                hash = (hash * 397) ^ (_twoSided ? 2 : 0);
+                hash = (hash * 397) ^ _baseColor.GetHashCode();
+                hash = (hash * 397) ^ _emissive.GetHashCode();
+                hash = (hash * 397) ^ _smoothness.GetHashCode();
+                return hash;
+            }
+        }
     }
 
     public Material GetSkyUnlit(AbiffMaterialDesc desc)

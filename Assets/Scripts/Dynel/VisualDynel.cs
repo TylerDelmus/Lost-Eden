@@ -101,6 +101,7 @@ public class VisualDynel : MonoBehaviour
     void InvalidateMeshHeightCache()
     {
         _meshHeightValid = false;
+        _pickBoundsValid = false;
     }
 
     float GetCachedMeshHeight()
@@ -131,7 +132,11 @@ public class VisualDynel : MonoBehaviour
             if (r == null)
                 continue;
 
-            Bounds lb = r.localBounds;
+            // A skinned renderer's localBounds is its padded culling box (CatMeshLoader.SetCullingBounds),
+            // not the body; the mesh's own bounds are the rest pose in the renderer's space.
+            Bounds lb = r is SkinnedMeshRenderer skinned && skinned.sharedMesh != null
+                ? skinned.sharedMesh.bounds
+                : r.localBounds;
             UnityEngine.Vector3 localMax = root.InverseTransformPoint(r.transform.TransformPoint(lb.max));
             if (!any || localMax.y > maxLocalY)
             {
@@ -1109,43 +1114,150 @@ public class VisualDynel : MonoBehaviour
                 $"attach={attachMs:F1}ms total={total.Elapsed.TotalMilliseconds:F1}ms");
         }
 
-        RefreshTargetingColliders();
+        if (_visualRoot != null && GameLayers.Dynel >= 0)
+            GameLayers.SetLayerRecursively(_visualRoot, GameLayers.Dynel);
         InvalidateMeshHeightCache();
     }
 
-    void RefreshTargetingColliders()
+    // ---- targeting -----------------------------------------------------------
+    //
+    // Mouse picking tests the ray against one box per visual instead of a MeshCollider per renderer.
+    // The box is the union of the renderers' rest-pose mesh bounds -- the same geometry the colliders
+    // held, since a MeshCollider on a skinned mesh never followed the animation either -- kept in the
+    // visual root's space so the dynel's position, heading and scale apply at query time.
+
+    static readonly List<VisualDynel> Active = new List<VisualDynel>();
+
+    Bounds _pickBounds;
+    bool _pickBoundsValid;
+    bool _hasPickBounds;
+    GameObject _pickRoot;       // the visual root _pickBounds was built from; the loaders swap it by ref
+
+    void OnEnable() => Active.Add(this);
+    void OnDisable() => Active.Remove(this);
+
+    /// <summary>
+    /// The nearest dynel whose pick box <paramref name="ray"/> enters within
+    /// <paramref name="maxDistance"/>, or null.
+    /// </summary>
+    public static Dynel Pick(Ray ray, float maxDistance)
     {
-        if (_visualRoot == null)
-            return;
+        Dynel best = null;
+        float bestDistance = maxDistance;
 
-        int dynelLayer = GameLayers.Dynel;
-        if (dynelLayer < 0)
-            return;
+        for (int i = 0; i < Active.Count; i++)
+        {
+            VisualDynel visual = Active[i];
+            if (visual._visualRoot == null || !visual._visualRoot.activeInHierarchy)
+                continue;
+            if (!visual.TryGetPickBounds(out Bounds box))
+                continue;
 
-        GameLayers.SetLayerRecursively(_visualRoot, dynelLayer);
+            // The ray parameter survives an affine change of space when the direction is carried as a
+            // vector and not renormalised, so the local hit distance is the world one.
+            Transform root = visual._visualRoot.transform;
+            UnityEngine.Vector3 origin = root.InverseTransformPoint(ray.origin);
+            UnityEngine.Vector3 direction = root.InverseTransformVector(ray.direction);
+
+            if (!RayEntersBox(origin, direction, box, out float distance) || distance > bestDistance)
+                continue;
+
+            Dynel dynel = visual._dynel != null ? visual._dynel : visual.GetComponent<Dynel>();
+            if (dynel == null)
+                continue;
+
+            best = dynel;
+            bestDistance = distance;
+        }
+
+        return best;
+    }
+
+    bool TryGetPickBounds(out Bounds box)
+    {
+        if (!_pickBoundsValid || _pickRoot != _visualRoot)
+        {
+            _hasPickBounds = ComputePickBounds(out _pickBounds);
+            _pickBoundsValid = true;
+            _pickRoot = _visualRoot;
+        }
+
+        box = _pickBounds;
+        return _hasPickBounds;
+    }
+
+    bool ComputePickBounds(out Bounds box)
+    {
+        box = default;
+        Transform root = _visualRoot.transform;
+        bool any = false;
 
         Renderer[] renderers = _visualRoot.GetComponentsInChildren<Renderer>(true);
         for (int i = 0; i < renderers.Length; i++)
         {
             Renderer renderer = renderers[i];
-            if (renderer == null)
-                continue;
-
             UnityEngine.Mesh mesh = null;
             if (renderer is SkinnedMeshRenderer skinned)
                 mesh = skinned.sharedMesh;
-            else if (renderer.TryGetComponent(out MeshFilter filter))
+            else if (renderer != null && renderer.TryGetComponent(out MeshFilter filter))
                 mesh = filter.sharedMesh;
-
             if (mesh == null)
                 continue;
 
-            if (!renderer.TryGetComponent(out MeshCollider collider))
-                collider = renderer.gameObject.AddComponent<MeshCollider>();
-
-            collider.sharedMesh = mesh;
-            collider.convex = false;
+            Bounds b = mesh.bounds;
+            Transform t = renderer.transform;
+            for (int corner = 0; corner < 8; corner++)
+            {
+                var local = new UnityEngine.Vector3(
+                    (corner & 1) == 0 ? b.min.x : b.max.x,
+                    (corner & 2) == 0 ? b.min.y : b.max.y,
+                    (corner & 4) == 0 ? b.min.z : b.max.z);
+                UnityEngine.Vector3 p = root.InverseTransformPoint(t.TransformPoint(local));
+                if (!any)
+                {
+                    box = new Bounds(p, UnityEngine.Vector3.zero);
+                    any = true;
+                }
+                else
+                {
+                    box.Encapsulate(p);
+                }
+            }
         }
+
+        return any;
+    }
+
+    /// <summary>Slab test; a ray starting inside the box enters it at 0.</summary>
+    static bool RayEntersBox(UnityEngine.Vector3 origin, UnityEngine.Vector3 direction, Bounds box, out float distance)
+    {
+        distance = 0f;
+        float tMin = 0f;
+        float tMax = float.PositiveInfinity;
+        UnityEngine.Vector3 min = box.min, max = box.max;
+
+        for (int axis = 0; axis < 3; axis++)
+        {
+            float o = origin[axis], d = direction[axis];
+            if (System.Math.Abs(d) < 1e-12f)
+            {
+                if (o < min[axis] || o > max[axis])
+                    return false;
+                continue;
+            }
+
+            float t1 = (min[axis] - o) / d;
+            float t2 = (max[axis] - o) / d;
+            if (t1 > t2)
+                (t1, t2) = (t2, t1);
+            if (t1 > tMin) tMin = t1;
+            if (t2 < tMax) tMax = t2;
+            if (tMin > tMax)
+                return false;
+        }
+
+        distance = tMin;
+        return true;
     }
 
     public bool TryGetAttractor(AttractorPlace place, out Attractor attractor)

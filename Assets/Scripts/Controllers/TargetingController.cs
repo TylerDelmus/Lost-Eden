@@ -163,10 +163,7 @@ public class TargetingController : MonoBehaviour
 
         Ray ray = _camera.ScreenPointToRay(Mouse.current.position.ReadValue());
 
-        if (!Physics.Raycast(ray, out RaycastHit hit, _maxTargetDistance, GameLayers.DynelMask, QueryTriggerInteraction.Ignore))
-            return null;
-
-        return hit.collider.GetComponentInParent<Dynel>();
+        return VisualDynel.Pick(ray, _maxTargetDistance);
     }
 
     private bool CanTarget(Dynel dynel)

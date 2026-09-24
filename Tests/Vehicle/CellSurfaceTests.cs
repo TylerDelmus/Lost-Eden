@@ -104,7 +104,10 @@ namespace LostEden.Vehicle.Tests
             Assert.Equal(0, g.GetCellIdFromPos(new Vec3(-1f, 0f, 20f)));
         }
 
-        /// <summary>A flat horizontal quad, for putting known geometry in a cell.</summary>
+        /// <summary>
+        /// A flat horizontal quad, for putting known geometry in a cell. Wound like record 1000013's
+        /// floors, so it is solid from above: the mesh test is one-sided (see TriangleMeshSurface).
+        /// </summary>
         static TriangleMeshSurface Slab(float minX, float minZ, float size, float y)
         {
             var v = new[]
@@ -114,7 +117,7 @@ namespace LostEden.Vehicle.Tests
                 new Vec3(minX + size, y, minZ + size),
                 new Vec3(minX, y, minZ + size),
             };
-            return new TriangleMeshSurface(v, new[] { 0, 1, 2, 0, 2, 3 });
+            return new TriangleMeshSurface(v, new[] { 0, 2, 1, 0, 3, 2 });
         }
 
         [Fact]
@@ -236,10 +239,17 @@ namespace LostEden.Vehicle.Tests
             Assert.True(wall.GetLineIntersection(
                 new Vec3(0f, 5f, 200f), new Vec3(20f, 5f, 200f), out _, out Vec3 n, true, null));
             Assert.Equal(-1f, n.X, 3);      // walking +X into it, so the normal points back at -X
+        }
 
-            Assert.True(wall.GetLineIntersection(
-                new Vec3(20f, 5f, 200f), new Vec3(0f, 5f, 200f), out _, out Vec3 n2, true, null));
-            Assert.Equal(1f, n2.X, 3);
+        [Fact]
+        public void AMeshIsSolidFromOneSideOnly()
+        {
+            // Stock lets a character placed inside static geometry walk back out, so the back of a
+            // mesh face does not collide. Wall faces -X: a ray from +X passes through it.
+            TriangleMeshSurface wall = Wall(10f);
+
+            Assert.False(wall.GetLineIntersection(
+                new Vec3(20f, 5f, 200f), new Vec3(0f, 5f, 200f), out _, out _, true, null));
         }
 
         [Fact]

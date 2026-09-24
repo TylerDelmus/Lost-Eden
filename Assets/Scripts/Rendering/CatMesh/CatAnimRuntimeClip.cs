@@ -76,38 +76,96 @@ public sealed class CatAnimRuntimeClip
 
     BoneTrack[] _tracksByBone;
 
+    // True when every key array is in non-decreasing time order, so a binary search lands on the same
+    // key pair as the linear scan it replaces. The data is not guaranteed sorted; if any array is not,
+    // the scan is kept.
+    bool _keysSorted;
+
     void IndexTracksByBone()
     {
         _tracksByBone = new BoneTrack[BoneCount];
         for (int i = 0; i < BoneCount; i++)
             _tracksByBone[i].BoneIndex = -1;
 
+        _keysSorted = true;
         for (int i = 0; i < Tracks.Length; i++)
         {
             BoneTrack track = Tracks[i];
+            _keysSorted &= IsSorted(track.Positions) && IsSorted(track.Rotations);
             if (track.BoneIndex < 0 || track.BoneIndex >= BoneCount)
                 continue;
             _tracksByBone[track.BoneIndex] = track;
         }
     }
 
-    public bool TryGetTrack(int boneIndex, out BoneTrack track)
+    static bool IsSorted(Vector3Key[] keys)
     {
-        if (_tracksByBone == null || boneIndex < 0 || boneIndex >= _tracksByBone.Length)
+        if (keys == null)
+            return true;
+        for (int i = 1; i < keys.Length; i++)
         {
-            track = default;
-            return false;
+            if (keys[i].Time < keys[i - 1].Time)
+                return false;
         }
-
-        track = _tracksByBone[boneIndex];
-        return track.BoneIndex == boneIndex;
+        return true;
     }
 
-    public bool IsTrackEnabled(int boneIndex, int activeMask)
+    static bool IsSorted(QuaternionKey[] keys)
     {
-        if (!TryGetTrack(boneIndex, out BoneTrack track))
+        if (keys == null)
+            return true;
+        for (int i = 1; i < keys.Length; i++)
+        {
+            if (keys[i].Time < keys[i - 1].Time)
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// The bone's local position and rotation at <paramref name="time"/> — loop-relative (from
+    /// <see cref="LoopStart"/>) unless <paramref name="absoluteSourceTime"/>. False when the bone has no
+    /// track or <paramref name="activeMask"/> disables it; a channel with no keys comes back unset.
+    /// </summary>
+    public bool TrySample(
+        int boneIndex,
+        int activeMask,
+        float time,
+        bool absoluteSourceTime,
+        out Vector3 position,
+        out bool hasPosition,
+        out Quaternion rotation,
+        out bool hasRotation)
+    {
+        position = default;
+        rotation = default;
+        hasPosition = false;
+        hasRotation = false;
+
+        if (_tracksByBone == null || (uint)boneIndex >= (uint)_tracksByBone.Length)
             return false;
-        return ((uint)activeMask & track.Flags) != 0;
+
+        ref readonly BoneTrack track = ref _tracksByBone[boneIndex];
+        if (track.BoneIndex != boneIndex || ((uint)activeMask & track.Flags) == 0)
+            return false;
+
+        float sourceTime = absoluteSourceTime ? time : LoopStart + time;
+
+        Vector3Key[] positions = track.Positions;
+        if (positions != null && positions.Length > 0)
+        {
+            position = _keysSorted ? SamplePositionSorted(positions, sourceTime) : SamplePosition(positions, sourceTime);
+            hasPosition = true;
+        }
+
+        QuaternionKey[] rotations = track.Rotations;
+        if (rotations != null && rotations.Length > 0)
+        {
+            rotation = _keysSorted ? SampleRotationSorted(rotations, sourceTime) : SampleRotation(rotations, sourceTime);
+            hasRotation = true;
+        }
+
+        return true;
     }
 
     public void CountTrackFlags(out int alwaysOn, out int flag1, out int flag2, out int other)
@@ -233,31 +291,6 @@ public sealed class CatAnimRuntimeClip
         return unchecked((uint)raw);
     }
 
-    public void Evaluate(int boneIndex, float time, out Vector3? localPosition, out Quaternion? localRotation)
-        => Evaluate(boneIndex, time, absoluteSourceTime: false, out localPosition, out localRotation);
-
-    public void Evaluate(
-        int boneIndex,
-        float time,
-        bool absoluteSourceTime,
-        out Vector3? localPosition,
-        out Quaternion? localRotation)
-    {
-        localPosition = null;
-        localRotation = null;
-
-        if (!TryGetTrack(boneIndex, out BoneTrack track))
-            return;
-
-        float sourceTime = absoluteSourceTime ? time : LoopStart + time;
-
-        if (track.Positions != null && track.Positions.Length > 0)
-            localPosition = SamplePosition(track.Positions, sourceTime);
-
-        if (track.Rotations != null && track.Rotations.Length > 0)
-            localRotation = SampleRotation(track.Rotations, sourceTime);
-    }
-
     static void ClampLoop(float sourceDuration, ref float loopStart, ref float loopEnd)
     {
         loopStart = Mathf.Clamp(loopStart, 0f, sourceDuration);
@@ -340,6 +373,57 @@ public sealed class CatAnimRuntimeClip
         }
 
         return keys[keys.Length - 1].Value;
+    }
+
+    // Binary-search forms of the two samplers. With keys sorted, the first key at or after `time` is
+    // the `b` the linear scan stops on, so both interpolate the same pair with the same arithmetic.
+
+    static Vector3 SamplePositionSorted(Vector3Key[] keys, float time)
+    {
+        int last = keys.Length - 1;
+        if (last == 0 || time <= keys[0].Time)
+            return keys[0].Value;
+        if (time >= keys[last].Time)
+            return keys[last].Value;
+
+        int lo = 1, hi = last;
+        while (lo < hi)
+        {
+            int mid = (lo + hi) >> 1;
+            if (keys[mid].Time < time)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+
+        ref readonly Vector3Key a = ref keys[lo - 1];
+        ref readonly Vector3Key b = ref keys[lo];
+        float span = Mathf.Max(b.Time - a.Time, 1e-6f);
+        return Vector3.LerpUnclamped(a.Value, b.Value, (time - a.Time) / span);
+    }
+
+    static Quaternion SampleRotationSorted(QuaternionKey[] keys, float time)
+    {
+        int last = keys.Length - 1;
+        if (last == 0 || time <= keys[0].Time)
+            return keys[0].Value;
+        if (time >= keys[last].Time)
+            return keys[last].Value;
+
+        int lo = 1, hi = last;
+        while (lo < hi)
+        {
+            int mid = (lo + hi) >> 1;
+            if (keys[mid].Time < time)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+
+        ref readonly QuaternionKey a = ref keys[lo - 1];
+        ref readonly QuaternionKey b = ref keys[lo];
+        float span = Mathf.Max(b.Time - a.Time, 1e-6f);
+        return Quaternion.SlerpUnclamped(a.Value, b.Value, (time - a.Time) / span);
     }
 
     static Quaternion SampleRotation(QuaternionKey[] keys, float time)
