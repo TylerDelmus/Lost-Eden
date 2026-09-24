@@ -72,6 +72,8 @@ public class PlayfieldFactory : MonoBehaviour
 
         if (_playerController?.N3Camera != null)
             _playerController.N3Camera.TargetAttached += OnCameraTargetAttached;
+
+        ZoneInTrace.StateProvider = DescribeZoneInState;
     }
 
     void OnDisable()
@@ -93,6 +95,23 @@ public class PlayfieldFactory : MonoBehaviour
 
         if (_playerController?.N3Camera != null)
             _playerController.N3Camera.TargetAttached -= OnCameraTargetAttached;
+
+        if (ZoneInTrace.StateProvider == DescribeZoneInState)
+            ZoneInTrace.StateProvider = null;
+    }
+
+    string _loadStage = "none";
+
+    string DescribeZoneInState()
+    {
+        Identity local = LocalPlayerIdentity();
+        bool localOnPlayfield = TryGetCharacter(local, out _);
+        return
+            $"networkDriven={NetworkDriven} loadRoutine={(_loadRoutine != null ? "running" : "idle")} " +
+            $"loadStage={_loadStage} playfieldReady={_playfieldReady} playfield={(_current != null ? _current.name : "null")} " +
+            $"pendingFullCharacter={_playerController?.HasPendingFullCharacter} " +
+            $"pendingSCFUs={_pendingCharacters.Count} localSCFUQueued={_pendingCharacters.ContainsKey(local)} " +
+            $"localOnPlayfield={localOnPlayfield} localPlayerBound={_playerController != null && _playerController.TryGetLocalPlayer(out _)}";
     }
 
     void OnCameraTargetAttached()
@@ -100,13 +119,17 @@ public class PlayfieldFactory : MonoBehaviour
         if (!NetworkDriven)
             return;
 
+        ZoneInTrace.Mark("camera attached → loading screen fading out");
         _loadingScreen.HideFade();
     }
 
     void OnNetworkPlayfieldReceived(int zoneId)
     {
         if (!NetworkDriven)
+        {
+            ZoneInTrace.Mark($"PlayfieldAnarchyF {zoneId} IGNORED: PlayfieldFactory not network-driven");
             return;
+        }
 
         Load(zoneId);
     }
@@ -154,6 +177,8 @@ public class PlayfieldFactory : MonoBehaviour
 
         if (!_playfieldReady)
         {
+            if (isLocalPlayer)
+                ZoneInTrace.Mark("local SCFU queued (playfield not ready)");
             _pendingCharacters[msg.Identity] = msg;
             Debug.Log($"[PlayfieldFactory] SimpleCharFullUpdate queued (playfield not ready): {msg.Identity.Type}:{msg.Identity.Instance} \"{msg.Name}\" (pending={_pendingCharacters.Count})");
             return;
@@ -401,7 +426,10 @@ public class PlayfieldFactory : MonoBehaviour
     public void Load(int zoneId)
     {
         if (_loadRoutine != null)
+        {
+            ZoneInTrace.Mark($"Load {zoneId}: stopping a load still in progress (stage={_loadStage})");
             StopCoroutine(_loadRoutine);
+        }
 
         _loadRoutine = StartCoroutine(LoadWithUnloadRoutine(zoneId));
     }
@@ -438,6 +466,10 @@ public class PlayfieldFactory : MonoBehaviour
         if (_playfieldRoot == null)
             yield break;
 
+        if (_pendingCharacters.Count > 0)
+            ZoneInTrace.Mark(
+                $"unload DISCARDED {_pendingCharacters.Count} queued SCFU(s) " +
+                $"(local among them={_pendingCharacters.ContainsKey(LocalPlayerIdentity())})");
         _pendingCharacters.Clear();
         _playerController?.ClearPendingFullCharacter();
         Destroy(_playfieldRoot.gameObject);
@@ -460,6 +492,7 @@ public class PlayfieldFactory : MonoBehaviour
         _current.Init(zoneId, _characterPrefab, _container);
         CurrentPlayfieldChanged?.Invoke(_current);
 
+        LoadStage(zoneId, "terrain");
         var terrainParser = new TerrainParser(_resourceDatabase, _renderConfig);
         yield return terrainParser.BuildCoroutine(zoneId, _playfieldRoot);
 
@@ -476,23 +509,31 @@ public class PlayfieldFactory : MonoBehaviour
         _pendingCellSurface = collisionSurface?.Child as N3Lite.Surfaces.CellSurface;
         AttachCellSurfaceToLocality();
 
+        LoadStage(zoneId, "water");
         var waterBuilder = new PlayfieldWaterBuilder(_resourceDatabase, _renderConfig);
         yield return waterBuilder.BuildCoroutine(zoneId, _playfieldRoot);
 
+        LoadStage(zoneId, "statels");
         var abiffMaterials = new AbiffMaterialFactory(_resourceDatabase);
         var statelParser = new StatelParser(_resourceDatabase, _renderConfig, abiffMaterials);
         yield return statelParser.BuildCoroutine(zoneId, _playfieldRoot);
 
+        LoadStage(zoneId, "grass");
         var grassBuilder = new PlayfieldGrassBuilder(_resourceDatabase, _renderConfig);
         yield return grassBuilder.BuildCoroutine(zoneId, _playfieldRoot);
 
+        LoadStage(zoneId, "environment + locality");
         TryApplyAoEnvironment(zoneId, abiffMaterials);
 
         AttachLocality(zoneId);
 
         if (_renderConfig == null || _renderConfig.UseReflectionProbe)
+        {
+            LoadStage(zoneId, "reflection probes");
             yield return BakeReflectionProbesRoutine();
+        }
 
+        LoadStage(zoneId, "ready");
         _playfieldReady = true;
         FlushPendingCharacters();
         Debug.Log($"[PlayfieldFactory] Playfield ready for dynels (id={zoneId}, prefab={(_characterPrefab != null ? _characterPrefab.name : "MISSING")})");
@@ -500,6 +541,12 @@ public class PlayfieldFactory : MonoBehaviour
 
         // Network-driven loading stays up until the local player is possessed and the
         // camera snaps (see PlayerController FullCharacter bind). Zone geometry alone is too early.
+    }
+
+    void LoadStage(int zoneId, string stage)
+    {
+        _loadStage = stage;
+        ZoneInTrace.Mark($"load {zoneId}: {stage}");
     }
 
     public void PrioritizeLocalityAround(Vector3 position)

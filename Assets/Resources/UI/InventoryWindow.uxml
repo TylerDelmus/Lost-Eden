@@ -1,0 +1,11 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <!-- The player's inventory as a dockable view: stock's InventoryView_c (ctor 100ccefe) is a
+         DockableView_c, shown in a tab of a dock window. This is its item area: the
+         InventoryViewBase_c it builds at 100cd463, whose ItemListViewBase_c shows the items as a
+         grid or a list. The window around it (tabs, close, and the grid/list picker in its header)
+         comes from the dock layer.
+         InventoryWindow.uss places it; the skin styles the views. -->
+    <AoDockableView name="inventory" view_id="inventory" title="Inventory" class="inventory" view_layout="vertical">
+        <AoInventoryViewBase name="inventory-view" class="inventory-view"/>
+    </AoDockableView>
+</ui:UXML>

@@ -1,10 +1,12 @@
 using System;
+using UnityEngine;
 using UnityEngine.UIElements;
 
 /// <summary>
-/// Port of stock <c>ItemListViewBase_c : MultiListView_c : View</c> (GUI.dll) — a multi-list
-/// specialised for game items, which is the list half of the inventory window. Stock's only
-/// recovered attribute here is <c>listview_flags</c>.
+/// Port of stock <c>ItemListViewBase_c : MultiListView_c : View</c> (GUI.dll, ctor 100423fc) —
+/// the multi-list that shows a container's items, as a grid of icons or as a list. Its saved
+/// settings (10041352) carry the layout mode and a list sort and a grid sort, each applied to
+/// the base. Stock's only other recovered attribute here is <c>listview_flags</c>.
 /// </summary>
 [UxmlElement]
 public partial class AoItemListViewBase : AoMultiListView
@@ -17,55 +19,215 @@ public partial class AoItemListViewBase : AoMultiListView
 }
 
 /// <summary>
-/// Port of stock <c>ItemContainerView_c : View</c> (GUI.dll) — the backing view for any
-/// container of items. <c>InventoryView_c</c> constructs two of these, and
-/// <c>InventoryViewBase_c</c> derives from it.
+/// Stock <c>ItemContainerView_c</c>'s column flags: which optional columns its list gets. The
+/// Icon column is always there.
+/// </summary>
+[Flags]
+public enum AoItemColumns
+{
+    None = 0,
+    Count = 1 << 0,
+    Name = 1 << 1,
+    Price = 1 << 2,
+    Quality = 1 << 3,
+}
+
+/// <summary>
+/// Port of stock <c>ItemContainerView_c : View</c> (GUI.dll, ctor 100ce55d) — the view for one
+/// container of items (the inventory, a backpack, the bank…). It holds an
+/// <see cref="AoItemListViewBase"/> and gives it its columns:
 ///
-/// Stock carries the container's identity and capacity; the trailing strings beside its
-/// vftable belong to a neighbouring class and were not used.
+/// <code>
+///   id  label    width  when
+///   0   Icon      16    always
+///   1   Name     200    AoItemColumns.Name
+///   2   Count     30    AoItemColumns.Count
+///   3   Price    100    AoItemColumns.Price
+///   4   Quality  100    AoItemColumns.Quality
+/// </code>
+///
+/// then sorts the list by Name, ascending (<c>SetListSortColumn(1, …)</c>).
+///
+/// <para>
+/// <b>Not ported:</b> the item placement stock restores from its saved config (<c>item_id</c>
+/// and <c>item_pos</c> pairs), and whatever the Price column's alternate flags (0x1e rather than
+/// 0xe, when the view's own flag 0x10 is set) change.
+/// </para>
 /// </summary>
 [UxmlElement]
 public partial class AoItemContainerView : AoView
 {
-    public event Action<int> SlotClicked;
-    public event Action<int, int> SlotDropped;
+    public const int IconColumn = 0;
+    public const int NameColumn = 1;
+    public const int CountColumn = 2;
+    public const int PriceColumn = 3;
+    public const int QualityColumn = 4;
 
-    int _capacity;
+    readonly AoItemListViewBase _list;
+    AoItemColumns _columns = AoItemColumns.None;
+
+    /// <summary>
+    /// An item was picked up — stock's left press without a qualifier (<c>ItemListViewBase_c</c>
+    /// 10041b41: button 1, <c>GetQualifiers() &amp; 3</c> clear), which fires the pick-up signal
+    /// (+0x2d8). The owner starts the drag.
+    /// </summary>
+    public event Action<AoMultiListViewItem, PointerDownEvent> ItemPickedUp;
+
+    /// <summary>
+    /// The item's other press — stock's button 2 (10041bfa), which fires +0x2e8. Taken here as
+    /// the use request (a backpack opens this way); what stock connects to +0x2e8 is not read.
+    /// </summary>
+    public event Action<AoMultiListViewItem> ItemUseRequested;
+
+    /// <summary>An item drag was released over this container (stock's drop slot, 100cc855).</summary>
+    public event Action<AoItemDrop> ItemDropped;
 
     public AoItemContainerView()
     {
         AddToClassList("ao-item-container-view");
 
-        // A container of slots is a grid: rows fill left to right and wrap. That arrangement
-        // is the view's rule, not its look, so a skin can space the slots but not unflow them.
-        style.flexDirection = FlexDirection.Row;
-        style.flexWrap = Wrap.Wrap;
-        style.alignContent = Align.FlexStart;
+        _list = new AoItemListViewBase { name = "itemlist" };
+        _list.style.flexGrow = 1f;
+        _list.ItemPressed += OnItemPressed;
+        Add(_list);
+
+        BuildColumns();
     }
 
-    /// <summary>Number of slots; rebuilding is the owner's job via <see cref="Rebuild"/>.</summary>
-    public int Capacity => _capacity;
+    // Stock numbers the buttons from 1 (1 = left, 2 = right, as its mouse-down slot branches);
+    // UI Toolkit numbers them from 0. Shift and Ctrl stand in for stock's two qualifier bits,
+    // whose mapping is not read.
+    void OnItemPressed(AoMultiListViewItem item, PointerDownEvent evt)
+    {
+        if (evt.button == 0)
+        {
+            if (evt.shiftKey || evt.ctrlKey)
+                return;
+            ItemPickedUp?.Invoke(item, evt);
+        }
+        else if (evt.button == 1)
+        {
+            ItemUseRequested?.Invoke(item);
+        }
+    }
+
+    /// <summary>Called by the drag controller when an item drag is released over this view.</summary>
+    public void ReceiveDrop(AoItemDrop drop) => ItemDropped?.Invoke(drop);
+
+    /// <summary>The list showing this container's items.</summary>
+    public AoItemListViewBase List => _list;
 
     /// <summary>Container identity as the server addresses it (inventory, bank, a backpack…).</summary>
     public int ContainerId { get; set; }
 
-    public void Rebuild(int capacity)
+    /// <summary>Which optional columns the list has. Changing it rebuilds the header.</summary>
+    public AoItemColumns ItemColumns
     {
-        _capacity = capacity;
-        Clear();
-
-        for (int i = 0; i < capacity; i++)
+        get => _columns;
+        set
         {
-            int slotIndex = i;
-            var slot = new AoItemSlotView { SlotIndex = slotIndex };
-            slot.Clicked += () => SlotClicked?.Invoke(slotIndex);
-            slot.Dropped += from => SlotDropped?.Invoke(from, slotIndex);
-            Add(slot);
+            if (_columns == value)
+                return;
+
+            _columns = value;
+            BuildColumns();
         }
     }
 
-    public AoItemSlotView Slot(int index) =>
-        index >= 0 && index < childCount ? this[index] as AoItemSlotView : null;
+    void BuildColumns()
+    {
+        var columns = new System.Collections.Generic.List<AoMultiListView.AoColumn>
+        {
+            new(IconColumn, "Icon", 16f)
+        };
+
+        if ((_columns & AoItemColumns.Name) != 0) columns.Add(new(NameColumn, "Name", 200f));
+        if ((_columns & AoItemColumns.Count) != 0) columns.Add(new(CountColumn, "Count", 30f));
+        if ((_columns & AoItemColumns.Price) != 0) columns.Add(new(PriceColumn, "Price", 100f));
+        if ((_columns & AoItemColumns.Quality) != 0) columns.Add(new(QualityColumn, "Quality", 100f));
+
+        _list.SetColumns(columns);
+        _list.SetListSortColumn(NameColumn, ascending: true);
+    }
+}
+
+/// <summary>
+/// Port of stock <c>InventoryViewBase_c : ItemContainerView_c</c> (GUI.dll, ctor 100ccde7) —
+/// the container view the inventory window builds. It passes column flags 0xb: Name, Count and
+/// Quality, and no Price.
+/// </summary>
+[UxmlElement]
+public partial class AoInventoryViewBase : AoItemContainerView
+{
+    public AoInventoryViewBase()
+    {
+        AddToClassList("ao-inventory-view-base");
+        ItemColumns = AoItemColumns.Name | AoItemColumns.Count | AoItemColumns.Quality;
+    }
+}
+
+/// <summary>
+/// Port of stock <c>InventoryListViewItem_c</c> (GUI.dll, ctor 1003e20a) — one item in an
+/// <see cref="AoItemListViewBase"/>. In the grid it is the item's icon with its stack count;
+/// in the list its Icon cell is the icon and the rest are text.
+///
+/// <para>
+/// <b>Not read:</b> how stock draws the grid cell (<c>MultiListView_c::CreateItemView</c>,
+/// 10133f5f) and the list cells. Here the grid cell is an <see cref="AoItemIconView"/>, which
+/// shows the stack count when there is more than one.
+/// </para>
+/// </summary>
+public class AoInventoryListViewItem : AoMultiListViewItem
+{
+    readonly string _name;
+    readonly int _count;
+    readonly int _quality;
+    readonly string _price;
+
+    public Texture2D Icon { get; }
+
+    public AoInventoryListViewItem(Texture2D icon, string name, int count, int quality, string price = null)
+    {
+        AddToClassList("ao-inventory-list-view-item");
+        Icon = icon;
+        _name = name ?? string.Empty;
+        _count = count;
+        _quality = quality;
+        _price = price ?? string.Empty;
+    }
+
+    public string Name => _name;
+    public int Count => _count;
+    public int Quality => _quality;
+
+    protected override VisualElement CreateCell(int columnId, int columnIndex)
+    {
+        if (columnId == AoItemContainerView.IconColumn)
+        {
+            var icon = new VisualElement();
+            icon.AddToClassList("ao-inventory-list-view-item__icon");
+            if (Icon != null)
+                icon.style.backgroundImage = new StyleBackground(Icon);
+            return icon;
+        }
+
+        return new Label(SortKeyFor(columnId, columnIndex));
+    }
+
+    protected override string SortKeyFor(int columnId, int columnIndex) => columnId switch
+    {
+        AoItemContainerView.NameColumn => _name,
+        AoItemContainerView.CountColumn => _count.ToString(),
+        AoItemContainerView.PriceColumn => _price,
+        AoItemContainerView.QualityColumn => _quality.ToString(),
+        _ => string.Empty,
+    };
+
+    protected override VisualElement CreateGridView()
+    {
+        var view = new AoItemIconView { Image = Icon, StackCount = _count };
+        return view;
+    }
 }
 
 /// <summary>
@@ -100,26 +262,26 @@ public partial class AoItemSlotView : AoView
 
     public bool IsEmpty => _icon.ItemId == 0;
 
-    public void SetItem(int itemId, int iconId, int stackCount = 1)
+    public void SetItem(int itemId, int iconId, int stackCount = 1, Texture2D image = null)
     {
         _icon.ItemId = itemId;
         _icon.IconId = iconId;
         _icon.StackCount = stackCount;
+        _icon.Image = image;
         EnableInClassList("ao-item-slot-view--empty", itemId == 0);
     }
 
-    public void ClearItem() => SetItem(0, 0, 0);
+    public void ClearItem() => SetItem(0, 0, 0, null);
 
     /// <summary>Called by a drag controller when an item is released over this slot.</summary>
     public void NotifyDropped(int fromSlotIndex) => Dropped?.Invoke(fromSlotIndex);
 }
 
 /// <summary>
-/// Port of stock <c>ItemIconView_c : View</c> (GUI.dll) — the icon itself, plus the state that
-/// drives how a whole container is presented. The attributes beside its vftable are
-/// <c>iconview_flags</c>, <c>listview_mode</c>, <c>list_sort_order</c>, <c>list_sort_column</c>,
-/// <c>grid_sort_order</c> and <c>grid_sort_column</c>: stock keeps a *separate* sort for grid
-/// mode and list mode, which is why the inventory remembers both independently.
+/// Port of stock <c>ItemIconView_c : View</c> (GUI.dll) — an item's icon, with its stack count.
+/// Its attribute is <c>iconview_flags</c>. (<c>listview_mode</c> and the list and grid sorts,
+/// whose names sit near this vftable too, are read by <c>ItemListViewBase_c</c> — 10041352 — and
+/// live on <see cref="AoMultiListView"/>.)
 /// </summary>
 [UxmlElement]
 public partial class AoItemIconView : AoView
@@ -146,6 +308,22 @@ public partial class AoItemIconView : AoView
         get => _itemId;
         set => _itemId = value;
     }
+
+    /// <summary>
+    /// The icon art, drawn as this view's background. The view does not resolve <see cref="IconId"/>
+    /// itself — it has no database — so whoever fills the slot supplies the texture.
+    /// </summary>
+    public Texture2D Image
+    {
+        get => _image;
+        set
+        {
+            _image = value;
+            style.backgroundImage = value != null ? new StyleBackground(value) : new StyleBackground(StyleKeyword.None);
+        }
+    }
+
+    Texture2D _image;
 
     /// <summary>Numeric GUI art id; resolution is the visual pass's job.</summary>
     public int IconId
@@ -178,25 +356,4 @@ public partial class AoItemIconView : AoView
     /// <summary>Stock <c>iconview_flags</c>, kept raw until the bits are recovered.</summary>
     [UxmlAttribute("iconview_flags")]
     public int IconViewFlags { get; set; }
-
-    /// <summary>Stock <c>listview_mode</c>: grid of icons, or a multi-column list.</summary>
-    [UxmlAttribute("listview_mode")]
-    public AoListViewMode ListViewMode { get; set; } = AoListViewMode.Grid;
-
-    [UxmlAttribute("list_sort_column")] public int ListSortColumn { get; set; }
-    [UxmlAttribute("list_sort_order")] public AoSortOrder ListSortOrder { get; set; }
-    [UxmlAttribute("grid_sort_column")] public int GridSortColumn { get; set; }
-    [UxmlAttribute("grid_sort_order")] public AoSortOrder GridSortOrder { get; set; }
-}
-
-public enum AoListViewMode
-{
-    Grid,
-    List
-}
-
-public enum AoSortOrder
-{
-    Ascending,
-    Descending
 }

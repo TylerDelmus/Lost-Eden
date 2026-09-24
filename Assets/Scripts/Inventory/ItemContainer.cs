@@ -30,4 +30,6 @@ public sealed class ItemContainer
         if (item != null)
             _items.Add(item);
     }
+
+    internal bool Remove(InventoryItem item) => _items.Remove(item);
 }

@@ -68,14 +68,37 @@ public class PlayerController : MonoBehaviour
     private void OnEnable()
     {
         if (_networkClient != null)
-            _networkClient.FullCharacterReceived += OnFullCharacter;
+            SubscribeNetwork();
     }
 
     private void OnDisable()
     {
         if (_networkClient != null)
-            _networkClient.FullCharacterReceived -= OnFullCharacter;
+            UnsubscribeNetwork();
     }
+
+    void SubscribeNetwork()
+    {
+        UnsubscribeNetwork();
+        _networkClient.FullCharacterReceived += OnFullCharacter;
+        _networkClient.InventoryUpdateReceived += OnInventoryUpdate;
+        _networkClient.ContainerAddItemReceived += OnContainerAddItem;
+    }
+
+    void UnsubscribeNetwork()
+    {
+        _networkClient.FullCharacterReceived -= OnFullCharacter;
+        _networkClient.InventoryUpdateReceived -= OnInventoryUpdate;
+        _networkClient.ContainerAddItemReceived -= OnContainerAddItem;
+    }
+
+    /// <summary>A container's contents: a backpack the player opened.</summary>
+    void OnInventoryUpdate(InventoryUpdateMessage msg)
+        => Inventory?.ApplyContainerContents(msg.InventoryIdentity, msg.Handle, msg.Items, _itemTemplates);
+
+    /// <summary>The server moved an item between containers.</summary>
+    void OnContainerAddItem(ContainerAddItem msg)
+        => Inventory?.ApplyContainerAddItem(msg.Source, msg.Target, msg.Slot);
 
     private void Start()
     {
@@ -90,10 +113,7 @@ public class PlayerController : MonoBehaviour
 
         // Reflex inject may land after the first OnEnable on some boot paths.
         if (_networkClient != null)
-        {
-            _networkClient.FullCharacterReceived -= OnFullCharacter;
-            _networkClient.FullCharacterReceived += OnFullCharacter;
-        }
+            SubscribeNetwork();
     }
 
     private void OnCharacterPress()
@@ -247,10 +267,23 @@ public class PlayerController : MonoBehaviour
 
         Identity identity = _pendingFullCharacter.Identity;
         if (!_playfieldFactory.TryGetCharacter(identity, out Character localPlayer))
+        {
+            ZoneInTrace.Mark($"FullCharacter pending: local character {identity.Instance} not on the playfield yet");
             return;
+        }
 
         FullCharacterMessage msg = _pendingFullCharacter;
         _pendingFullCharacter = null;
+
+        // The connection went while the playfield was loading; possessing the character now would
+        // put us in a world with no server behind it. The reconnect brings a fresh FullCharacter.
+        // Phase too: during a reconnect the open socket is the login server's, not a zone's.
+        if (_networkClient == null || !_networkClient.Connected
+            || (_networkClient.Phase != SessionPhase.EnteringZone && _networkClient.Phase != SessionPhase.InPlay))
+        {
+            ZoneInTrace.Mark($"local player {identity.Instance} NOT bound: no zone connection (phase={_networkClient?.Phase})");
+            return;
+        }
 
         try
         {
@@ -266,15 +299,21 @@ public class PlayerController : MonoBehaviour
                 $"{localPlayer.Identity.Type}:{localPlayer.Identity.Instance} \"{localPlayer.Name}\"");
 
             InventoryReady?.Invoke();
+            ZoneInTrace.Complete($"local player {identity.Instance} bound");
         }
         catch (Exception ex)
         {
+            ZoneInTrace.Mark("FullCharacter bind THREW (see next error)");
             Debug.LogError($"[PlayerController] Failed to apply FullCharacter for local player: {ex}");
         }
     }
 
+    internal bool HasPendingFullCharacter => _pendingFullCharacter != null;
+
     internal void ClearPendingFullCharacter()
     {
+        if (_pendingFullCharacter != null)
+            ZoneInTrace.Mark($"pending FullCharacter {_pendingFullCharacter.Identity.Instance} DISCARDED by playfield unload");
         _pendingFullCharacter = null;
     }
 

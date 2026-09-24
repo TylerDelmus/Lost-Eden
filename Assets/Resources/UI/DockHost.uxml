@@ -1,0 +1,8 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <!-- The layer every dock window lives in. One panel for all of them, so a tab dragged out of
+         one window can be dropped on another. Click-through: only the windows take the mouse.
+         A plain VisualElement, not an AoView: an AoView puts absolutely placed children back in
+         the flow unless it is stacked, and every window here is placed absolutely. It carries
+         the ao-view class only so the skin's font reaches a dragged tab's label. -->
+    <ui:VisualElement name="root" class="dock-root ao-view" picking-mode="Ignore"/>
+</ui:UXML>

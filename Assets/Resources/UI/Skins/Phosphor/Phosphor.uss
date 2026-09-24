@@ -22,9 +22,13 @@
      .ao-scroll-view       __scroller
      .ao-text-input-view   __field
      .ao-combo-box         __field  __toggle  __popup  __entry   --open
-     .ao-multi-list-view   __header  __body
+     .ao-dropdown-menu     __button  __label  __caret  __popup  __entry  __entry--selected  --open
+     .ao-multi-list-view   __header  __body  __slot  __empty-slot  --grid  --list
      .ao-column-header-view  __label  __caret  --sorted  --descending
-     .ao-multi-list-view-item  __cell  --selected
+     .ao-multi-list-view-item  __row  __cell  __grid  --grid  --selected
+     .ao-dock-window       __header  __tabs  __tab  __tab--selected  __accessory  __close  __body
+     .ao-dock-drag-image                                   a dragged tab's label
+     .ao-dockable-view
      .ao-item-container-view
      .ao-item-slot-view    --empty
      .ao-item-icon-view    __stack
@@ -305,6 +309,169 @@
     color: var(--ao-fg-hi);
 }
 
+/* ─── Dropdown menu ────────────────────────────────────────────────────── */
+
+/* A compact button: the picked choice and a caret. Its list floats at the
+   top of the panel while open, so it carries its own font. */
+.ao-dropdown-menu__button {
+    height: 18px;
+    margin: 0;
+    padding: 0 4px 0 6px;
+    background-color: var(--ao-bg-3);
+    border-width: 1px;
+    border-radius: 0;
+    border-color: var(--ao-line);
+    color: var(--ao-fg);
+}
+
+.ao-dropdown-menu__button:hover {
+    background-color: var(--ao-bg-4);
+    border-color: var(--ao-line-hi);
+}
+
+.ao-dropdown-menu--open > .ao-dropdown-menu__button {
+    border-color: var(--ao-line-focus);
+}
+
+.ao-dropdown-menu__caret {
+    margin-left: 5px;
+}
+
+.ao-dropdown-menu__popup {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Verdana/verdana-13.pixelfont");
+    font-size: 13px;
+    -unity-text-generator: standard;
+    background-color: var(--ao-bg-2);
+    border-width: 1px;
+    border-color: var(--ao-line-hi);
+}
+
+.ao-dropdown-menu__entry {
+    height: 20px;
+    margin: 0;
+    padding: 0 8px;
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+    border-radius: 0;
+    color: var(--ao-fg);
+    -unity-text-align: middle-left;
+}
+
+.ao-dropdown-menu__entry:hover {
+    background-color: var(--ao-bg-4);
+    color: var(--ao-fg-hi);
+}
+
+.ao-dropdown-menu__entry.ao-dropdown-menu__entry--selected {
+    color: var(--ao-fg-hi);
+}
+
+/* ─── Dock windows ─────────────────────────────────────────────────────── */
+
+/* A tabbed window: the close button and the tab bar across the top, the
+   selected view below. The tabs sit on the frame's top edge. Tab and drag
+   image selectors carry two classes to outrank `.ao-view .unity-label`,
+   which zeroes every label's padding. */
+.ao-dock-window {
+    background-color: var(--ao-window);
+    border-width: 1px;
+    border-color: var(--ao-line);
+    color: var(--ao-fg);
+}
+
+.ao-dock-window__header {
+    height: 18px;
+    /* 2px on the right, as the 13px buttons have above and below them. None
+       on the left: the tab's own padding puts the title 5px in, as much as
+       the capitals have above them. */
+    padding: 0 2px 0 0;
+    border-bottom-width: 1px;
+    border-color: var(--ao-line);
+}
+
+.ao-dock-window__accessory {
+    margin: 0 3px 0 6px;
+}
+
+/* The header's buttons are small framed squares, 13px as stock's are: the
+   close button with its drawn X, and a header dropdown with only its caret
+   (the list shows which choice is picked). */
+.ao-dock-window__close,
+.ao-dock-window__accessory .ao-dropdown-menu__button {
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    padding: 0;
+    align-self: center;
+    justify-content: center;
+    align-items: center;
+    background-color: var(--ao-bg-3);
+    border-width: 1px;
+    border-radius: 0;
+    border-color: var(--ao-line);
+    color: var(--ao-fg);
+}
+
+.ao-dock-window__close:hover,
+.ao-dock-window__accessory .ao-dropdown-menu__button:hover {
+    background-color: var(--ao-bg-4);
+    border-color: var(--ao-line-hi);
+    color: var(--ao-fg-hi);
+}
+
+.ao-dock-window__accessory .ao-dropdown-menu__label {
+    display: none;
+}
+
+.ao-dock-window__accessory .ao-dropdown-menu__caret {
+    margin: 0;
+}
+
+.ao-dock-window__tabs > .ao-dock-window__tab {
+    height: 16px;
+    /* The 2px at the bottom centres the pixel font's letters on the header
+       buttons: measured, they otherwise sit 1px low. */
+    padding: 0 8px 2px 4px;
+    color: var(--ao-fg-dim);
+    -unity-text-align: middle-left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ao-dock-window__tabs > .ao-dock-window__tab:hover {
+    color: var(--ao-fg);
+}
+
+/* Tabs are plain text: the selected one is the bright one. */
+.ao-dock-window__tabs > .ao-dock-window__tab.ao-dock-window__tab--selected {
+    color: var(--ao-fg);
+}
+
+/* The view fills the window edge to edge, as stock's does: no padding, and a
+   list inside drops its own frame, so the window's is the only one. */
+.ao-dock-window__body {
+    padding: 0;
+}
+
+.ao-dock-window__body .ao-multi-list-view {
+    border-width: 0;
+}
+
+/* The resize edges (every side and corner) are invisible
+   5px bands along the frame; the view decides whether and how it resizes. */
+
+/* The tab's label following the pointer while it is dragged. */
+.ao-view > .ao-dock-drag-image {
+    height: 20px;
+    padding: 0 10px;
+    border-width: 1px;
+    border-color: var(--ao-line-focus);
+    background-color: var(--ao-bg-4);
+    color: var(--ao-fg);
+    -unity-text-align: middle-left;
+}
+
 /* ─── Scroll view ──────────────────────────────────────────────────────── */
 
 /* 8px bars, flat track, a thumb with a 1px edge, and no arrow buttons. */
@@ -359,8 +526,45 @@
     border-color: var(--ao-line);
 }
 
-.ao-scroll-view .unity-base-slider__dragger:hover {
-    background-color: var(--ao-line-hi);
+/* In a grid the vertical bar lies over the grid's right margin instead of
+   taking width from it, so the grid never loses a column when it starts to
+   scroll. The last column leaves 4px of margin (its box's spacing and the
+   grid's inset) beside its slot, which is the bar's width. */
+.ao-multi-list-view--grid .ao-scroll-view .unity-scroller--vertical {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 4px;
+}
+
+.ao-multi-list-view--grid .ao-scroll-view .unity-scroller--vertical > .unity-scroller__slider,
+.ao-multi-list-view--grid .ao-scroll-view .unity-scroller--vertical .unity-base-slider__tracker,
+.ao-multi-list-view--grid .ao-scroll-view .unity-scroller--vertical .unity-base-slider__dragger {
+    width: 4px;
+}
+
+/* Hover and drag states. The default theme restyles the track and the thumb
+   while the whole slider is hovered or pressed (the thumb near-white), with
+   rules more specific than one class and a pseudo, so these name the slider
+   too to outrank them. */
+.ao-scroll-view .unity-scroller .unity-base-slider:hover .unity-base-slider__tracker,
+.ao-scroll-view .unity-scroller .unity-base-slider:active .unity-base-slider__tracker {
+    background-color: var(--ao-bg-0);
+    border-width: 0;
+}
+
+.ao-scroll-view .unity-scroller .unity-base-slider:hover .unity-base-slider__dragger {
+    background-color: var(--ao-bg-4);
+    border-width: 1px;
+    border-color: var(--ao-line-hi);
+}
+
+.ao-scroll-view .unity-scroller .unity-base-slider .unity-base-slider__dragger:hover,
+.ao-scroll-view .unity-scroller .unity-base-slider:active .unity-base-slider__dragger {
+    background-color: var(--ao-line);
+    border-width: 1px;
+    border-color: var(--ao-line-focus);
 }
 
 .ao-scroll-view .unity-scroller--vertical .unity-base-slider__tracker,
@@ -422,11 +626,15 @@
 }
 
 .ao-multi-list-view-item {
-    align-items: center;
+    justify-content: center;
     min-height: 20px;
     border-bottom-width: 1px;
     border-color: var(--ao-line);
     color: var(--ao-fg);
+}
+
+.ao-multi-list-view-item__row {
+    align-items: center;
 }
 
 .ao-multi-list-view-item:hover {
@@ -438,6 +646,41 @@
     color: var(--ao-fg-hi);
 }
 
+/* In the grid an item is a fixed box one pitch across (58px: the 48px cell
+   and the 10px spacing). The box itself stays bare; the slot inside it is
+   what gets framed. */
+.ao-multi-list-view-item.ao-multi-list-view-item--grid {
+    min-height: 0;
+    border-width: 0;
+}
+
+.ao-multi-list-view-item.ao-multi-list-view-item--grid:hover,
+.ao-multi-list-view-item.ao-multi-list-view-item--grid.ao-multi-list-view-item--selected {
+    background-color: rgba(0, 0, 0, 0);
+}
+
+/* A slot, filled or empty. Stock's 58px pitch less the 2px margin each way
+   leaves 4px between frames and 52px inside the 1px frame, so the 48px icon
+   is never scaled. The slot draws its own frame, each
+   corner cut by one crisp pixel (border-radius would blur it):
+     --ao-slot-fill     the inside
+     --ao-slot-line     the outline; its thickness is the border-width */
+.ao-multi-list-view__slot {
+    margin: 2px;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0);
+    --ao-slot-fill: var(--ao-bg-2);
+    --ao-slot-line: var(--ao-line);
+}
+
+.ao-multi-list-view-item--grid:hover > .ao-multi-list-view__slot {
+    --ao-slot-line: var(--ao-line-hi);
+}
+
+.ao-multi-list-view-item--grid.ao-multi-list-view-item--selected > .ao-multi-list-view__slot {
+    --ao-slot-line: var(--ao-line-focus);
+}
+
 .ao-multi-list-view-item__cell {
     padding: 0 8px;
     overflow: hidden;
@@ -447,14 +690,18 @@
 
 /* ─── Items ────────────────────────────────────────────────────────────── */
 
-.ao-item-container-view {
-    padding: 4px;
+/* The Icon column is 16px wide and shows the whole icon in it. */
+.ao-multi-list-view-item__cell.ao-inventory-list-view-item__icon {
+    height: 16px;
+    padding: 0;
+    -unity-background-scale-mode: scale-to-fit;
 }
 
-/* 48px: stock icon art is 48x48, and only whole divisors of it stay sharp. */
+/* 50px: stock icon art is 48x48 and must land on 48 whole pixels to stay sharp,
+   so the slot is the icon plus its 1px border on each side. */
 .ao-item-slot-view {
-    width: 48px;
-    height: 48px;
+    width: 50px;
+    height: 50px;
     margin: 0 4px 4px 0;
     background-color: var(--ao-bg-0);
     border-width: 1px;

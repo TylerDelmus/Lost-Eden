@@ -135,6 +135,7 @@ class NetworkSession
                 {
                     _client.SetPhase(SessionPhase.EnteringZone);
                     SendZoneLogin();
+                    ZoneInTrace.Mark($"connected to zone server {state.Endpoint}, ZoneLogin sent");
                 }
             });
         }
@@ -233,12 +234,23 @@ class NetworkSession
 
     void ProcessPacket(byte[] packet)
     {
+        Message message;
         try
         {
-            Message message = _serializer.Deserialize(packet);
+            message = _serializer.Deserialize(packet);
+        }
+        catch (Exception e)
+        {
+            ZoneInTrace.RecordParseFailure(packet, e);
+            return;
+        }
+
+        try
+        {
             if (message == null)
                 return;
 
+            ZoneInTrace.RecordReceived(message);
             NetworkDebug.LogPacket("RX", packet, message);
 
             if (message.Header.Sender != _client.ServerId)
@@ -261,7 +273,7 @@ class NetworkSession
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Network] Failed to deserialize/process packet: {e}");
+            Debug.LogError($"[Network] Failed to process packet: {e}");
         }
     }
 
@@ -320,6 +332,10 @@ class NetworkSession
             _client.OnCastNanoSpell((CastNanoSpellMessage)n3Msg);
         else if (n3Msg.N3MessageType == N3MessageType.Buff)
             _client.OnBuff((BuffMessage)n3Msg);
+        else if (n3Msg.N3MessageType == N3MessageType.InventoryUpdate)
+            _client.OnInventoryUpdate((InventoryUpdateMessage)n3Msg);
+        else if (n3Msg.N3MessageType == N3MessageType.ContainerAddItem)
+            _client.OnContainerAddItem((ContainerAddItem)n3Msg);
     }
 
     void ScheduleZoneConnect(IPEndPoint endpoint)
@@ -336,12 +352,14 @@ class NetworkSession
             Cookie2 = zoneInfo.Cookie2
         };
 
+        ZoneInTrace.Begin($"ZoneInfo → {zoneInfo.ServerIpAddress}:{zoneInfo.ServerPort}");
         ScheduleZoneConnect(new IPEndPoint(zoneInfo.ServerIpAddress, zoneInfo.ServerPort));
     }
 
     void OnZoneRedirection(ZoneRedirectionMessage zoneRed)
     {
         Debug.Log($"[Network] Zone redirection to {zoneRed.ServerIpAddress}:{zoneRed.ServerPort}");
+        ZoneInTrace.Begin($"ZoneRedirection → {zoneRed.ServerIpAddress}:{zoneRed.ServerPort}");
         ScheduleZoneConnect(new IPEndPoint(zoneRed.ServerIpAddress, zoneRed.ServerPort));
     }
 
