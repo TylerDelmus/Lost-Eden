@@ -1387,6 +1387,64 @@ The `100.0` (`100124d8` / `100124d0` hold +/-100.0 as doubles) is a shared scale
 cannot change which axis steps first; keeping it is faithful and harmless. `10010946` is an imported
 `floor`, `10010a50` an imported float-to-int truncation.
 
+## 8a. The jump
+
+Ported in `CharVehicleSim.Jump` / `JumpHeightFromStats`, `VehicleSim.Impact`, and the
+`CharVehicleSim.OnLanded` override. Tests: `Tests/Vehicle/JumpTests.cs`.
+
+```
+JumpStartTransitionAction_t  (vftable 101617f0, slot 1 = 1006dcdb)
+  1006f9eb()                                   // speed model refresh, §4.5
+  h = owner->JumpHeight()                      // 10058994, owner = 1006f753 (dynel by identity +0x168)
+  vehicle->vtbl[+0x2c](h)                      // CharVehicle_t slot 11 = 1006ff32
+  play anim 0x9c if state-machine state == 1, else 0x9d
+```
+
+**Height, `10058994`** (on `SimpleChar_t`): `str = stat 16`, `agi = stat 17`, both read with detail 2.
+`if (800.0 < agi + str && stat 215 == 0) { str = 800; agi = 0 }`, then `h = (agi + str) / 200.0 + 1.0`,
+floored at `0.5` (`1015e0e4`). The constants are `101603a8`/`101603a0` (800), `10160398` (200),
+`10156eb8` (1).
+
+**Jump, `1006ff32`:**
+
+```
+if (this->0x164 != 0) return                                  // 1006f503: a jump is in progress
+pf = owner->GetPlayfield();  surf = pf->0x60                  // the tilemap surface
+if (pf && surf &&
+    surf->vtbl[+0xc](this->0x58, GetGlobalPos() + (0,100,0), &hit, false, null))   // slot 3
+{
+    room = (double)(hit.y - this->0x5c) - 2 * owner->GetBodyScale()   // N3 10019622, +0xac
+    room = (float)room;  if (room < 0.1) room = 0.1                   // 1015ef38 / 10161850
+    if (room <= h) h = room
+}
+this->0x164 = h
+if (owner->0x21c && this->0x164 < 1.5) this->0x164 = 1.5      // 1015e7ac; the STORED value only
+v = sqrt((h + h) * |Vehicle_t::s_vGravityAccel|)
+this->0x174 = this->0x5c                                      // take-off height
+Impact((0, v * this->0x34, 0));  EnableFalling()
+```
+
+- **Slot 3 is slot 4 with the normal thrown away** (N3 `10018877`: pushes a scratch `(0,1,0)` and
+  calls `+0x10`), so the port calls `ISurface.GetLineIntersection`.
+- **`SimpleChar_t +0x21c` is the NPC byte** — `N3Msg_IsNpc` (`100166d4`) returns false only when it
+  is 0 (and flag `0x800000` is clear). Its 1.5 floor lands on `+0x164` after `h` has been taken, so it
+  never changes the launch; `+0x164` is only ever compared against 0.
+- **There is no airborne gate.** `Vehicle_t::Impact` (`1000a1b8`) is what refuses: it returns when
+  `+0x52` is set, and it also drops any impulse with a non-zero x or z. What passes is
+  `+0x54 += y * (1 / mass)`, then `FUN_1000a1a7` (begin falling). So `v * mass / mass = v`.
+- **`+0x174`** is written here, on landing, and by two unread functions at `1006f3db`/`1006f40e` (one
+  involves `1.1547 = 2/sqrt(3)`). Nothing in the port reads it, so it is not carried.
+
+**Landing, `1006f442`** — `CharVehicle_t` slot 27, the `+0x6c` notification `LandNow` sends: if the
+state machine (`+0x178`) is in state 3, send it event `0x10`; then `+0x164 = 0` and
+`+0x174 = height`. The state machine is not ported; `CharVehicleSim.JumpLanded` stands in for the
+event and fires only when `+0x164` was non-zero.
+
+**Port-side glue, not stock:** `N3CharVehicle.TryStartJump` refuses while sitting and raises
+`JumpStarted` only when `Jump` took — both stand in for the unported state machine, which decides
+whether the action runs at all. The body scale is stat 360 / 100, the reading `GfxControlEffectMesh`
+already uses.
+
 ## 9. Open questions
 
 1. **`FUN_10070a2f` movement-state values.** Partially recovered from `1006f9eb` §4.5: states

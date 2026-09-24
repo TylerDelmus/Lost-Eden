@@ -28,10 +28,6 @@ MonoBehaviour:
   _terminalVelocity: 50
   _speedStopEpsilon: 0.05
   _waypointArrivalRadius: 0.5
-  _jumpStatCap: 800
-  _jumpHeightPerStatPool: 200
-  _jumpHeightBase: 1
-  _jumpHeightFloor: 0.5
   _healthPenaltyThreshold: 0.15
   _statFactorOffset: 1000
   _walkBaseVelocity: 1.5

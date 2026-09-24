@@ -277,6 +277,119 @@ namespace LostEden.Vehicles
         /// <summary><c>Vehicle_t::CalcBodyRight</c> (<c>1000a078</c>) — the body rotation applied to <c>(1,0,0)</c>.</summary>
         public Vec3 CalcBodyRight() => BodyRotation * new Vec3(1f, 0f, 0f);
 
+        // ---- the jump --------------------------------------------------------
+
+        /// <summary>
+        /// +0x164, the height of the jump in progress. Zero means none: <see cref="Jump"/> refuses
+        /// while it is non-zero (<c>1006f503</c>), and landing clears it (<c>1006f442</c>). The ctor
+        /// (<c>1006f5c9</c>) starts it at zero.
+        /// </summary>
+        public float JumpHeight { get; private set; }
+
+        /// <summary>
+        /// The owning character's <c>SimpleChar_t +0x21c</c> — the byte
+        /// <c>n3EngineClientAnarchy_t::N3Msg_IsNpc</c> (<c>100166d4</c>) reads. Stock reaches the
+        /// character through <c>1006f753</c> (the dynel looked up by the identity at +0x168).
+        /// </summary>
+        public bool OwnerIsNpc;
+
+        /// <summary>
+        /// The owning character's <c>n3VisualDynel_t::GetBodyScale</c> (N3 <c>10019622</c>, its
+        /// +0xac). The ceiling clamp in <see cref="Jump"/> subtracts twice this.
+        /// </summary>
+        public float OwnerBodyScale = 1f;
+
+        /// <summary>Raised from <see cref="OnLanded"/> when a jump in progress ends.</summary>
+        public event Action JumpLanded;
+
+        /// <summary>
+        /// <c>SimpleChar_t</c>'s jump height (<c>Gamecode 10058994</c>), from Strength (stat 16),
+        /// Agility (17) and GmLevel (215): <c>(str + agi) / 200 + 1</c>, at least 0.5. Past 800 in
+        /// total a non-GM counts as exactly 800 (<c>str = 800, agi = 0</c>).
+        /// </summary>
+        public static float JumpHeightFromStats(int strength, int agility, int gmLevel)
+        {
+            float str = strength;
+            float agi = agility;
+            if (800f < agi + str && gmLevel == 0)
+            {
+                str = 800f;
+                agi = 0f;
+            }
+
+            float height = (float)((agi + str) / 200.0 + 1.0);
+            if (height < 0.5f)
+                height = 0.5f;
+            return height;
+        }
+
+        /// <summary>
+        /// <c>CharVehicle_t</c> vftable slot 11 (<c>1006ff32</c>) — what
+        /// <c>n3Dynel_t::VehicleJump</c> (N3 <c>10004290</c>) and <c>JumpStartTransitionAction_t</c>
+        /// (<c>1006dcdb</c>) call with <see cref="JumpHeightFromStats"/>. Returns false when refused
+        /// because a jump is already in progress; that return is the port's, stock's is void.
+        ///
+        /// <para>
+        /// In order: refuse unless <see cref="JumpHeight"/> is zero. Probe the surface straight up —
+        /// slot 3's <c>GetLineIntersection</c>, which is slot 4 with its normal discarded (N3
+        /// <c>10018877</c>) — from the position to the position plus <c>(0, 100, 0)</c>. On a hit the
+        /// headroom is <c>hit.y - y - 2 * bodyScale</c>, floored at 0.1, and the height becomes the
+        /// smaller of the two. Store it at +0x164; an NPC's stored value (<b>only</b> the stored one)
+        /// is raised to 1.5. Launch at <c>sqrt(2 * height * |g|)</c> through <see cref="VehicleSim.Impact"/>
+        /// as <c>(0, v * mass, 0)</c>, then <see cref="VehicleSim.EnableFalling"/>.
+        /// </para>
+        ///
+        /// <para>
+        /// The gate is the only one: stock does not check <see cref="VehicleSim.Airborne"/> here.
+        /// A jump started in the air sets <see cref="JumpHeight"/> but <see cref="VehicleSim.Impact"/>
+        /// drops the launch. Stock also stores the take-off height at +0x174; nothing in the port reads
+        /// that field, so it is not carried.
+        /// </para>
+        /// </summary>
+        public bool Jump(float height)
+        {
+            if (JumpHeight != 0f)
+                return false;
+
+            ISurface surface = GetSurface();
+            if (surface != null
+                && surface.GetLineIntersection(
+                    Position, Position + new Vec3(0f, 100f, 0f), out Vec3 hit, out _, false, null))
+            {
+                // x87 keeps hit.y - y unrounded, spills it as a double, and only rounds to float
+                // once the body scale is off (1006ffb4..1006ffd1).
+                float headroom = (float)(((double)hit.Y - Position.Y) - (OwnerBodyScale + OwnerBodyScale));
+                if (headroom < 0.1f)
+                    headroom = 0.1f;
+                if (headroom <= height)
+                    height = headroom;
+            }
+
+            JumpHeight = height;
+            if (OwnerIsNpc && JumpHeight < 1.5f)
+                JumpHeight = 1.5f;
+
+            float speed = MathF.Sqrt((height + height) * MathF.Abs(GravityAccel));
+            Impact(new Vec3(0f, speed * Mass, 0f));
+            EnableFalling();
+            return true;
+        }
+
+        /// <summary>
+        /// <c>CharVehicle_t</c> vftable slot 27 (<c>1006f442</c>), the <c>+0x6c</c> notification
+        /// <see cref="VehicleSim.LandNow"/> sends. Clears <see cref="JumpHeight"/>. Stock first sends
+        /// event 0x10 to the character's state machine (+0x178) when that is in state 3; the state
+        /// machine is not ported, so <see cref="JumpLanded"/> stands in for it, raised only when a
+        /// jump was in progress.
+        /// </summary>
+        protected override void OnLanded(float height)
+        {
+            bool wasJumping = JumpHeight != 0f;
+            JumpHeight = 0f;
+            if (wasJumping)
+                JumpLanded?.Invoke();
+        }
+
         // ---- the surface binding --------------------------------------------
 
         /// <summary>
