@@ -3,9 +3,14 @@ using UnityEngine;
 using UnityEngine.Rendering;
 
 /// <summary>
-/// Camera-facing quads via HDRP Unlit.
-/// Color goes through a MaterialPropertyBlock so particles can differ per draw.
-/// Texture is still set on the material (HDRP Unlit often ignores MPB texture overrides).
+/// Draws the effects' quads, strips and meshes. Stock draws every effect visual as texture x vertex
+/// colour, so they all go through the vertex-colour effect shader (<c>Hidden/LostEden/EffectVertexColor</c>,
+/// HDRP/Unlit's transparent pass with a vertex colour): additive quads are batched into one mesh per
+/// texture with their colours on the vertices; alpha quads stay one draw each, sorted back to front;
+/// strips carry their own colours or the strip's one. Lit model materials (<see cref="MeshDraw.Material"/>)
+/// and meshes without vertex colours keep HDRP's own shaders. If the shader is missing, everything falls
+/// back to HDRP/Unlit.
+/// The texture is set on the material (HDRP Unlit often ignores MPB texture overrides).
 /// </summary>
 public sealed class EffectBillboardBatch
 {
@@ -74,6 +79,48 @@ public sealed class EffectBillboardBatch
         public bool Additive;
         /// <summary>Every four vertices are a quad of their own (0 1 2, 1 2 3) instead of one strip.</summary>
         public bool Quads;
+
+        /// <summary>
+        /// A colour per vertex (stock's D3DCOLOR bytes, gamma), multiplied in with <see cref="Color"/> by the
+        /// vertex-colour effect shader. Null for a strip in one colour.
+        /// </summary>
+        public Color32[] Colors;
+    }
+
+    /// <summary>A stock D3DCOLOR (0xAARRGGBB) as a vertex colour.</summary>
+    public static Color32 ToColor32(uint argb)
+        => new Color32((byte)(argb >> 16), (byte)(argb >> 8), (byte)argb, (byte)(argb >> 24));
+
+    /// <summary>
+    /// A whole mesh drawn with an effect material in one colour, for stock visuals that redraw a
+    /// model's own geometry (GfxVisualShield). The owner keeps the mesh.
+    /// </summary>
+    public sealed class MeshDraw
+    {
+        public Mesh Mesh;
+        public Matrix4x4 Matrix;
+        public Texture Texture;
+        public Color Color;
+        public bool Additive;
+
+        /// <summary>
+        /// The texture's tiling and offset (Unity ST: x, y scale, z, w offset) on the textured paths; a model's
+        /// UV animation sets it (EffectMesh flag 0x1000).
+        /// </summary>
+        public Vector4 TextureST = new Vector4(1f, 1f, 0f, 0f);
+
+        /// <summary>
+        /// The mesh carries a colour per vertex, multiplied in with <see cref="Color"/> and the texture
+        /// (the <c>Hidden/LostEden/EffectVertexColor</c> shader; HDRP/Unlit has no vertex colour).
+        /// </summary>
+        public bool VertexColors;
+
+        /// <summary>
+        /// A lit material of the model's own (EffectMesh with no rendering effect, MParticle). Drawn as is,
+        /// with <see cref="Color"/> as its base colour; <see cref="Texture"/> and <see cref="Additive"/>
+        /// are then unused.
+        /// </summary>
+        public Material Material;
     }
 
     readonly Mesh _quad;
@@ -82,6 +129,7 @@ public sealed class EffectBillboardBatch
     readonly List<Quad> _additiveQuads = new List<Quad>(32);
     readonly List<Quad> _alphaQuads = new List<Quad>(16);
     readonly List<Strip> _strips = new List<Strip>(8);
+    readonly List<MeshDraw> _meshes = new List<MeshDraw>(4);
     readonly List<Mesh> _stripMeshes = new List<Mesh>(8);
     readonly Dictionary<int, int[]> _stripTriangles = new Dictionary<int, int[]>();
     readonly Dictionary<int, int[]> _quadTriangles = new Dictionary<int, int[]>();
@@ -90,18 +138,48 @@ public sealed class EffectBillboardBatch
     // was last written to a single Material. One material per texture keeps each draw honest.
     readonly Dictionary<Texture, Material> _additiveByTexture = new Dictionary<Texture, Material>();
     readonly Dictionary<Texture, Material> _alphaByTexture = new Dictionary<Texture, Material>();
+    readonly Material _additiveVertexColor;
+    readonly Material _alphaVertexColor;
+    readonly Dictionary<Texture, Material> _additiveVertexColorByTexture = new Dictionary<Texture, Material>();
+    readonly Dictionary<Texture, Material> _alphaVertexColorByTexture = new Dictionary<Texture, Material>();
     readonly MaterialPropertyBlock _mpb = new MaterialPropertyBlock();
     bool _cacheLimitWarned;
     readonly int _unlitMapId;
     readonly int _unlitColorId;
     readonly int _unlitMapStId;
+    readonly int _baseColorId = Shader.PropertyToID("_BaseColor");
+    readonly int _vertexGammaScaleId = Shader.PropertyToID("_VertexGammaScale");
+
+    // Additive quads, batched per texture: the groups this frame and a mesh per group, reused.
+    readonly Dictionary<Texture, List<int>> _additiveByTextureThisFrame = new Dictionary<Texture, List<int>>();
+    readonly List<List<int>> _groupPool = new List<List<int>>();
+    readonly List<Mesh> _batchMeshes = new List<Mesh>(8);
+    readonly List<Vector3> _batchPositions = new List<Vector3>(512);
+    readonly List<Vector2> _batchUvs = new List<Vector2>(512);
+    readonly List<Color> _batchColors = new List<Color>(512);
+    readonly List<int> _batchTriangles = new List<int>(768);
+    Color[] _stripFill = new Color[64];
 
     /// <summary>
-    /// RGB multiplier on additive quads, there so HDRP Bloom picks them up. Not stock: DisplaySystem
-    /// draws vertex colour × texture unscaled (GfxVisualDiaBill builder FUN_1001105e) and has no bloom.
-    /// 1 reproduces stock brightness.
+    /// RGB multiplier on additive quads, so HDRP Bloom has energy to catch. Not stock: DisplaySystem draws
+    /// vertex colour × texture unscaled (GfxVisualDiaBill builder FUN_1001105e) and has no bloom; 1 is stock
+    /// brightness. At 1 a sprite never passes a bloom threshold of 1, so effects barely glow. Kept at 3
+    /// by the user's choice (2026-09-22), trading exact stock colours for bloom.
     /// </summary>
     public static float AdditiveHdrBoost = 3f;
+
+    /// <summary>
+    /// Draw through the vertex-colour effect shader (on by default). Off, every draw uses HDRP/Unlit in
+    /// one colour as before: for side-by-side checks, and as a fallback.
+    /// </summary>
+    public static bool VertexColorPath = true;
+
+    /// <summary>Quads submitted last frame, and the draw calls they took. For debug tooling.</summary>
+    public int LastQuadCount { get; private set; }
+    public int LastQuadDraws { get; private set; }
+
+    Material AdditiveVertexColor => VertexColorPath ? _additiveVertexColor : null;
+    Material AlphaVertexColor => VertexColorPath ? _alphaVertexColor : null;
 
     /// <summary>Distinct frame textures per blend mode before we stop cloning materials.</summary>
     const int MaxCachedMaterials = 512;
@@ -123,6 +201,23 @@ public sealed class EffectBillboardBatch
         // Full-frame UVs; frames are pre-cropped textures.
         SetFullSt(_additive);
         SetFullSt(_alpha);
+
+        Shader vertexColor = Resources.Load<Shader>("Effects/EffectVertexColor");
+        if (vertexColor != null)
+        {
+            _additiveVertexColor = CreateVertexColor(vertexColor, "EffectVertexColorAdditive", BlendMode.One, _additive);
+            _alphaVertexColor = CreateVertexColor(vertexColor, "EffectVertexColorAlpha", BlendMode.OneMinusSrcAlpha, _alpha);
+        }
+    }
+
+    /// <summary>A vertex-colour material, queued with the HDRP/Unlit material it stands in for.</summary>
+    Material CreateVertexColor(Shader shader, string name, BlendMode dst, Material queueLike)
+    {
+        var material = new Material(shader) { name = name };
+        material.SetFloat("_DstBlend", (float)dst);
+        material.renderQueue = queueLike.renderQueue;
+        SetFullSt(material);
+        return material;
     }
 
     void SetFullSt(Material material)
@@ -136,6 +231,13 @@ public sealed class EffectBillboardBatch
         _additiveQuads.Clear();
         _alphaQuads.Clear();
         _strips.Clear();
+        _meshes.Clear();
+    }
+
+    public void Add(MeshDraw draw)
+    {
+        if (draw != null && draw.Mesh != null)
+            _meshes.Add(draw);
     }
 
     public void Add(Strip strip)
@@ -159,9 +261,91 @@ public sealed class EffectBillboardBatch
         if (camera == null)
             return;
 
-        SubmitList(_additiveQuads, _additive, camera);
-        SubmitList(_alphaQuads, _alpha, camera);
+        LastQuadCount = _additiveQuads.Count + _alphaQuads.Count;
+        if (AdditiveVertexColor != null)
+        {
+            SubmitAdditiveBatched(camera);
+            LastQuadDraws = (_additiveQuads.Count > 0 ? _additiveByTextureThisFrame.Count : 0) + _alphaQuads.Count;
+        }
+        else
+        {
+            SubmitList(_additiveQuads, _additive, camera);
+            LastQuadDraws = LastQuadCount;
+        }
+        SubmitList(_alphaQuads, AlphaVertexColor != null ? AlphaVertexColor : _alpha, camera);
         SubmitStrips(camera);
+        SubmitMeshes(camera);
+    }
+
+    /// <summary>
+    /// The property block for a vertex-colour draw: <paramref name="color"/> as it is, and the additive
+    /// boost on the vertex colours, in gamma, which is where HDRP/Unlit takes it (the draw colour is
+    /// linearised after the multiply).
+    /// </summary>
+    void SetVertexColorBlock(Color color, bool additive)
+    {
+        _mpb.Clear();
+        _mpb.SetColor(_unlitColorId, color);
+        _mpb.SetFloat(_vertexGammaScaleId, additive ? AdditiveHdrBoost : 1f);
+    }
+
+    /// <summary>The HDRP/Unlit block: the draw colour, boosted when additive.</summary>
+    void SetUnlitBlock(Material material, Color color, bool additive)
+    {
+        if (additive)
+        {
+            float boost = AdditiveHdrBoost;
+            color = new Color(color.r * boost, color.g * boost, color.b * boost, color.a);
+        }
+        _mpb.Clear();
+        if (material.HasProperty(_unlitColorId))
+            _mpb.SetColor(_unlitColorId, color);
+    }
+
+    static bool IsVertexColor(Material material) => material != null && material.HasProperty("_VertexGammaScale");
+
+    void SubmitMeshes(Camera camera)
+    {
+        for (int i = 0; i < _meshes.Count; i++)
+        {
+            MeshDraw draw = _meshes[i];
+            if (draw.Material != null)
+            {
+                _mpb.Clear();
+                if (draw.Material.HasProperty(_baseColorId))
+                    _mpb.SetColor(_baseColorId, draw.Color);
+                for (int s = 0; s < draw.Mesh.subMeshCount; s++)
+                {
+                    Graphics.DrawMesh(
+                        draw.Mesh, draw.Matrix, draw.Material, 0, camera, s, _mpb, ShadowCastingMode.Off, receiveShadows: true);
+                }
+                continue;
+            }
+
+            Material template = draw.Additive ? _additive : _alpha;
+            if (draw.VertexColors)
+            {
+                Material withColours = draw.Additive ? AdditiveVertexColor : AlphaVertexColor;
+                if (withColours != null)
+                    template = withColours;
+            }
+            if (template == null)
+                continue;
+
+            Material material = ResolveMaterial(template, draw.Texture);
+            if (IsVertexColor(material))
+                SetVertexColorBlock(draw.Color, draw.Additive);
+            else
+                SetUnlitBlock(material, draw.Color, draw.Additive);
+            if (material.HasProperty(_unlitMapStId))
+                _mpb.SetVector(_unlitMapStId, draw.TextureST);
+
+            for (int s = 0; s < draw.Mesh.subMeshCount; s++)
+            {
+                Graphics.DrawMesh(
+                    draw.Mesh, draw.Matrix, material, 0, camera, s, _mpb, ShadowCastingMode.Off, receiveShadows: false);
+            }
+        }
     }
 
     void SubmitStrips(Camera camera)
@@ -169,7 +353,9 @@ public sealed class EffectBillboardBatch
         for (int i = 0; i < _strips.Count; i++)
         {
             Strip strip = _strips[i];
-            Material template = strip.Additive ? _additive : _alpha;
+            Material template = strip.Additive ? AdditiveVertexColor : AlphaVertexColor;
+            if (template == null)
+                template = strip.Additive ? _additive : _alpha;
             if (template == null)
                 continue;
 
@@ -185,20 +371,35 @@ public sealed class EffectBillboardBatch
             mesh.Clear();
             mesh.SetVertices(strip.Positions, 0, strip.Count);
             mesh.SetUVs(0, strip.Uvs, 0, strip.Count);
+
+            Material material = ResolveMaterial(template, strip.Texture);
+            bool vertexColor = IsVertexColor(material);
+            Color drawColor = strip.Color;
+            if (vertexColor)
+            {
+                if (strip.Colors != null)
+                {
+                    mesh.SetColors(strip.Colors, 0, strip.Count);
+                }
+                else
+                {
+                    // One colour: on the vertices, so the boost multiplies it before it is linearised.
+                    if (_stripFill.Length < strip.Count)
+                        _stripFill = new Color[Mathf.NextPowerOfTwo(strip.Count)];
+                    for (int v = 0; v < strip.Count; v++)
+                        _stripFill[v] = strip.Color;
+                    mesh.SetColors(_stripFill, 0, strip.Count);
+                    drawColor = Color.white;
+                }
+            }
+
             mesh.SetTriangles(
                 strip.Quads ? QuadTriangles(strip.Count) : StripTriangles(strip.Count), 0, calculateBounds: true);
 
-            Color drawColor = strip.Color;
-            if (strip.Additive)
-            {
-                float boost = AdditiveHdrBoost;
-                drawColor = new Color(drawColor.r * boost, drawColor.g * boost, drawColor.b * boost, drawColor.a);
-            }
-
-            Material material = ResolveMaterial(template, strip.Texture);
-            _mpb.Clear();
-            if (material.HasProperty(_unlitColorId))
-                _mpb.SetColor(_unlitColorId, drawColor);
+            if (vertexColor)
+                SetVertexColorBlock(drawColor, strip.Additive);
+            else
+                SetUnlitBlock(material, drawColor, strip.Additive);
 
             Graphics.DrawMesh(
                 mesh,
@@ -210,6 +411,100 @@ public sealed class EffectBillboardBatch
                 _mpb,
                 ShadowCastingMode.Off,
                 receiveShadows: false);
+        }
+    }
+
+    /// <summary>
+    /// Additive quads, one mesh per texture: each quad's corners are worked out here instead of by a
+    /// per-quad matrix, and its colour goes on its four vertices. Additive blending doesn't depend on
+    /// draw order, so grouping by texture changes nothing on screen, and a 128-sprite effect is one draw
+    /// per frame of its atlas instead of 128.
+    /// </summary>
+    void SubmitAdditiveBatched(Camera camera)
+    {
+        if (_additiveQuads.Count == 0)
+            return;
+
+        foreach (List<int> group in _additiveByTextureThisFrame.Values)
+        {
+            group.Clear();
+            _groupPool.Add(group);
+        }
+        _additiveByTextureThisFrame.Clear();
+
+        for (int i = 0; i < _additiveQuads.Count; i++)
+        {
+            // A quad with no texture drew the material's default white before batching; it still does.
+            Texture texture = _additiveQuads[i].Texture != null ? _additiveQuads[i].Texture : Texture2D.whiteTexture;
+            if (!_additiveByTextureThisFrame.TryGetValue(texture, out List<int> group))
+            {
+                if (_groupPool.Count > 0)
+                {
+                    group = _groupPool[_groupPool.Count - 1];
+                    _groupPool.RemoveAt(_groupPool.Count - 1);
+                }
+                else
+                {
+                    group = new List<int>(32);
+                }
+                _additiveByTextureThisFrame[texture] = group;
+            }
+            group.Add(i);
+        }
+
+        Vector3 camPos = camera.transform.position;
+        Quaternion camRot = camera.transform.rotation;
+        int meshIndex = 0;
+        foreach (KeyValuePair<Texture, List<int>> entry in _additiveByTextureThisFrame)
+        {
+            List<int> group = entry.Value;
+            _batchPositions.Clear();
+            _batchUvs.Clear();
+            _batchColors.Clear();
+            _batchTriangles.Clear();
+            for (int g = 0; g < group.Count; g++)
+            {
+                Quad quad = _additiveQuads[group[g]];
+                Vector3 pos = quad.Matrix.GetColumn(3);
+                float scale = Mathf.Max(0.01f, quad.Scale);
+                Matrix4x4 m = BuildQuadMatrix(quad, pos, scale, camPos, camRot);
+                int v = _batchPositions.Count;
+                // The unit quad's corners and UVs (CreateUnitQuad), and its winding.
+                _batchPositions.Add(m.MultiplyPoint3x4(new Vector3(-0.5f, -0.5f, 0f)));
+                _batchPositions.Add(m.MultiplyPoint3x4(new Vector3(0.5f, -0.5f, 0f)));
+                _batchPositions.Add(m.MultiplyPoint3x4(new Vector3(-0.5f, 0.5f, 0f)));
+                _batchPositions.Add(m.MultiplyPoint3x4(new Vector3(0.5f, 0.5f, 0f)));
+                _batchUvs.Add(new Vector2(0f, 0f));
+                _batchUvs.Add(new Vector2(1f, 0f));
+                _batchUvs.Add(new Vector2(0f, 1f));
+                _batchUvs.Add(new Vector2(1f, 1f));
+                for (int c = 0; c < 4; c++)
+                    _batchColors.Add(quad.Color);
+                _batchTriangles.Add(v);
+                _batchTriangles.Add(v + 2);
+                _batchTriangles.Add(v + 1);
+                _batchTriangles.Add(v + 2);
+                _batchTriangles.Add(v + 3);
+                _batchTriangles.Add(v + 1);
+            }
+
+            while (_batchMeshes.Count <= meshIndex)
+            {
+                var created = new Mesh { name = "EffectQuadBatch", indexFormat = IndexFormat.UInt32 };
+                created.MarkDynamic();
+                _batchMeshes.Add(created);
+            }
+            Mesh mesh = _batchMeshes[meshIndex++];
+            mesh.Clear();
+            mesh.SetVertices(_batchPositions);
+            mesh.SetUVs(0, _batchUvs);
+            mesh.SetColors(_batchColors);
+            mesh.SetTriangles(_batchTriangles, 0, calculateBounds: true);
+
+            Material material = ResolveMaterial(_additiveVertexColor, entry.Key);
+            SetVertexColorBlock(Color.white, additive: true);
+            Graphics.DrawMesh(
+                mesh, Matrix4x4.identity, material, 0, camera, 0, _mpb, ShadowCastingMode.Off, receiveShadows: false);
         }
     }
 
@@ -276,7 +571,10 @@ public sealed class EffectBillboardBatch
             return template;
 
         Dictionary<Texture, Material> cache =
-            ReferenceEquals(template, _additive) ? _additiveByTexture : _alphaByTexture;
+            ReferenceEquals(template, _additive) ? _additiveByTexture
+            : ReferenceEquals(template, _alpha) ? _alphaByTexture
+            : ReferenceEquals(template, _additiveVertexColor) ? _additiveVertexColorByTexture
+            : _alphaVertexColorByTexture;
 
         if (cache.TryGetValue(texture, out Material cached) && cached != null)
             return cached;
@@ -300,6 +598,11 @@ public sealed class EffectBillboardBatch
         return material;
     }
 
+    /// <summary>
+    /// One draw per quad, back to front: the alpha quads, whose order matters, and the additive ones
+    /// when the vertex-colour shader is missing. On the vertex-colour shader the unit quad's white
+    /// vertices take the quad's colour from the block.
+    /// </summary>
     void SubmitList(List<Quad> quads, Material template, Camera camera)
     {
         int count = quads.Count;
@@ -325,24 +628,12 @@ public sealed class EffectBillboardBatch
             Matrix4x4 matrix = BuildQuadMatrix(quad, pos, scale, camPos, camRot);
             Material material = ResolveMaterial(template, quad.Texture);
 
-            // Color via MPB so each particle keeps its own tint (material.SetColor
-            // would leave every deferred DrawMesh on the last color written).
-            // Additive quads get an HDR boost so Bloom (threshold 0) can catch them —
-            // LDR 0–1 Unlit color barely blooms at intensity 0.05.
-            Color drawColor = quad.Color;
-            if (quad.Additive)
-            {
-                float boost = AdditiveHdrBoost;
-                drawColor = new Color(
-                    drawColor.r * boost,
-                    drawColor.g * boost,
-                    drawColor.b * boost,
-                    drawColor.a);
-            }
-
-            _mpb.Clear();
-            if (material.HasProperty(_unlitColorId))
-                _mpb.SetColor(_unlitColorId, drawColor);
+            // Colour via MPB so each particle keeps its own tint (material.SetColor would leave every
+            // deferred DrawMesh on the last colour written).
+            if (IsVertexColor(material))
+                SetVertexColorBlock(quad.Color, quad.Additive);
+            else
+                SetUnlitBlock(material, quad.Color, quad.Additive);
 
             Graphics.DrawMesh(
                 _quad,
@@ -424,6 +715,14 @@ public sealed class EffectBillboardBatch
             new Vector2(1f, 0f),
             new Vector2(0f, 1f),
             new Vector2(1f, 1f),
+        };
+        // White, so on the vertex-colour shader the draw's colour is the quad's.
+        mesh.colors32 = new[]
+        {
+            new Color32(255, 255, 255, 255),
+            new Color32(255, 255, 255, 255),
+            new Color32(255, 255, 255, 255),
+            new Color32(255, 255, 255, 255),
         };
         mesh.triangles = new[] { 0, 2, 1, 2, 3, 1 };
         mesh.RecalculateBounds();

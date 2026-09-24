@@ -36,18 +36,23 @@ public class EffectCoverageTests
     [Fact]
     public void OtherStarTypes_AreUnverified_AndNamed()
     {
-        EffectCoverage c = Coverage(Rec(45001, EffectTypeTags.Stars, (10, 6), (30, 2000)), Rec(2000, EffectTypeTags.FlareAlt));
+        // 21 is a synthetic example: it only has to be a starType outside EffectCoverage's verified
+        // set. If it is ever ported, move this to another one rather than adding it to the set.
+        EffectCoverage c = Coverage(Rec(45001, EffectTypeTags.Stars, (10, 21), (30, 2000)), Rec(2000, EffectTypeTags.FlareAlt));
         EffectCoverage.Result r = c.Of(45001);
         Assert.Equal(EffectStatus.Unverified, r.Status);
-        Assert.Equal(new[] { "Stars #6 unverified" }, r.Gaps); // field 30 is not a child
+        Assert.Equal(new[] { "Stars #21 unverified" }, r.Gaps); // field 30 is not a child
     }
 
     [Fact]
     public void UnportedControl_MakesTheTreeMissing()
     {
-        EffectCoverage c = Coverage(Rec(1, 0x7d5));
+        // 0xbba Splash, still a stand-in and reached by no nano at all, so it should outlast the
+        // types on the coverage rank. If it is ever ported, move this to another unported typeCode
+        // rather than adding it to the set.
+        EffectCoverage c = Coverage(Rec(1, 0xbba));
         Assert.Equal(EffectStatus.Missing, c.Of(1).Status);
-        Assert.Equal(new[] { "Suns missing" }, c.Of(1).Gaps);
+        Assert.Equal(new[] { "Splash missing" }, c.Of(1).Gaps);
     }
 
     [Fact]
@@ -67,21 +72,23 @@ public class EffectCoverageTests
     }
 
     [Fact]
-    public void Cord_IsVerifiedOnlyWhenItCannotLink()
+    public void Cord_IsVerifiedWhetherOrNotItCanLink()
     {
         Assert.Equal(EffectStatus.Verified, Coverage(Rec(8000, EffectTypeTags.Cord, (0, 5))).Of(8000).Status);
-        Assert.Equal(EffectStatus.Unverified, Coverage(Rec(8002, EffectTypeTags.Cord, (0, 7))).Of(8002).Status);
+        Assert.Equal(EffectStatus.Verified, Coverage(Rec(8002, EffectTypeTags.Cord, (0, 7))).Of(8002).Status);
     }
 
     [Fact]
-    public void MissingRecordsAndCycles_AreHandled()
+    public void IdsNotInGfxtweak_AreVerified_AndCyclesEnd()
     {
+        // Stock's factory makes nothing for an id gfxtweak doesn't hold, and so does the port.
         EffectCoverage c = Coverage(
             Rec(1, EffectTypeTags.Meta, (0, 2), (1, 999)),
             Rec(2, EffectTypeTags.Meta, (0, 1)));
         EffectCoverage.Result r = c.Of(1);
-        Assert.Equal(EffectStatus.Missing, r.Status);
-        Assert.Equal(new[] { "999 not in gfxtweak" }, r.Gaps);
+        Assert.Equal(EffectStatus.Verified, r.Status);
+        Assert.Empty(r.Gaps);
+        Assert.Equal(EffectStatus.Verified, c.Of(999).Status);
     }
 
     [Fact]

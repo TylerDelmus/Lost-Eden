@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using AOSharp.Common.GameData;
+using LostEden.Vehicles.Surfaces;
 using Reflex.Core;
 using Reflex.Injectors;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
@@ -13,6 +14,8 @@ public class Playfield : MonoBehaviour
     Transform _dynelsRoot;
     Character _characterPrefab;
     Container _container;
+    ISurface _collisionSurface;
+    Transform _surfaceRoot;
 
     public event Action<Dynel> DynelSpawned;
     public event Action<Dynel> DynelDespawned;
@@ -24,6 +27,33 @@ public class Playfield : MonoBehaviour
         _dynelsRoot = new GameObject("Dynels").transform;
         _dynelsRoot.SetParent(transform, false);
         gameObject.name = $"Playfield_{playfieldId}";
+    }
+
+    /// <summary>
+    /// The world every character in this playfield collides against — the heightmap, as
+    /// <c>DummyVehicle_t::GetSurface</c> resolves it from the playfield in stock
+    /// (<c>N3.dll 100011e0</c>). Characters spawned before this is set free-fall, which is stock's
+    /// own behaviour with a null surface.
+    /// </summary>
+    public void SetCollisionSurface(ISurface surface, Transform surfaceRoot)
+    {
+        _collisionSurface = surface;
+
+        // Publish it for the queries that have no route to the Playfield: the camera's occlusion probe,
+        // dynel line-of-sight and the VFX ground lookups. Stock runs all three through Surface_i too.
+        LostEden.Vehicles.WorldCollision.Bind(surface, surfaceRoot);
+        _surfaceRoot = surfaceRoot;
+
+        foreach (Dynel dynel in _dynels.Values)
+            ApplyCollisionSurface(dynel as Character);
+    }
+
+    void ApplyCollisionSurface(Character character)
+    {
+        if (character == null || _collisionSurface == null || character.Motor == null)
+            return;
+
+        character.Motor.SetSurface(_collisionSurface, _surfaceRoot);
     }
 
     public void SpawnDynel(SimpleCharFullUpdateMessage msg)
@@ -39,7 +69,10 @@ public class Playfield : MonoBehaviour
             Debug.Log($"[Playfield] Dynel updated: {msg.Identity.Type}:{msg.Identity.Instance} \"{msg.Name}\"");
             existing.Apply(msg);
             if (existing is Character existingCharacter)
+            {
+                ApplyCollisionSurface(existingCharacter);
                 existingCharacter.Motor.RequestSurfacePriorityForSpawn(existingCharacter.transform.position);
+            }
             DynelSpawned?.Invoke(existing);
             return;
         }
@@ -50,6 +83,7 @@ public class Playfield : MonoBehaviour
             GameObjectInjector.InjectObject(character.gameObject, _container);
             character.Initialize(msg);
             _dynels[msg.Identity] = character;
+            ApplyCollisionSurface(character);
             character.Motor.RequestSurfacePriorityForSpawn(character.transform.position);
             Debug.Log($"[Playfield] Dynel spawned: {msg.Identity.Type}:{msg.Identity.Instance} \"{msg.Name}\" @ ({msg.Position.X:F1}, {msg.Position.Y:F1}, {msg.Position.Z:F1}) (total={_dynels.Count})");
             DynelSpawned?.Invoke(character);

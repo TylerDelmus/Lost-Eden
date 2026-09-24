@@ -25,6 +25,13 @@ public sealed class EffectLocator
     EffectHitLocation _hitLocation;
     int _attachId;
 
+    // Stock _GfxLocator_t on an attach (init 10106be2, update 10106193): the template rotation
+    // (fields 4-6) turns the attach basis (rows = R x attach) and the template offset (fields 1-3)
+    // moves the point along the turned rows. UpdatePosition (101064f7) does nothing on an attach.
+    bool _hasLocal;
+    float[] _rows;
+    Vector3 _templateOffset;
+
     public static EffectLocator WorldPoint(Vector3 position, Quaternion rotation)
     {
         return new EffectLocator
@@ -147,6 +154,56 @@ public sealed class EffectLocator
         return visual != null && _kind == Kind.Visual;
     }
 
+    /// <summary>
+    /// A copy carrying <paramref name="record"/>'s locator template (fields 0-6), for attach locators whose
+    /// template rotates or offsets. Other kinds, and templates with neither, return this.
+    /// <paramref name="offsetZ"/> stands in for field 3 when stock takes it from a per-body table
+    /// (<see cref="EffectBodyTable"/>).
+    /// </summary>
+    public EffectLocator WithTemplate(GfxTweakRecord record, float? offsetZ = null)
+    {
+        if (record == null || (_kind != Kind.Dynel && _kind != Kind.Visual))
+            return this;
+
+        int flags = record.FieldInt(0, 0);
+        var offset = new Vector3(record.Field(1, 0f), record.Field(2, 0f), offsetZ ?? record.Field(3, 0f));
+        bool rotates = record.Field(4, 0f) != 0f || record.Field(5, 0f) != 0f || record.Field(6, 0f) != 0f;
+        if (!rotates && offset == Vector3.zero)
+        {
+            // Every control builds its own locator from its own template: none of a parent's carries over.
+            if (!_hasLocal)
+                return this;
+            var plain = (EffectLocator)MemberwiseClone();
+            plain._hasLocal = false;
+            plain._rows = null;
+            return plain;
+        }
+
+        var copy = (EffectLocator)MemberwiseClone();
+        copy._hasLocal = true;
+        copy._templateOffset = offset;
+        copy._rows = new float[] { 1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f };
+        Tracer1Sim.ApplyLocatorRotation(record.Fields, flags, copy._rows);
+        return copy;
+    }
+
+    void ApplyLocal(ref Matrix4x4 matrix)
+    {
+        if (!_hasLocal)
+            return;
+
+        Vector3 p = _templateOffset;
+        var r0 = new Vector3(_rows[0], _rows[1], _rows[2]);
+        var r1 = new Vector3(_rows[3], _rows[4], _rows[5]);
+        var r2 = new Vector3(_rows[6], _rows[7], _rows[8]);
+        var local = new Matrix4x4(
+            new Vector4(r0.x, r0.y, r0.z, 0f),
+            new Vector4(r1.x, r1.y, r1.z, 0f),
+            new Vector4(r2.x, r2.y, r2.z, 0f),
+            (Vector4)(r0 * p.x + r1 * p.y + r2 * p.z) + new Vector4(0f, 0f, 0f, 1f));
+        matrix *= local;
+    }
+
     public bool TryResolve(out Matrix4x4 matrix)
     {
         switch (_kind)
@@ -163,9 +220,15 @@ public sealed class EffectLocator
                 matrix = Matrix4x4.TRS(_host.transform.position, _host.transform.rotation, Vector3.one);
                 return true;
             case Kind.Visual:
-                return TryResolveVisual(_visual, _attachId, out matrix);
+                if (!TryResolveVisual(_visual, _attachId, out matrix))
+                    return false;
+                ApplyLocal(ref matrix);
+                return true;
             case Kind.Dynel:
-                return TryResolveDynel(_source, _attachId, out matrix);
+                if (!TryResolveDynel(_source, _attachId, out matrix))
+                    return false;
+                ApplyLocal(ref matrix);
+                return true;
             case Kind.Beam:
                 if (!TryResolveDynel(_source, _attachId, out Matrix4x4 start))
                 {
@@ -254,7 +317,8 @@ public sealed class EffectLocator
         if (visual == null)
             return false;
 
-        if (visual.TryGetAttachMatrix(attachId, out matrix))
+        // 10106744: an attach that can't be found leaves the locator on the mesh frame (attach 0).
+        if (visual.TryGetAttachMatrix(attachId, out matrix) || visual.TryGetAttachMatrix(0, out matrix))
             return true;
 
         Transform t = visual.VisualRoot != null ? visual.VisualRoot.transform : visual.transform;
@@ -269,7 +333,7 @@ public sealed class EffectLocator
             return false;
 
         if (dynel is Character character && character.Visual != null
-            && character.Visual.TryGetAttachMatrix(attachId, out matrix))
+            && (character.Visual.TryGetAttachMatrix(attachId, out matrix) || character.Visual.TryGetAttachMatrix(0, out matrix)))
             return true;
 
         matrix = Matrix4x4.TRS(dynel.transform.position, dynel.transform.rotation, Vector3.one);

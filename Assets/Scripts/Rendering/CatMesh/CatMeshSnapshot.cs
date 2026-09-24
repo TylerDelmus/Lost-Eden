@@ -14,6 +14,9 @@ public sealed class CatMeshSubmeshSource
     public int[] Triangles;
     public BoneWeight[] BoneWeights;
     public AbiffMaterialDesc Material;
+
+    /// <summary>The mesh's index into the CAT file's material table (-1 for none).</summary>
+    public int MaterialId = -1;
 }
 
 public static class CatMeshSnapshot
@@ -101,7 +104,8 @@ public static class CatMeshSnapshot
                 UVs = Array.Empty<Vector2>(),
                 Triangles = Array.Empty<int>(),
                 BoneWeights = Array.Empty<BoneWeight>(),
-                Material = material
+                Material = material,
+                MaterialId = mesh?.MaterialId ?? -1
             };
         }
 
@@ -160,7 +164,8 @@ public static class CatMeshSnapshot
             UVs = uvs,
             Triangles = triangles,
             BoneWeights = boneWeights,
-            Material = material
+            Material = material,
+            MaterialId = mesh.MaterialId
         };
     }
 

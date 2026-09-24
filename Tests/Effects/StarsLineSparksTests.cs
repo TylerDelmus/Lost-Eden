@@ -1,3 +1,4 @@
+using System;
 using Xunit;
 
 /// <summary>
@@ -130,6 +131,37 @@ public class StarsLineSparksTests
         Assert.NotEqual(1, s.Sprites[0].Serial);
     }
 
+    static readonly float[] Gold = { 1f, 0.961f, 0.753f, 0.227f };
+
+    [Fact]
+    public void Case18_OpensTenSlotsPerCall_AtTheHead_WithThreeDrawsEach()
+    {
+        int draws = 0;
+        var s = new StarsLineSparks(18, 0.3f, 0.2f, 0.4f, Gold, Gold, () => { draws++; return 16384; });
+        s.Step(0.5f, 1f, true, 0f, 1f, 0f, 10f, 1f, 0f);
+        Assert.Equal(StarsLineSparks.Case18SpawnsPerStep, s.LastCount);
+        Assert.Equal(30, draws); // the ball only: no along draw, no life jitter
+
+        s.Step(0.5f + Step, 1f, true, 0f, 1f, 0f, 10f, 1f, 0f);
+        StarsCase3.Sprite p = s.Sprites[0];
+        Assert.True(p.Visible);
+        Assert.Equal(5f, p.X, 5); // end * 0.5 + start * 0.5
+        Assert.Equal(1f, p.Y, 5);
+    }
+
+    [Fact]
+    public void Case18_LivesExactlyField30()
+    {
+        var s = new StarsLineSparks(18, 0.3f, 0.2f, 0.4f, Gold, Gold, () => 16384);
+        s.Step(0f, 1f, true, 0f, 1f, 0f, 10f, 1f, 0f);
+        s.Step(0.299f, 1f, true, 0f, 1f, 0f, 10f, 1f, 0f);
+        Assert.True(s.Sprites[0].Visible);
+        Assert.Equal(1, s.Sprites[0].Serial);
+        s.Step(0.3f, 1f, true, 0f, 1f, 0f, 10f, 1f, 0f); // dead: respawned, record left as it was
+        s.Step(0.31f, 1f, true, 0f, 1f, 0f, 10f, 1f, 0f);
+        Assert.NotEqual(1, s.Sprites[0].Serial);
+    }
+
     static StarsLineSparks Make17100(int alongRand)
     {
         // Ball point (0, 0, 0), then the case 16 position rand.
@@ -177,5 +209,62 @@ public class StarsLineSparksTests
         Assert.Equal(15, s.LastCount);
         StepAlongX(s, Step);
         Assert.Equal(30, s.LastCount);
+    }
+
+    [Fact]
+    public void Case17_WindsAHelixRoundTheLine_ColouredByProgress()
+    {
+        float[] start = { 1f, 0f, 0f, 0f }, end = { 1f, 1f, 1f, 1f };
+        var s = new StarsLineSparks(17, 0.3f, 0.2f, 2f, start, end, () => 16384); // q = 0.5, phase 2
+        StepAlongX(s, 0.25f);
+        StepAlongX(s, 0.25f + Step);
+        StarsCase3.Sprite p = s.Sprites[0];
+        Assert.True(p.Visible);
+        Assert.Equal(5f, p.X, 4); // halfway along
+        // Off the axis by (1 - (1 - 2q)^2) / 2 = 0.5.
+        Assert.Equal(0.5f, (float)Math.Sqrt((p.Y - 1f) * (p.Y - 1f) + p.Z * p.Z), 4);
+        float progress = (float)((0.25f + (double)Step) / 1f);
+        Assert.Equal(StockColorRamp.Eval(start, end, (float)((double)(0.25f + Step) / 1f)), p.Argb);
+    }
+
+    // 45686 (nano 28597's tracer): life 250 ms, size 0.59, scatter 0.25, white to black.
+    static readonly float[] White = { 1f, 1f, 1f, 1f };
+    static readonly float[] Black = { 1f, 0f, 0f, 0f };
+
+    static StarsLineSparks Make45686() => new StarsLineSparks(20, 0.25f, 0.59f, 0.25f, White, Black, () => 16384);
+
+    [Fact]
+    public void Case20_OpensFifteenAtTheHead_FullSizeThroughout_FramesCountingUp()
+    {
+        StarsLineSparks s = Make45686();
+        StepAlongX(s, 0.5f);
+        Assert.Equal(15, s.LastCount);
+        Assert.False(s.Sprites[0].Visible);
+
+        StepAlongX(s, 0.6f);
+        Assert.Equal(30, s.LastCount);
+        StarsCase3.Sprite a = s.Sprites[0];
+        Assert.True(a.Visible);
+        Assert.Equal(5f, a.X, 5);
+        Assert.Equal(1f, a.Y, 5);
+        float t = (float)((0.25 + 0.6f - 0.75f) / 0.25);
+        Assert.Equal(0.59f, a.Size);
+        Assert.Equal((int)(t * 63.9900016784668), a.Frame);
+        Assert.Equal(25, a.Frame);
+        Assert.Equal(StockColorRamp.Eval(White, Black, t), a.Argb);
+    }
+
+    [Fact]
+    public void Case20_LivesExactlyField30_WithNoJitter()
+    {
+        StarsLineSparks s = Make45686();
+        StepAlongX(s, 0f);
+        StepAlongX(s, 0.249f);
+        Assert.True(s.Sprites[0].Visible);
+        Assert.Equal(63, s.Sprites[0].Frame);
+        Assert.Equal(1, s.Sprites[0].Serial);
+        StepAlongX(s, 0.25f); // dead: respawned, record left as it was
+        StepAlongX(s, 0.26f);
+        Assert.NotEqual(1, s.Sprites[0].Serial);
     }
 }

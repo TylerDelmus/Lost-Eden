@@ -191,6 +191,24 @@ public sealed class ElectraSim
         }
     }
 
+    /// <summary>
+    /// Port-only: puts every visible spark back on the locator at (lx, ly, lz), as the next
+    /// <see cref="Step"/> would, without advancing anything. The port steps on a fixed clock and calls
+    /// this every frame so the shell keeps up with a moving host between steps.
+    /// </summary>
+    public void Place(float lx, float ly, float lz)
+    {
+        for (int i = 0; i < SlotCount; i++)
+        {
+            ref Sprite s = ref _sprites[i];
+            if (!s.Visible)
+                continue;
+            s.X = lx + _ox[i];
+            s.Y = ly + _oy[i];
+            s.Z = lz + _oz[i];
+        }
+    }
+
     void Spawn(int i, float age)
     {
         RandomUnitVector(_rand, out float dx, out float dy, out float dz);
@@ -258,5 +276,5 @@ public sealed class ElectraSim
 
     static float F(float[] f, int i) => f != null && i < f.Length ? f[i] : 0f;
 
-    static int Int(float[] f, int i) => f != null && i < f.Length ? BitConverter.SingleToInt32Bits(f[i]) : 0;
+    static int Int(float[] f, int i) => f != null && i < f.Length ? GfxBits.Of(f, i) : 0;
 }

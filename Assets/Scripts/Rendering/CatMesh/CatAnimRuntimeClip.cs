@@ -227,7 +227,7 @@ public sealed class CatAnimRuntimeClip
 
     static uint ReadTrackFlags(BoneData boneData)
     {
-        int raw = boneData.Unknown2;
+        int raw = boneData.Flags;
         if (raw == 0)
             return AlwaysOnFlags;
         return unchecked((uint)raw);

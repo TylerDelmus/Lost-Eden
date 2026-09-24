@@ -748,7 +748,10 @@ public sealed class GfxTestWindow : EditorWindow
     void Refresh()
     {
         GfxTest_DEV test = EditorApplication.isPlaying ? FindFirstObjectByType<GfxTest_DEV>() : null;
-        if (test != _bound)
+        // Compare references, not Unity equality: with domain reload off the window outlives Play mode,
+        // and the next session's GfxTest_DEV keeps the old one's instance id, so Unity's != calls the
+        // new object equal to the destroyed one we still hold and the window never rebinds.
+        if (!ReferenceEquals(test, _bound))
         {
             _bound = test;
             _catalogVersion = -1;

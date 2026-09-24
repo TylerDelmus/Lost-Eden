@@ -89,7 +89,7 @@ public sealed class GfxTest_DEV : MonoBehaviour
 
     static string ResolveAoPath(string current)
     {
-        string prefs = LoginPreferences.GetAoPath();
+        string prefs = AoInstall.Path;
         if (AoInstallPath.IsValid(prefs))
             return AoInstallPath.Normalize(prefs);
 
@@ -152,7 +152,10 @@ public sealed class GfxTest_DEV : MonoBehaviour
             return;
         }
 
-        LoginPreferences.SaveAoPath(path);
+        #if UNITY_EDITOR
+        // DEV tooling records its own override; it must not touch the player's settings.
+        AoInstall.SetEditorOverride(path);
+#endif
         _aoPath = path;
         _imageTextures = new AoImageTextureCache(_database);
         _textureNames = new EffectTextureNames(_database);

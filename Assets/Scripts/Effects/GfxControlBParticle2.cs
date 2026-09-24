@@ -2,34 +2,48 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// typeCode 3028 — N independent sub-emitter billboards (stock GfxVisualBParticle2 × N).
+/// typeCode 3028 (0xbd4), stock <c>GfxControlBParticle2_t</c> (vftable <c>Gamecode 1016effc</c>). The
+/// particle maths is <see cref="BParticle2Sim"/>; this owns the locator, the clock and the drawing.
+///
+/// The emitter and the turn come from the locator's local-mode accessors (<c>10106306</c> /
+/// <c>101062d5</c>): with field 0 bit 1 the locator's position and turn, without it the world origin and
+/// no turn. Slot 6 (<c>1010af68</c>) raises the terminate flag; unless flag 0x200000 keeps them, the
+/// particles go with it at the next Process. At the duration they all go at once.
+///
+/// Stock runs Process once per frame with the frame's delta, and the respawn cap (field 15), the bounce
+/// and the drag work per call, so the look changed with the frame rate. The port replays the calls on the
+/// fixed clock (<see cref="EffectFrameRate.StockProcessHz"/>, Docs §3.7) and draws each particle between
+/// its last two steps.
+///
+/// Each particle is a <c>GfxVisualBParticle2</c> (DisplaySystem ctor <c>1000b432</c>, geometry
+/// <c>1000b4fc</c>): a quad on the camera's right and up axes turned by the particle's angle about the
+/// view axis, half-width = size, half-height = size / field 33, the material cell <c>_ftol(frame)</c>,
+/// coloured by the curve. Its corners carry u from the right edge to the left and v from top to bottom;
+/// flag 0x100 swaps them. Flag 0x200 is the visual's additive switch.
 /// </summary>
 public sealed class GfxControlBParticle2 : GfxControl
 {
-    const int MaxSubs = 32;
+    const int FlagLocalMode = 2;
+    const int FlagSwapUv = 0x100;
 
-    struct Sub
-    {
-        public Vector3 LocalOffset;
-        public Vector3 Velocity;
-        public float Scale;
-        public float Spin;
-        public Color Color;
-        public int Frame;
-        public float Phase;
-    }
+    /// <summary>Replayed calls allowed in one frame; a hitch loses time rather than fast-forwarding.</summary>
+    const int MaxStepsPerFrame = 8;
 
+    readonly BParticle2Sim _sim;
     readonly Texture2D _atlas;
     readonly EffectAtlasFrames _frames;
     readonly int _cols;
     readonly int _rows;
-    readonly int _firstFrame;
-    readonly int _lastFrame;
-    readonly bool _additive;
-    readonly bool _randomFrame;
-    readonly bool _spin;
-    readonly Sub[] _subs;
-    readonly Color _tint;
+    readonly bool _localMode;
+    readonly bool _swapUv;
+    readonly float _offsetY;
+    readonly float[] _turn = new float[9];
+    readonly System.Func<float, float, float, float> _ground = EffectGround.HeightAt;
+    readonly BParticle2Sim.Particle[] _previous;
+    float _carry;
+    float _stepAge;
+
+    public BParticle2Sim Sim => _sim;
 
     public GfxControlBParticle2(
         GfxTweakRecord record,
@@ -39,146 +53,169 @@ public sealed class GfxControlBParticle2 : GfxControl
         int cols,
         int rows,
         int firstFrame,
-        int lastFrame,
-        Color tint)
+        int lastFrame)
         : base(record, locator)
     {
         _atlas = atlas;
         _frames = frames;
         _cols = Mathf.Max(1, cols);
         _rows = Mathf.Max(1, rows);
-        _firstFrame = firstFrame;
-        _lastFrame = lastFrame >= firstFrame ? lastFrame : firstFrame;
-        _tint = tint.a > 0.01f ? tint : Color.white;
-        _additive = true;
+        _sim = new BParticle2Sim(record?.Fields, firstFrame, lastFrame, () => Random.value);
+        _previous = new BParticle2Sim.Particle[_sim.Particles.Length];
+        int flags = _sim.Flags;
+        _localMode = (flags & FlagLocalMode) != 0;
+        _swapUv = (flags & FlagSwapUv) != 0;
+        // 1010be61: the respawn height offset is the locator's template offset y (field 2).
+        _offsetY = record != null ? record.Field(2, 0f) : 0f;
+        base.SetDuration(_sim.Duration);
 
-        int flags = record != null ? record.FieldInt(0, 0) : 0;
-        _randomFrame = (flags & 0x20000) != 0;
-        _spin = (flags & 0x4000) == 0;
-
-        int n = record != null ? record.FieldInt(11, 4) : 4;
-        n = Mathf.Clamp(n, 1, MaxSubs);
-
-        float radius = record != null ? Mathf.Max(0.05f, record.Field(13, 0.5f)) : 0.5f;
-        float minAx = record != null ? record.Field(17, -0.2f) : -0.2f;
-        float maxAx = record != null ? record.Field(18, 0.2f) : 0.2f;
-        float minAy = record != null ? record.Field(19, 0.1f) : 0.1f;
-        float maxAy = record != null ? record.Field(20, 0.6f) : 0.6f;
-        float minAz = record != null ? record.Field(21, -0.2f) : -0.2f;
-        float maxAz = record != null ? record.Field(22, 0.2f) : 0.2f;
-        float minRot = record != null ? record.Field(23, 0f) : 0f;
-        float maxRot = record != null ? record.Field(24, 0f) : 0f;
-        float minSpeed = record != null ? record.Field(27, 0.2f) : 0.2f;
-        float maxSpeed = record != null ? record.Field(28, 0.8f) : 0.8f;
-        float minSize = record != null ? record.Field(25, 0.3f) : 0.3f;
-        float maxSize = record != null ? record.Field(26, 0.9f) : 0.9f;
-
-        _subs = new Sub[n];
-        int frameCount = _lastFrame - _firstFrame + 1;
-        for (int i = 0; i < n; i++)
+        Vector3 emitter = Emitter(out bool resolved);
+        if (!resolved)
         {
-            Vector3 offset = Random.insideUnitSphere * radius;
-            if ((flags & 0x400) != 0)
-                offset.y = Mathf.Min(offset.y, 0f);
+            ReadyFlag = true;
+            return;
+        }
+        if ((_sim.Flags & BParticle2Sim.FlagGroundEmitter) != 0)
+        {
+            float g = EffectGround.HeightAt(emitter.x, emitter.y, emitter.z);
+            if (!float.IsNaN(g))
+                emitter.y = g;
+        }
+        _sim.Init(emitter.x, emitter.y, emitter.z, _turn);
+    }
 
-            Vector3 vel = new Vector3(
-                Random.Range(minAx, maxAx),
-                Random.Range(minAy, maxAy),
-                Random.Range(minAz, maxAz));
-            float speed = Random.Range(minSpeed, maxSpeed);
-            if (vel.sqrMagnitude > 1e-6f)
-                vel = vel.normalized * speed;
-            else
-                vel = Vector3.up * speed;
-
-            int frame = _firstFrame;
-            if (_randomFrame && frameCount > 1)
-                frame = _firstFrame + Random.Range(0, frameCount);
-
-            float spin = 0f;
-            if (_spin)
-            {
-                // Stock: degrees→radians via × π/4 ÷ 45.
-                float deg = Random.Range(minRot, maxRot);
-                spin = deg * (Mathf.PI / 4f) / 45f;
-            }
-
-            _subs[i] = new Sub
-            {
-                LocalOffset = offset,
-                Velocity = vel,
-                Scale = ClampScale(Random.Range(minSize, maxSize), 0.5f),
-                Spin = spin,
-                Color = _tint,
-                Frame = frame,
-                Phase = Random.value,
-            };
+    /// <summary>
+    /// The emitter position and turn this frame, from the locator; fills <see cref="_turn"/>. Stock's
+    /// init also drops the emitter to the ground with flag 0x400 (<c>1010c03f</c>).
+    /// </summary>
+    Vector3 Emitter(out bool resolved)
+    {
+        Matrix4x4 world = Matrix4x4.identity;
+        resolved = Locator != null && Locator.TryResolve(out world);
+        if (!_localMode || !resolved)
+        {
+            SetIdentity(_turn);
+            return Vector3.zero;
         }
 
-        SetDurationFromTemplate(8, 1.5f);
+        Vector3 x = ((Vector3)world.GetColumn(0)).normalized;
+        Vector3 y = ((Vector3)world.GetColumn(1)).normalized;
+        Vector3 z = ((Vector3)world.GetColumn(2)).normalized;
+        // turn * v = x * v.x + y * v.y + z * v.z.
+        _turn[0] = x.x; _turn[1] = y.x; _turn[2] = z.x;
+        _turn[3] = x.y; _turn[4] = y.y; _turn[5] = z.y;
+        _turn[6] = x.z; _turn[7] = y.z; _turn[8] = z.z;
+        return world.GetColumn(3);
     }
+
+    static void SetIdentity(float[] m)
+    {
+        for (int i = 0; i < 9; i++)
+            m[i] = i % 4 == 0 ? 1f : 0f;
+    }
+
+    /// <summary>Stock slot 6 (<c>1010af68</c>): only the flag.</summary>
+    protected override void OnTerminateGracefully() => _sim.Terminating = true;
+
+    protected override void OnArmed() => Body(0f, 0f);
 
     protected override void OnProcess(float dt)
     {
-        for (int i = 0; i < _subs.Length; i++)
+        float step = EffectFrameRate.StockProcessSeconds;
+        int steps = EffectFrameRate.TakeFixedSteps(ref _carry, dt, step, MaxStepsPerFrame);
+        for (int s = 0; s < steps && !ReadyFlag; s++)
         {
-            ref Sub s = ref _subs[i];
-            s.LocalOffset += s.Velocity * dt;
-            // Mild gravity-like settle matching Sparks-style arcs when velocity has upward component.
-            s.Velocity += Vector3.down * (2.5f * dt);
-            if (_spin)
-                s.Phase += s.Spin * dt;
+            System.Array.Copy(_sim.Particles, _previous, _previous.Length);
+            _stepAge += step;
+            Body(step, _stepAge);
         }
     }
 
-    protected override void OnTerminateGracefully()
+    void Body(float dt, float age)
     {
-        if (Duration < 0f || Age >= Duration)
+        // 1010b4aa: terminating without 0x200000 is the end.
+        if ((_sim.Flags & BParticle2Sim.FlagLiveUntilTerminated) == 0 && _sim.Terminating)
         {
             ReadyFlag = true;
             return;
         }
 
-        float remaining = Duration - Age;
-        if (remaining > 0.35f)
-            SetDuration(Age + 0.35f);
+        Vector3 emitter = Emitter(out bool resolved);
+        if (!resolved)
+        {
+            ReadyFlag = true;
+            return;
+        }
+
+        if (!_sim.Step(dt, age, Duration, emitter.x, emitter.y, emitter.z, _turn, _ground, _offsetY))
+            ReadyFlag = true;
     }
 
     public override void CollectBillboards(List<EffectBillboardBatch.Quad> dest, Camera camera)
     {
-        if (!IsAlive || dest == null)
+        if (!IsAlive || dest == null || camera == null || _atlas == null)
             return;
 
-        float t01 = Duration > 0f ? Mathf.Clamp01(Age / Duration) : 0f;
-        float fade = 1f - t01;
-        Matrix4x4 world = WorldMatrix;
-
-        if (_atlas == null)
-            return;
-
-        for (int i = 0; i < _subs.Length; i++)
+        Vector3 right = camera.transform.right;
+        Vector3 up = camera.transform.up;
+        float aspect = _sim.Aspect;
+        // Between the last two steps: the time carried towards the next one says how far.
+        float blend = Mathf.Clamp01(_carry / EffectFrameRate.StockProcessSeconds);
+        BParticle2Sim.Particle[] particles = _sim.Particles;
+        for (int i = 0; i < particles.Length; i++)
         {
-            ref Sub s = ref _subs[i];
-            Vector3 pos = world.MultiplyPoint3x4(s.LocalOffset);
-            Color c = s.Color;
-            c.a *= Mathf.Clamp01(fade);
-            if (c.a < 0.01f)
+            BParticle2Sim.Particle p = particles[i];
+            if (!p.Visible)
                 continue;
 
+            // A particle that was dead last step was respawned; draw it where it is.
+            BParticle2Sim.Particle q = _previous[i];
+            if (q.Visible)
+            {
+                p.X = q.X + (p.X - q.X) * blend;
+                p.Y = q.Y + (p.Y - q.Y) * blend;
+                p.Z = q.Z + (p.Z - q.Z) * blend;
+                p.Size = q.Size + (p.Size - q.Size) * blend;
+                p.Angle = q.Angle + (p.Angle - q.Angle) * blend;
+            }
+
             Texture2D frameTex = _frames != null
-                ? _frames.GetFrame(_atlas, _cols, _rows, s.Frame)
+                ? _frames.GetFrame(_atlas, _cols, _rows, (int)p.Frame)
                 : _atlas;
             if (frameTex == null)
                 continue;
 
-            dest.Add(new EffectBillboardBatch.Quad
+            // 1000b60b: right and up turned by the angle about the view axis.
+            float c = Mathf.Cos(p.Angle), s = Mathf.Sin(p.Angle);
+            Vector3 r = right * c + up * s;
+            Vector3 u = up * c - right * s;
+            float w = p.Size;
+            float h = p.Size / aspect;
+
+            uint argb = p.Argb;
+            var quad = new EffectBillboardBatch.Quad
             {
-                Matrix = Matrix4x4.TRS(pos, Quaternion.identity, Vector3.one),
-                Scale = s.Scale * (0.85f + 0.3f * fade),
-                Color = c,
+                Matrix = Matrix4x4.TRS(new Vector3(p.X, p.Y, p.Z), Quaternion.identity, Vector3.one),
+                Color = new Color(
+                    ((argb >> 16) & 0xff) / 255f,
+                    ((argb >> 8) & 0xff) / 255f,
+                    (argb & 0xff) / 255f,
+                    ((argb >> 24) & 0xff) / 255f),
                 Texture = frameTex,
-                Additive = _additive,
-            });
+                Additive = _sim.Additive,
+                UseAxes = true,
+            };
+            if (_swapUv)
+            {
+                quad.AxisX = -u * (2f * h);
+                quad.AxisY = r * (2f * w);
+            }
+            else
+            {
+                quad.AxisX = -r * (2f * w);
+                quad.AxisY = u * (2f * h);
+            }
+            dest.Add(quad);
         }
     }
 }

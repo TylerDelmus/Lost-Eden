@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using AOSharp.Common.GameData;
@@ -20,7 +20,7 @@ public sealed class DynelDebugWindow : EditorWindow
 
     Dynel _dynel;
     VisualDynel _visual;
-    CharacterMotor _motor;
+    N3CharVehicle _motor;
     DynelDebugTab _tab;
     bool _fromGameTarget;
     string _statSearch = string.Empty;
@@ -162,7 +162,7 @@ public sealed class DynelDebugWindow : EditorWindow
         return dynel.GetComponentInChildren<VisualDynel>(true);
     }
 
-    static CharacterMotor FindMotor(Dynel dynel)
+    static N3CharVehicle FindMotor(Dynel dynel)
     {
         if (dynel == null)
             return null;
@@ -170,10 +170,10 @@ public sealed class DynelDebugWindow : EditorWindow
         if (dynel is Character character && character.Motor != null)
             return character.Motor;
 
-        if (dynel.TryGetComponent(out CharacterMotor onSelf))
+        if (dynel.TryGetComponent(out N3CharVehicle onSelf))
             return onSelf;
 
-        return dynel.GetComponentInChildren<CharacterMotor>(true);
+        return dynel.GetComponentInChildren<N3CharVehicle>(true);
     }
 
     void OnGUI()
@@ -284,7 +284,7 @@ public sealed class DynelDebugWindow : EditorWindow
     {
         if (_motor == null)
         {
-            EditorGUILayout.HelpBox("Selected Dynel has no CharacterMotor component.", MessageType.Warning);
+            EditorGUILayout.HelpBox("Selected Dynel has no N3CharVehicle component.", MessageType.Warning);
             return;
         }
 

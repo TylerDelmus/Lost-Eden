@@ -30,10 +30,9 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
         public CellState State;
         public int Generation;
         public bool Desired;
+        public int CellId;
         public SurfaceCollisionBuilder.MeshData MeshData;
-        public Mesh UnityMesh;
-        public GameObject Root;
-        public MeshCollider Collider;
+        public LostEden.Vehicles.Surfaces.TriangleMeshSurface Surface;
     }
 
     sealed class PreparedSurface
@@ -58,6 +57,21 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
     int _referenceCellId = -1;
     int _burstLoads;
     int _burstApplies;
+
+    /// <summary>
+    /// The movement collision grid this streams into — <c>CellSurface_t</c>. Set by
+    /// <c>PlayfieldFactory</c> once the playfield's <c>TilemapSurface</c> exists. Null means the cells
+    /// are decoded and then dropped, which is what happens on an indoor playfield.
+    ///
+    /// <para>
+    /// This replaces the <c>MeshCollider</c> per cell that used to be created here. Character movement
+    /// no longer goes through Unity physics at all — it goes through <c>Surface_i</c>, so the colliders
+    /// were a second, parallel copy of the same RDB 1000013 geometry. Streaming into
+    /// <c>SetSurfaceForCell</c>/<c>RemoveSurfaceForCell</c> is also what stock does: <c>n3Zone_t</c> has
+    /// both <c>LoadSurface</c> and <c>UnLoadSurface</c>. See Docs/Movement.md §8.
+    /// </para>
+    /// </summary>
+    public LostEden.Vehicles.Surfaces.CellSurface CollisionSurface { get; set; }
 
     public SurfaceCellLoader(ResourceDatabase database, IPlayfieldCellLayout layout, Transform parent)
     {
@@ -100,7 +114,7 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
         switch (entry.State)
         {
             case CellState.Ready:
-                return entry.Root != null && entry.Root.activeInHierarchy
+                return entry.Surface != null
                     ? SurfaceCollisionState.Ready
                     : SurfaceCollisionState.Pending;
             case CellState.Cached:
@@ -193,7 +207,7 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
     {
         if (!_entries.TryGetValue(cellId, out CellEntry entry))
         {
-            entry = new CellEntry();
+            entry = new CellEntry { CellId = cellId };
             _entries[cellId] = entry;
         }
 
@@ -207,8 +221,8 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
                 return;
             case CellState.Cached:
                 entry.State = CellState.Ready;
-                if (entry.Root != null)
-                    entry.Root.SetActive(true);
+                if (entry.Surface != null)
+                    CollisionSurface?.SetSurfaceForCell(entry.CellId, entry.Surface);
                 return;
             case CellState.Queued:
                 return;
@@ -240,8 +254,8 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
                 break;
             case CellState.Ready:
                 entry.State = CellState.Cached;
-                if (entry.Root != null)
-                    entry.Root.SetActive(false);
+                if (entry.Surface != null)
+                    CollisionSurface?.RemoveSurfaceForCell(entry.CellId, entry.Surface);
                 TouchWarm(cellId);
                 break;
             case CellState.Cached:
@@ -350,58 +364,47 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
         _queue.Insert(0, cellId);
     }
 
+    /// <summary>
+    /// Registers a decoded cell as a <c>Surface_i</c> in the playfield's <c>CellSurface_t</c>. The
+    /// loader's cell id is stock's cell index already: it builds the record instance as
+    /// <c>(playfieldId &lt;&lt; 16) | cellId</c> and lays the grid out row-major as
+    /// <c>ix = id % NumZonesX</c>, both identical to what <c>n3Zone_t::LoadSurface</c> does — so the id
+    /// passes straight through with no remapping.
+    /// </summary>
     bool TryCreateCollider(int cellId, SurfaceCollisionBuilder.MeshData data, CellEntry entry)
     {
         if (data?.Vertices == null || data.Triangles == null || data.Vertices.Length == 0 || data.Triangles.Length < 3)
             return false;
 
-        _layout.GetCellCoords(cellId, out int ix, out int iz);
+        if (CollisionSurface == null)
+            return false;
 
-        var mesh = new Mesh
-        {
-            name = $"Surface_{_layout.PlayfieldId}_{cellId}",
-            indexFormat = data.Vertices.Length > 65535
-                ? UnityEngine.Rendering.IndexFormat.UInt32
-                : UnityEngine.Rendering.IndexFormat.UInt16
-        };
-        mesh.SetVertices(data.Vertices);
-        mesh.SetTriangles(data.Triangles, 0, calculateBounds: true);
-        mesh.RecalculateNormals();
-        mesh.RecalculateBounds();
+        var vertices = new LostEden.Vehicles.Vec3[data.Vertices.Length];
+        for (int i = 0; i < data.Vertices.Length; i++)
+            vertices[i] = new LostEden.Vehicles.Vec3(
+                data.Vertices[i].x, data.Vertices[i].y, data.Vertices[i].z);
 
-        var root = new GameObject($"Surface_{ix}_{iz}_{cellId}");
-        root.transform.SetParent(_parent, false);
-        root.transform.localPosition = Vector3.zero;
-        root.transform.localRotation = Quaternion.identity;
-        root.transform.localScale = Vector3.one;
+        LostEden.Vehicles.Surfaces.TriangleMeshSurface mesh =
+            LostEden.Vehicles.PlayfieldCellSurface.BuildCell(vertices, data.Triangles);
+        if (mesh == null)
+            return false;
 
-        var collider = root.AddComponent<MeshCollider>();
-        collider.sharedMesh = mesh;
-        GameLayers.SetLayerRecursively(root, GameLayers.Ground);
-
-        entry.UnityMesh = mesh;
-        entry.Root = root;
-        entry.Collider = collider;
+        CollisionSurface.SetSurfaceForCell(cellId, mesh);
+        entry.Surface = mesh;
         return true;
     }
 
     void DestroyCollider(CellEntry entry)
     {
-        if (entry == null)
+        if (entry?.Surface == null)
+        {
+            if (entry != null)
+                entry.MeshData = null;
             return;
+        }
 
-        if (entry.Collider != null)
-            entry.Collider.sharedMesh = null;
-
-        if (entry.Root != null)
-            UnityEngine.Object.Destroy(entry.Root);
-
-        if (entry.UnityMesh != null)
-            UnityEngine.Object.Destroy(entry.UnityMesh);
-
-        entry.Root = null;
-        entry.Collider = null;
-        entry.UnityMesh = null;
+        CollisionSurface?.RemoveSurfaceForCell(entry.CellId, entry.Surface);
+        entry.Surface = null;
         entry.MeshData = null;
     }
 
@@ -482,7 +485,7 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
         foreach (var kv in _entries)
         {
             CellEntry entry = kv.Value;
-            if (entry.UnityMesh == null)
+            if (entry.Surface == null)
                 continue;
 
             if (entry.State == CellState.Ready)
@@ -502,7 +505,13 @@ public sealed class SurfaceCellLoader : ICellResourceLoader
                 continue;
             }
 
-            Gizmos.DrawWireMesh(entry.UnityMesh, Vector3.zero, Quaternion.identity, Vector3.one);
+            // The cell's world bounds. There is no Unity Mesh any more -- the geometry lives in a
+            // TriangleMeshSurface inside CellSurface_t -- so the box is what is left to show, and it is
+            // what the gizmo was for: which cells are loaded and which are warm-cached.
+            entry.Surface.GetBounds(out LostEden.Vehicles.Vec3 min, out LostEden.Vehicles.Vec3 max);
+            var lo = new Vector3(min.X, min.Y, min.Z);
+            var hi = new Vector3(max.X, max.Y, max.Z);
+            Gizmos.DrawWireCube((lo + hi) * 0.5f, hi - lo);
         }
     }
 }

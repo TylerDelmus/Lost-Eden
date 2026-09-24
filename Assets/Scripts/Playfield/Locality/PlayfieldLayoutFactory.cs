@@ -83,7 +83,7 @@ public static class PlayfieldLayoutFactory
         out int zoneSize,
         out int numZones)
     {
-        zoneSize = playfield.Unknown2 > 0 ? playfield.Unknown2 : 10;
+        zoneSize = playfield.ZoneSize > 0 ? playfield.ZoneSize : 10;
         numZones = 0;
 
         byte[] raw;

@@ -109,7 +109,7 @@ public static class EffectTypeCatalog
         // Process is FUN_100f8491 (vftable 1016ddac slot 1), not FUN_100f826a. Only starType 3 is
         // recovered call-for-call (StarsCase3); every other starType is still an approximation.
         Add(EffectTypeTags.Stars, "_GfxControlStars_t", EffectCategory.PointCloud, EffectSupport.Ported);
-        Add(0x7d5, "_GfxControlSuns_t", EffectCategory.PointCloud, EffectSupport.Missing);
+        Add(EffectTypeTags.Suns, "_GfxControlSuns_t", EffectCategory.PointCloud, EffectSupport.Ported);
 
         // ---- Sprite family ----------------------------------------------------
         // Flare: GfxControlFlareType0 / FlareType0Sim, from Process 100ddc6d, spawn 100dd2eb and
@@ -117,15 +117,13 @@ public static class EffectTypeCatalog
         Add(EffectTypeTags.Flare, "_GfxControlFlare_t", EffectCategory.Sprite, EffectSupport.Ported);
         // Flare1 (ctor 100dea3d) is a separate class still on the earlier emitter; not checked.
         Add(EffectTypeTags.FlareAlt, "_GfxControlFlare1_t", EffectCategory.Sprite, EffectSupport.Ported);
-        // Cord: stock adds links only in slot 4 in local mode (field 0 bit 1), so a Cord without that
-        // bit never draws — verified. The local-mode link model is still the earlier port's.
+        // Cord: GfxControlCord, from Process 100d5f5a, slot 4 100d69d8 and GfxVisualCord4. Links come
+        // only from slot 4 in local mode (field 0 bit 1); without that bit a Cord never draws.
         Add(EffectTypeTags.Cord, "_GfxControlCord_t", EffectCategory.Sprite, EffectSupport.Ported);
-        Add(EffectTypeTags.SpriteAlt, null, EffectCategory.Sprite, EffectSupport.Approximated);
-        Add(EffectTypeTags.Nano0, "_GfxControlNano0_t", EffectCategory.Sprite, EffectSupport.Approximated);
+        Add(EffectTypeTags.Nano0, "_GfxControlNano0_t", EffectCategory.Sprite, EffectSupport.Ported);
         Add(EffectTypeTags.Nano1, "_GfxControlNano1_t", EffectCategory.Sprite, EffectSupport.Approximated);
-        Add(EffectTypeTags.Nano2, "_GfxControlNano2_t", EffectCategory.Sprite, EffectSupport.Approximated);
         Add(EffectTypeTags.Nano3, "_GfxControlNano3_t", EffectCategory.Sprite, EffectSupport.Approximated);
-        Add(EffectTypeTags.Sprite, "_GfxControlSprite_t", EffectCategory.Sprite, EffectSupport.Approximated);
+        Add(EffectTypeTags.Sprite, "_GfxControlSprite_t", EffectCategory.Sprite, EffectSupport.Ported);
         // Spell1: windows 1-2, NextState, SetDuration and terminate from 100f3f59 and friends; windows
         // 3-4 (field 33 = 0 only) are still the earlier model.
         Add(EffectTypeTags.Spell1, "_GfxControlSpell1_t", EffectCategory.Sprite, EffectSupport.Ported);
@@ -133,62 +131,91 @@ public static class EffectTypeCatalog
         // ---- Particle emitters ------------------------------------------------
         // Same pooled emitter as Flare (FUN_100f1997) plus gravity at field 40.
         Add(EffectTypeTags.Sparks, "_GfxControlSparks_t", EffectCategory.Particle, EffectSupport.Ported);
-        // Both render a stand-in billboard set rather than the stock per-particle integration.
-        Add(EffectTypeTags.TParticle, null, EffectCategory.Particle, EffectSupport.Approximated);
-        Add(EffectTypeTags.BParticle2, null, EffectCategory.Particle, EffectSupport.Approximated);
-        Add(0xbd0, "GfxControlBParticle_t", EffectCategory.Particle, EffectSupport.Missing);
-        Add(0xbd3, "GfxControlMParticle_t", EffectCategory.Particle, EffectSupport.Missing);
-        Add(0xbd7, "GfxControlTParticle2_t", EffectCategory.Particle, EffectSupport.Missing);
+        // Fire: GfxControlFire / FireSim from Process 100dbed5 and init 100dc59c, on Sparks' visual
+        // (Sprite2Type0Visual).
+        Add(EffectTypeTags.Fire, "_GfxControlFire_t", EffectCategory.Particle, EffectSupport.Ported);
+        // Smoke (0x3f1, once guessed as "Nano2"): GfxControlSmoke / SmokeSim from Process 100f04bd and
+        // init 100f0cd4, on the same visual.
+        Add(EffectTypeTags.Smoke, "_GfxControlSmoke_t", EffectCategory.Particle, EffectSupport.Ported);
+        // TParticle: GfxControlTParticle / TParticleSim from Process 10113101 and GfxVisualTParticle.
+        Add(EffectTypeTags.TParticle, "GfxControlTParticle_t", EffectCategory.Particle, EffectSupport.Ported);
+        // BParticle2: GfxControlBParticle2 / BParticle2Sim from Process 1010b499 and GfxVisualBParticle2.
+        Add(EffectTypeTags.BParticle2, "GfxControlBParticle2_t", EffectCategory.Particle, EffectSupport.Ported);
+        // BParticle: GfxControlBParticle / BParticleSim, particle mode 8 only (1010a909, GfxVisualBParticle).
+        Add(EffectTypeTags.BParticle, "GfxControlBParticle_t", EffectCategory.Particle, EffectSupport.Ported);
+        // MParticle: GfxControlMParticle / MParticleSim from Process 1010f92b, ABIFF debris via EffectModels.
+        Add(EffectTypeTags.MParticle, "GfxControlMParticle_t", EffectCategory.Particle, EffectSupport.Ported);
+        // TParticle2: GfxControlTParticle2 / TParticle2Sim from Process 10113b55 and GfxVisualTParticle2.
+        Add(EffectTypeTags.TParticle2, "GfxControlTParticle2_t", EffectCategory.Particle, EffectSupport.Ported);
         Add(0xbdb, "GfxControlAParticle_t", EffectCategory.Particle, EffectSupport.Missing);
-        Add(0xbc9, "_GfxControlGlobalSmoke_t", EffectCategory.Particle, EffectSupport.Missing);
+        // GlobalSmoke: GfxControlGlobalSmoke / GlobalSmokeSim from Process 100dfc38; kinds 0 and 2.
+        Add(EffectTypeTags.GlobalSmoke, "_GfxControlGlobalSmoke_t", EffectCategory.Particle, EffectSupport.Ported);
+        // GroundImpact: reached from the second factory (100d05c1), not 100d0656's switch.
+        Add(EffectTypeTags.GroundImpact, "_GfxControlGroundImpact_c", EffectCategory.Particle, EffectSupport.Ported);
         Add(0xbcb, "_GfxControlTrail_t", EffectCategory.Particle, EffectSupport.Missing);
-        Add(0xbdf, "GfxControlTrail2_t", EffectCategory.Particle, EffectSupport.Missing);
+        Add(EffectTypeTags.Trail2, "GfxControlTrail2_t", EffectCategory.Particle, EffectSupport.Ported);
 
         // ---- Mesh / geometry --------------------------------------------------
         Add(EffectTypeTags.Highlight, "_GfxControlHighlight_t", EffectCategory.Mesh, EffectSupport.Ported);
-        Add(EffectTypeTags.Shield, "_GfxControlShield_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(EffectTypeTags.Shield2, "GfxControlShield2_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0xbc2, "_GfxControlMesh_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0xbd1, "GfxControlEffectMesh_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0xbce, "GfxControlBeam_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0xbcf, "GfxControlEnergyBall_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0xbc1, "_GfxControlCrazyCone_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0xbc4, "_GfxControlGroundRing_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0xbd6, "GfxControlGroundGrid_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0xbde, "GfxControlVolGrid_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0xbb8, "_GfxControlShockWave_t", EffectCategory.Mesh, EffectSupport.Missing);
+        Add(EffectTypeTags.Shield, "_GfxControlShield_t", EffectCategory.Mesh, EffectSupport.Ported);
+        // Shield2: GfxControlShield2 / Shield2Sim from Process 10111110 and GfxVisualShield2 (draw 1001d3ee).
+        Add(EffectTypeTags.Shield2, "GfxControlShield2_t", EffectCategory.Mesh, EffectSupport.Ported);
+        // Mesh: GfxControlMesh / MeshSim from Process 100e52f3; a VisualMesh_t of one of four
+        // tower_destroyed_*.abiff models picked by field 9.
+        Add(EffectTypeTags.Mesh, "_GfxControlMesh_t", EffectCategory.Mesh, EffectSupport.Ported);
+        // EffectMesh: GfxControlEffectMesh / EffectMeshSim from Process 1010ce9c, an ABIFF model via EffectModels.
+        Add(EffectTypeTags.EffectMesh, "GfxControlEffectMesh_t", EffectCategory.Mesh, EffectSupport.Ported);
+        // Beam: GfxControlBeam / BeamSim from Process 10109c0c and GfxVisualBeam (geometry 10008056).
+        Add(EffectTypeTags.Beam, "GfxControlBeam_t", EffectCategory.Mesh, EffectSupport.Ported);
+        // EnergyBall: GfxControlEnergyBall / EnergyBallSim from Process 1010e039 + render 10012264.
+        Add(EffectTypeTags.EnergyBall, "GfxControlEnergyBall_t", EffectCategory.Mesh, EffectSupport.Ported);
+        // CrazyCone: GfxControlCrazyCone / CrazyConeSim from Process 100d6dcc and GfxVisualCone
+        // (geometry 1000bd0a). A 21-field header then field 20 stages of 29.
+        Add(EffectTypeTags.CrazyCone, "_GfxControlCrazyCone_t", EffectCategory.Mesh, EffectSupport.Ported);
+        // GroundRing: GfxControlGroundRing / GroundRingSim from Process 100e1c7e and
+        // GfxVisualGroundRing (Update 10016e84).
+        Add(EffectTypeTags.GroundRing, "_GfxControlGroundRing_t", EffectCategory.Mesh, EffectSupport.Ported);
+        // GroundGrid: GfxControlGroundGrid / GroundGridSim, visual mode 0 only (1010e704, GfxVisualGroundGrid).
+        Add(EffectTypeTags.GroundGrid, "GfxControlGroundGrid_t", EffectCategory.Mesh, EffectSupport.Ported);
+        Add(EffectTypeTags.VolGrid, "GfxControlVolGrid_t", EffectCategory.Mesh, EffectSupport.Ported);
+        Add(EffectTypeTags.ShockWave, "_GfxControlShockWave_t", EffectCategory.Mesh, EffectSupport.Ported);
         Add(0xbba, "_GfxControlSplash_t", EffectCategory.Mesh, EffectSupport.Missing);
         Add(EffectTypeTags.Deformer, "_GfxControlDeformer_t", EffectCategory.Mesh, EffectSupport.Ported);
-        Add(0x7d1, "_GfxControlSpiral_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0xbd9, "GfxControlSpiral2_t", EffectCategory.Mesh, EffectSupport.Missing);
+        // Spiral: GfxControlSpiral / SpiralSim from Process 100f4cb5 and GfxVisualSpiral (draw 10021924).
+        Add(EffectTypeTags.Spiral, "_GfxControlSpiral_t", EffectCategory.Mesh, EffectSupport.Ported);
+        // Spiral2: GfxControlSpiral2 / Spiral2Sim from Process 10111c40 and GfxVisualSpiral2 (geometry 10022407).
+        Add(EffectTypeTags.Spiral2, "GfxControlSpiral2_t", EffectCategory.Mesh, EffectSupport.Ported);
         Add(EffectTypeTags.Electra, "_GfxControlElectra_t", EffectCategory.Mesh, EffectSupport.Ported);
         Add(0xbca, "_GfxControlSkyRise_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0xbbe, "_GfxControlSkyFlash_t", EffectCategory.Mesh, EffectSupport.Missing);
-        Add(0x405, "_GfxControlVulcanRocks_t", EffectCategory.Mesh, EffectSupport.Missing);
+        Add(EffectTypeTags.SkyFlash, "_GfxControlSkyFlash_t", EffectCategory.Mesh, EffectSupport.Ported);
+        Add(EffectTypeTags.VulcanRocks, "_GfxControlVulcanRocks_t", EffectCategory.Mesh, EffectSupport.Ported);
         Add(0xbc0, "GfxControlShadow_c", EffectCategory.Mesh, EffectSupport.Missing);
 
         // ---- Screen / camera --------------------------------------------------
-        Add(0xbd8, "GfxControlGroundShake_t", EffectCategory.Screen, EffectSupport.Missing);
-        Add(0xbdc, "GfxControlToggle_t", EffectCategory.Screen, EffectSupport.Missing);
+        // GroundShake: GfxControlGroundShake / GroundShakeSim from Process 1010f12a — camera only.
+        Add(EffectTypeTags.GroundShake, "GfxControlGroundShake_t", EffectCategory.Screen, EffectSupport.Ported);
+        Add(EffectTypeTags.Toggle, "GfxControlToggle_t", EffectCategory.Screen, EffectSupport.Ported);
 
         // ---- Tracers: only reachable through CreateGfxControlTracer(id, from, to) ----
         Add(EffectTypeTags.BeamCylinder, null, EffectCategory.Tracer, EffectSupport.Approximated);
         Add(EffectTypeTags.Tracer4, "_GfxControlTracer4_t", EffectCategory.Tracer, EffectSupport.Ported);
-        Add(EffectTypeTags.BeamRibbonAlt, null, EffectCategory.Tracer, EffectSupport.Approximated);
-        Add(EffectTypeTags.BeamRibbonWide, null, EffectCategory.Tracer, EffectSupport.Approximated);
+        Add(EffectTypeTags.Tracer5, "_GfxControlTracer5_t", EffectCategory.Tracer, EffectSupport.Ported);
+        // Tracer6: GfxControlTracer6 / Tracer6Sim from Process 10101872 -> update 1010107d.
+        Add(EffectTypeTags.Tracer6, "_GfxControlTracer6_t", EffectCategory.Tracer, EffectSupport.Ported);
         Add(EffectTypeTags.Tracer1, "_GfxControlTracer1_t", EffectCategory.Tracer, EffectSupport.Ported);
         Add(0x3fd, null, EffectCategory.Tracer, EffectSupport.Missing);
-        Add(EffectTypeTags.HitSpawner, null, EffectCategory.Tracer, EffectSupport.Missing);
+        Add(EffectTypeTags.Tracer3, "_GfxControlTracer3_t", EffectCategory.Tracer, EffectSupport.Ported);
         Add(0x403, null, EffectCategory.Tracer, EffectSupport.Missing);
-        Add(0xbd2, null, EffectCategory.Tracer, EffectSupport.Missing);
+        // Tracer8: GfxControlTracer8 / Tracer8Sim from Process 10114b73; it only carries a child.
+        Add(EffectTypeTags.Tracer8, "GfxControlTracer8_t", EffectCategory.Tracer, EffectSupport.Ported);
 
         // ---- Constructed by a CreateGfxControl overload we have not mapped yet ----
         Add(EffectTypeTags.Plasma, "_GfxControlPlasma_t", EffectCategory.Tracer, EffectSupport.Ported);
 
         // ---- Never rendered ---------------------------------------------------
         Add(0xfa0, "_GfxControlAudio_t", EffectCategory.Audio, EffectSupport.NotRendered);
-        Add(0x3e9, "_GfxControlBPHFSM_t", EffectCategory.Buff, EffectSupport.NotRendered);
-        Add(0x3ea, "_GfxControlBuffPlaceHolder_t", EffectCategory.Buff, EffectSupport.NotRendered);
+        Add(EffectTypeTags.BuffFsm, "_GfxControlBPHFSM_t", EffectCategory.Buff, EffectSupport.Ported);
+        Add(EffectTypeTags.BuffPlaceHolder, "_GfxControlBuffPlaceHolder_t", EffectCategory.Buff, EffectSupport.Ported);
         // Stock CreateGfxControl explicitly returns null for typeCode 0.
         Add(0, null, EffectCategory.None, EffectSupport.NotRendered);
 

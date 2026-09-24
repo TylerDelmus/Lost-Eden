@@ -6,6 +6,12 @@ public class Attractor : MonoBehaviour
 
     public AttractorPlace Place;
 
+    /// <summary>
+    /// False for a CAT attractor whose name maps to no <see cref="AttractorPlace"/> (e.g. Attractor30_beam):
+    /// it's kept only so effects can find it by name, as stock does.
+    /// </summary>
+    public bool HasPlace = true;
+
     void OnDrawGizmos()
     {
         DrawGizmo(selected: false);

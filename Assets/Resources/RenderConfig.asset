@@ -28,7 +28,7 @@ MonoBehaviour:
   _applyAoPlayfieldTweaks: 1
   _applyAoSkyMeshes: 1
   _useReflectionProbe: 0
-  _grassEnabled: 1
+  _grassEnabled: 0
   _grassMesh: {fileID: -462981019419857548, guid: 8d1293aa2d2896d4f937d9a60bc65842, type: 3}
   _grassMaterial: {fileID: 2100000, guid: df8485d46beab204981b80b3a65a4874, type: 2}
   _grassUseInstancedFallback: 0

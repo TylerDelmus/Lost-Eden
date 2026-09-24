@@ -1,39 +1,48 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
     <Style src="project://database/Assets/Resources/UI/LoginScreen.uss?fileID=7433441132597879392&amp;guid=94b031093aa7941449364315d54e2a18&amp;type=3#LoginScreen"/>
-    <ui:VisualElement name="root" class="login-root">
-        <ui:VisualElement name="aopath-panel" class="panel aopath-panel hidden" style="display: flex;">
-            <ui:VisualElement name="aopath-content" class="login-content">
-                <ui:Label text="Locate Anarchy Online" class="title"/>
-                <ui:Label text="Select your Anarchy Online installation folder." class="field-label"/>
-                <ui:TextField name="aopath-field" class="text-field"/>
-                <ui:Button name="browse-button" text="Browse..." class="browse-button"/>
-                <ui:VisualElement class="flex-spacer"/>
-                <ui:Label name="aopath-status-text" text="" class="status-text"/>
-            </ui:VisualElement>
-            <ui:Button name="aopath-confirm-button" text="Continue" class="connect-button"/>
-        </ui:VisualElement>
-        <ui:VisualElement name="login-panel" class="panel login-panel hidden" style="display: flex;">
-            <ui:VisualElement name="login-content" class="login-content">
-                <ui:Label text="Username" class="field-label"/>
-                <ui:TextField name="username-field" class="text-field"/>
-                <ui:Label text="Password" class="field-label"/>
-                <ui:TextField name="password-field" password="true" class="text-field"/>
-                <ui:Label text="Dimension" class="field-label"/>
-                <ui:DropdownField name="dimension-dropdown" class="dropdown-field"/>
-                <ui:VisualElement class="flex-spacer"/>
-                <ui:Label name="status-text" text="" class="status-text"/>
-            </ui:VisualElement>
-            <ui:Button name="connect-button" text="Login" class="connect-button"/>
-        </ui:VisualElement>
-        <ui:VisualElement name="character-panel" class="panel character-panel hidden" style="display: flex;">
-            <ui:VisualElement name="character-content" class="character-content">
-                <ui:Label text="Select Character" class="title"/>
-                <ui:ScrollView name="character-scroll" class="character-scroll">
-                    <ui:VisualElement name="character-list" class="character-list"/>
-                </ui:ScrollView>
-                <ui:Label name="character-status-text" text="" class="status-text"/>
-            </ui:VisualElement>
-            <ui:Button name="back-button" text="Back" class="back-button"/>
-        </ui:VisualElement>
-    </ui:VisualElement>
+
+    <!-- Built from the Ao* widget classes ported from GUI.dll. Stock's LoginWindow.xml covers
+         the username/password/buttons; the AO-path step and the dimension picker are ours,
+         since the real client ships in place and picks its dimension elsewhere. USS class
+         names are unchanged so the existing LoginScreen.uss still styles it. -->
+    <AoView name="root" class="login-root" view_layout="vertical">
+
+        <AoView name="aopath-panel" class="panel aopath-panel" view_layout="vertical">
+            <AoView name="aopath-content" class="login-content" view_layout="vertical">
+                <AoTextView value="Locate Anarchy Online" class="title"/>
+                <AoTextView value="Select your Anarchy Online installation folder." class="field-label"/>
+                <AoTextInputView name="aopath-field" class="text-field"/>
+                <AoButton name="browse-button" label="Browse..." class="browse-button"/>
+                <AoSpacer/>
+                <AoTextView name="aopath-status-text" value="" class="status-text"/>
+            </AoView>
+            <AoButton name="aopath-confirm-button" label="Continue" class="connect-button"/>
+        </AoView>
+
+        <AoView name="login-panel" class="panel login-panel" view_layout="vertical">
+            <AoView name="login-content" class="login-content" view_layout="vertical">
+                <AoTextView value="Username" class="field-label"/>
+                <AoComboBox name="username-field" class="text-field"/>
+                <AoTextView value="Password" class="field-label"/>
+                <AoTextInputView name="password-field" class="text-field"/>
+                <AoTextView value="Dimension" class="field-label"/>
+                <AoComboBox name="dimension-dropdown" class="dropdown-field"/>
+                <AoSpacer/>
+                <AoTextView name="status-text" value="" class="status-text"/>
+            </AoView>
+            <AoButton name="connect-button" label="Login" class="connect-button"/>
+        </AoView>
+
+        <AoView name="character-panel" class="panel character-panel" view_layout="vertical">
+            <AoView name="character-content" class="character-content" view_layout="vertical">
+                <AoTextView value="Select Character" class="title"/>
+                <AoScrollView name="character-scroll" class="character-scroll" v_scrollbar_mode="auto">
+                    <AoScrollViewChild name="character-list" class="character-list" view_layout="vertical"/>
+                </AoScrollView>
+                <AoTextView name="character-status-text" value="" class="status-text"/>
+            </AoView>
+            <AoButton name="back-button" label="Back" class="back-button"/>
+        </AoView>
+
+    </AoView>
 </ui:UXML>

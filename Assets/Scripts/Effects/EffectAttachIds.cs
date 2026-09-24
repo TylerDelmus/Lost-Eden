@@ -1,28 +1,35 @@
 /// <summary>
-/// Stock AO attach ids used by gfx locators.
-/// Attractor/bone string tables match Gamecode FUN_10105c44 .rdata (0x102c63f8 / 0x102c63a8).
-/// Attach 0 = CAT mesh RRefFrame (FUN_10106368), not dynel feet — see VisualDynel.TryGetMeshFrameMatrix.
+/// Stock AO attach ids used by gfx locators, resolved by Gamecode <c>10105e6d</c> (see
+/// <c>VisualDynel.TryGetAttachMatrix</c>). The attractor and bone name tables are stock's, entry for entry
+/// (<c>0x102c63f8</c> / <c>0x102c63a8</c>). Attach 0 is the mesh's own frame (<c>FUN_10106368</c>), which for a
+/// character model sits on the ground at the feet.
 /// </summary>
 public static class EffectAttachIds
 {
-    /// <summary>Stock default: keep mesh RRefFrame (mid-body). Not a bone/attractor id.</summary>
+    /// <summary>The mesh's own frame (at a character's feet); also what a locator keeps when a lookup fails.</summary>
     public const int MeshFrame = 0;
 
     public const int BoneMin = 1000;
     public const int BoneMax = 1018;
     public const int AttractorMin = 2000;
     public const int AttractorMax = 2023;
+    /// <summary>A weapon's muzzle (stock <c>10105ea1</c>): only a WeaponItem_t has one (<c>1009c337</c>); on a character the
+    /// lookup fails and the locator keeps the mesh frame.</summary>
     public const int Muzzle = 3000;
 
-    // Stock attractor jump table (attachId - 2000).
-    public const int RightHand = 2000; // Attractor02_righthand
-    public const int LeftHand = 2001;  // Attractor03_lefthand
-    public const int Head = 2002;      // Attractor01_head
-    public const int Back = 2003;
-    public const int LeftShoulder = 2004;
-    public const int RightShoulder = 2005;
+    /// <summary>What a missing attractor or bone falls back to (stock <c>0x102c6400</c>).</summary>
+    public const string HeadAttractorName = "Attractor01_head";
 
-    // Stock Bip01 bone jump table (attachId - 1000).
+    // Attractor ids are 2000 + the index into AttractorNames; the first six are named here, the other 18
+    // (Attractor07_special .. Attractor30_beam) are only reached through the table.
+    public const int RightHand = 2000;     // Attractor02_righthand
+    public const int LeftHand = 2001;      // Attractor03_lefthand
+    public const int Head = 2002;          // Attractor01_head
+    public const int Back = 2003;          // Attractor06_back
+    public const int LeftShoulder = 2004;  // Attractor05_leftshoulder
+    public const int RightShoulder = 2005; // Attractor04_rightshoulder
+
+    // Bone ids are 1000 + the index into BoneNames.
     public const int BonePelvis = 1000;
     public const int BoneSpine = 1001;
     public const int BoneSpine1 = 1002;
@@ -120,41 +127,5 @@ public static class EffectAttachIds
             return false;
         name = BoneNames[index];
         return true;
-    }
-
-    /// <summary>Map stock attractor attachId to <see cref="AttractorPlace"/> when the name has a known place.</summary>
-    public static bool TryGetAttractorPlace(int attachId, out AttractorPlace place)
-    {
-        place = default;
-        if (!TryGetAttractorName(attachId, out string name))
-            return false;
-        return AttractorPlaceUtil.TryParse(name, out place);
-    }
-
-    public static string[] BoneTokens(int attachId)
-    {
-        switch (attachId)
-        {
-            case BonePelvis: return new[] { "pelvis_ac", "pelvis", "hip", "root", "body" };
-            case BoneSpine: return new[] { "spine_ac", "bip01 spine_ac", "spine" };
-            case BoneSpine1: return new[] { "spine1_ac", "spine1" };
-            case BoneSpine2: return new[] { "spine2_ac", "spine2", "chest" };
-            case BoneSpine3: return new[] { "spine3_ac", "spine3" };
-            case BoneNeck: return new[] { "neck_ac", "neck" };
-            case BoneHead: return new[] { "head_ac", "head" };
-            case BoneLUpperArm: return new[] { "l upperarm_ac", "lupperarm", "leftarm", "l_upperarm" };
-            case BoneRUpperArm: return new[] { "r upperarm_ac", "rupperarm", "rightarm", "r_upperarm" };
-            case BoneLForearm: return new[] { "l forearm_ac", "lforearm", "leftforearm" };
-            case BoneRForearm: return new[] { "r forearm_ac", "rforearm", "rightforearm" };
-            case BoneLThigh: return new[] { "l thigh_ac", "lthigh", "leftthigh" };
-            case BoneRThigh: return new[] { "r thigh_ac", "rthigh", "rightthigh" };
-            case BoneLCalf: return new[] { "l calf_ac", "lcalf", "leftcrus", "lcrus" };
-            case BoneRCalf: return new[] { "r calf_ac", "rcalf", "rightcrus", "rcrus" };
-            case BoneLFoot: return new[] { "l foot_ac", "lfoot", "leftfoot" };
-            case BoneRFoot: return new[] { "r foot_ac", "rfoot", "rightfoot" };
-            case BoneLHand: return new[] { "l hand_ac", "lhand", "lefthand" };
-            case BoneRHand: return new[] { "r hand_ac", "rhand", "righthand" };
-            default: return null;
-        }
     }
 }

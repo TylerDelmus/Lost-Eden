@@ -1005,7 +1005,7 @@ GameObject:
   - component: {fileID: 3000000004}
   - component: {fileID: 3000000002}
   - component: {fileID: 3000000003}
-  - component: {fileID: 3000000005}
+  - component: {fileID: 3000000006}
   m_Layer: 0
   m_Name: LoginScreen
   m_TagString: Untagged
@@ -1038,8 +1038,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::LoginScreenController
   _loginView: {fileID: 3000000002}
-  _loginCameraPosition: {x: 935, y: 30, z: 735}
-  _loginCameraEulerAngles: {x: 15, y: -90, z: 0}
 --- !u!4 &3000000004
 Transform:
   m_ObjectHideFlags: 0
@@ -1055,29 +1053,64 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &3000000005
-MonoBehaviour:
+--- !u!1931382934 &3000000006
+PanelRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3000000001}
   m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 19102, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.dll::UnityEngine.UIElements.UIDocument
-  m_PanelSettings: {fileID: 0}
-  m_ParentUI: {fileID: 0}
-  sourceAsset: {fileID: 0}
+  m_CastShadows: 0
+  m_ReceiveShadows: 0
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 0
+  m_ReflectionProbeUsage: 0
+  m_RayTracingMode: 0
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 0}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
   m_SortingOrder: 0
-  m_Position: 0
+  m_MaskInteraction: 0
+  serializedVersion: 1
+  m_PanelSettings: {fileID: 11400000, guid: ddbd8a9efa40e634fb3261ae3aae9780, type: 2}
+  sourceAsset: {fileID: 0}
+  m_ParentUI: {fileID: 0}
   m_WorldSpaceSizeMode: 1
   m_WorldSpaceWidth: 1920
   m_WorldSpaceHeight: 1080
   m_PivotReferenceSize: 0
   m_Pivot: 0
-  m_WorldSpaceCollider: {fileID: 0}
+  m_Position: 0
 --- !u!1001 &290694753635709543
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1092,7 +1125,7 @@ PrefabInstance:
       objectReference: {fileID: -944628639613478452, guid: 35845fe01580c41289b024647b1d1c53, type: 3}
     - target: {fileID: 4376990713135409540, guid: 0840f0fb60bd91f4a86f0427b957dddb, type: 3}
       propertyPath: _zoomStep
-      value: 1
+      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: 4376990713135409540, guid: 0840f0fb60bd91f4a86f0427b957dddb, type: 3}
       propertyPath: _rotationSpeed

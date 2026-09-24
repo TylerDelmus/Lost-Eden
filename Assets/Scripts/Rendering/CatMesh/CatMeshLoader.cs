@@ -353,7 +353,9 @@ public sealed class CatMeshLoader
             renderer.quality = SkinQuality.Bone2;
             renderer.updateWhenOffscreen = true;
             renderer.sharedMaterial = _materials.Get(sub.Material);
-            subGo.AddComponent<CatMeshSourceVertices>().Positions = sub.Positions;
+            var source = subGo.AddComponent<CatMeshSourceVertices>();
+            source.Positions = sub.Positions;
+            source.MaterialId = sub.MaterialId;
         }
         double meshMs = section.Elapsed.TotalMilliseconds;
 
@@ -573,13 +575,15 @@ public sealed class CatMeshLoader
                 continue;
 
             string name = string.IsNullOrEmpty(src.Name) ? $"Attractor_{i}" : src.Name.Trim();
-            if (!AttractorPlaceUtil.TryParse(name, out AttractorPlace place))
-                continue;
+            // Every attractor is kept: stock effects find them by name (Attractor30_beam, Attractor07_special ...),
+            // whether or not the name maps to a place.
+            bool hasPlace = AttractorPlaceUtil.TryParse(name, out AttractorPlace place);
 
             list.Add(new CatMeshAttractorData
             {
                 Name = name,
                 Place = place,
+                HasPlace = hasPlace,
                 BoneIndex = src.BoneIdx,
                 LocalPosition = ToUnity(src.Position),
                 LocalRotation = ToUnity(src.Rotation),
@@ -613,7 +617,10 @@ public sealed class CatMeshLoader
 
             var attractor = go.AddComponent<Attractor>();
             attractor.Place = src.Place;
-            collection.Add(src.Place, attractor);
+            if (src.HasPlace)
+                collection.Add(src.Place, attractor);
+            else
+                collection.AddNamed(attractor);
         }
     }
 

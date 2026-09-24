@@ -13,7 +13,7 @@ public sealed class HdrpEnvironmentApplicator
 {
     readonly ResourceDatabase _database;
     readonly AbiffLoader _abiffLoader;
-    readonly AoTweakMeshNames _meshNames;
+    readonly AbiffMeshNames _meshNames;
 
     bool _applied;
 
@@ -45,7 +45,7 @@ public sealed class HdrpEnvironmentApplicator
     {
         _database = database;
         _abiffLoader = abiffLoader;
-        _meshNames = new AoTweakMeshNames(database);
+        _meshNames = new AbiffMeshNames(database);
     }
 
     public void Apply(int playfieldId, bool loadSkyMeshes = false)

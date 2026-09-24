@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -11,6 +12,9 @@ public sealed class GfxControlMeta : GfxControl
     readonly IEffectSpawnFactory _factory;
     readonly Color _tint;
     readonly EffectHandle[] _children = new EffectHandle[SlotCount];
+
+    /// <summary>The spawned children, by slot (null where a slot is empty).</summary>
+    public IReadOnlyList<EffectHandle> Children => _children;
 
     public GfxControlMeta(
         GfxTweakRecord record,
@@ -64,6 +68,27 @@ public sealed class GfxControlMeta : GfxControl
     {
         for (int i = 0; i < SlotCount; i++)
             _children[i]?.UpdatePosition(position);
+    }
+
+    /// <summary>Stock slot 11 (<c>100e5e4a</c>): forward to every child.</summary>
+    public override void SetStartColor(float a, float r, float g, float b)
+    {
+        for (int i = 0; i < SlotCount; i++)
+            _children[i]?.SetStartColor(a, r, g, b);
+    }
+
+    /// <summary>Stock slot 12 (<c>100e5e92</c>): forward to every child.</summary>
+    public override void SetStopColor(float a, float r, float g, float b)
+    {
+        for (int i = 0; i < SlotCount; i++)
+            _children[i]?.SetStopColor(a, r, g, b);
+    }
+
+    /// <summary>Stock slot 13 (<c>100e5eda</c>): forward to every child.</summary>
+    public override void SetColor(uint argb)
+    {
+        for (int i = 0; i < SlotCount; i++)
+            _children[i]?.SetColor(argb);
     }
 
     protected override void OnProcess(float dt)

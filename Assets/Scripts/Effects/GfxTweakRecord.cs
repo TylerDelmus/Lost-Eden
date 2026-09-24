@@ -29,7 +29,8 @@ public sealed class GfxTweakRecord
     {
         if (index < 0 || Fields == null || index >= Fields.Length)
             return fallback;
-        return System.BitConverter.ToInt32(System.BitConverter.GetBytes(Fields[index]), 0);
+        // Never through a float: see GfxBits for the signalling NaNs Mono would quiet.
+        return GfxBits.Of(Fields, index);
     }
 
     /// <summary>Duration at index 8 (Nano0/Sprite family). −1 = infinite.</summary>

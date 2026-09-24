@@ -4,6 +4,7 @@ using UnityEngine;
 public sealed class AttractorCollection : MonoBehaviour
 {
     readonly Dictionary<AttractorPlace, Attractor> _byPlace = new();
+    readonly Dictionary<string, Attractor> _byName = new(System.StringComparer.Ordinal);
 
     public IReadOnlyDictionary<AttractorPlace, Attractor> ByPlace
     {
@@ -18,7 +19,11 @@ public sealed class AttractorCollection : MonoBehaviour
 
     void OnEnable() => RebuildFromChildren();
 
-    public void Clear() => _byPlace.Clear();
+    public void Clear()
+    {
+        _byPlace.Clear();
+        _byName.Clear();
+    }
 
     public void Add(AttractorPlace place, Attractor attractor)
     {
@@ -26,7 +31,35 @@ public sealed class AttractorCollection : MonoBehaviour
             return;
 
         attractor.Place = place;
+        attractor.HasPlace = true;
         _byPlace[place] = attractor;
+        _byName[attractor.name] = attractor;
+    }
+
+    /// <summary>An attractor with no place, findable only by name.</summary>
+    public void AddNamed(Attractor attractor)
+    {
+        if (attractor == null)
+            return;
+
+        attractor.HasPlace = false;
+        _byName[attractor.name] = attractor;
+    }
+
+    /// <summary>
+    /// Any of the model's attractors by its exact CAT name, the way randy31's <c>RCATMesh_t::GetAttractor</c>
+    /// finds it (a case-sensitive compare).
+    /// </summary>
+    public bool TryGetByName(string name, out Transform attractor)
+    {
+        attractor = null;
+        if (string.IsNullOrEmpty(name))
+            return false;
+        EnsureBuilt();
+        if (!_byName.TryGetValue(name, out Attractor found) || found == null)
+            return false;
+        attractor = found.transform;
+        return true;
     }
 
     public bool TryGet(AttractorPlace place, out Attractor attractor)
@@ -41,11 +74,16 @@ public sealed class AttractorCollection : MonoBehaviour
     public void RebuildFromChildren()
     {
         _byPlace.Clear();
+        _byName.Clear();
         Attractor[] attractors = GetComponentsInChildren<Attractor>(true);
         for (int i = 0; i < attractors.Length; i++)
         {
             Attractor attractor = attractors[i];
             if (attractor == null)
+                continue;
+
+            _byName[attractor.name] = attractor;
+            if (!attractor.HasPlace)
                 continue;
 
             // Prefer name parse — Place enum Head=0 is indistinguishable from unset.
@@ -59,7 +97,7 @@ public sealed class AttractorCollection : MonoBehaviour
 
     void EnsureBuilt()
     {
-        if (_byPlace.Count > 0)
+        if (_byPlace.Count > 0 || _byName.Count > 0)
             return;
         RebuildFromChildren();
     }

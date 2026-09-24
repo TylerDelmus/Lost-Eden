@@ -106,3 +106,10 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# dotnet test build output for the standalone Tests/ projects
+/[Tt]ests/**/[Bb]in/
+/[Tt]ests/**/[Oo]bj/
+
+# Auto-generated XML solution file (the .sln form is ignored above)
+*.slnx

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -20,6 +21,17 @@ public sealed class GfxControlSequencer : GfxControl
     readonly IEffectSpawnFactory _factory;
     readonly Color _tint;
     readonly Step[] _steps;
+
+    /// <summary>The handles of the steps that have fired so far; nulls for the ones that have not.</summary>
+    public IEnumerable<EffectHandle> Children
+    {
+        get
+        {
+            for (int i = 0; i < _steps.Length; i++)
+                if (_steps[i].Child != null)
+                    yield return _steps[i].Child;
+        }
+    }
     int _flags;
     float _cycleStart;
 
@@ -49,7 +61,7 @@ public sealed class GfxControlSequencer : GfxControl
             };
         }
 
-        SetDuration(InfiniteDuration);
+        base.SetDuration(InfiniteDuration);
     }
 
     protected override void OnProcess(float dt)
@@ -77,8 +89,11 @@ public sealed class GfxControlSequencer : GfxControl
                         if (step.EffectId != 0)
                         {
                             step.Child = _factory.SpawnChild(step.EffectId, Locator, _tint);
-                            if (step.Child != null && step.EndTime > 0f && step.EndTime > step.StartTime)
+                            // 100eccb9: any end above 0 sets the child's duration to end - start.
+                            if (step.Child != null && step.EndTime > 0f)
                                 step.Child.SetDuration(step.EndTime - step.StartTime);
+                            if (step.Child?.Control != null && IgnoreWatchdog)
+                                step.Child.Control.IgnoreWatchdog = true;
                         }
                         step.Fired = true;
                     }
@@ -113,6 +128,14 @@ public sealed class GfxControlSequencer : GfxControl
         }
 
         ReadyFlag = true;
+    }
+
+    /// <summary>
+    /// Stock slot 8 stores the duration, but Process clears the ready flag every call (100ecd1e), so a
+    /// duration never ends a Sequencer: only its steps running out do (or a loop, with flag 0x400).
+    /// </summary>
+    public override void SetDuration(float seconds)
+    {
     }
 
     protected override void OnTerminateGracefully()

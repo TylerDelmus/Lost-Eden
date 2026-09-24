@@ -11,8 +11,13 @@ using UnityEngine;
 /// </summary>
 public sealed class GfxControlElectra : GfxControl
 {
+    /// <summary>Replayed calls allowed in one frame; a hitch loses time rather than fast-forwarding.</summary>
+    const int MaxStepsPerFrame = 8;
+
     readonly ElectraSim _sim;
     readonly EffectBillboardBatch.Strip _quads;
+    float _carry;
+    float _stepAge;
     readonly int _cols;
     readonly int _rows;
 
@@ -48,18 +53,32 @@ public sealed class GfxControlElectra : GfxControl
 
     public override void SetStopColor(float a, float r, float g, float b) => _sim.SetStopColor(a, r, g, b);
 
+    /// <summary>
+    /// Stock runs Process once per frame, and its spawn cap is per call, so the shell filled at a
+    /// different speed at each frame rate. The port replays the calls on the fixed clock
+    /// (<see cref="EffectFrameRate.StockProcessHz"/>, Docs §3.7) and puts the sparks on the locator
+    /// every frame.
+    /// </summary>
     protected override void OnProcess(float dt)
     {
-        if (_sim.Expire(Age))
-        {
-            ReadyFlag = true;
-            return;
-        }
-
         // Every Electra template is world mode (field 0 bit 1 clear): the sparks sit at the locator's
         // position (FUN_1010640a) plus their offsets, and the visual stays at the origin, unrotated.
         Vector3 origin = WorldMatrix.GetColumn(3);
-        _sim.Step(Age, origin.x, origin.y, origin.z);
+
+        float step = EffectFrameRate.StockProcessSeconds;
+        int steps = EffectFrameRate.TakeFixedSteps(ref _carry, dt, step, MaxStepsPerFrame);
+        for (int s = 0; s < steps; s++)
+        {
+            _stepAge += step;
+            if (_sim.Expire(_stepAge))
+            {
+                ReadyFlag = true;
+                return;
+            }
+            _sim.Step(_stepAge, origin.x, origin.y, origin.z);
+        }
+
+        _sim.Place(origin.x, origin.y, origin.z);
     }
 
     public override void CollectStrips(List<EffectBillboardBatch.Strip> dest, Camera camera)

@@ -23,6 +23,8 @@ public sealed class CatMeshAttractorData
 {
     public string Name;
     public AttractorPlace Place;
+    /// <summary>False when the name maps to no place; the attractor is still built, for lookups by name.</summary>
+    public bool HasPlace;
     public int BoneIndex;
     public Vector3 LocalPosition;
     public Quaternion LocalRotation;

@@ -1,34 +1,16 @@
-using UnityEditor;
-
 /// <summary>
-/// EditorPrefs-backed AO install path for UVGA preview tooling.
-/// Falls back to <see cref="LoginPreferences"/> when EditorPrefs is empty.
+/// Editor-tooling view of the AO install path.
+///
+/// This used to own its own EditorPrefs key and its own fallback chain into
+/// <c>LoginPreferences</c>, which made it the only place that knew how the path was really
+/// resolved. Storage and resolution now live in <see cref="AoInstall"/>; this is a thin
+/// wrapper kept so the Uvga windows read the way they always did.
 /// </summary>
 public static class UvgaEditorPaths
 {
-    const string AoPathPrefsKey = "LostEden.Uvga.AoPath";
+    public static string GetStoredAoPath() => AoInstall.GetEditorOverride();
 
-    public static string GetStoredAoPath()
-    {
-        return EditorPrefs.GetString(AoPathPrefsKey, string.Empty);
-    }
+    public static void SetAoPath(string aoPath) => AoInstall.SetEditorOverride(aoPath);
 
-    public static void SetAoPath(string aoPath)
-    {
-        string normalized = AoInstallPath.Normalize(aoPath);
-        EditorPrefs.SetString(AoPathPrefsKey, normalized);
-    }
-
-    public static string ResolveAoPath()
-    {
-        string fromPrefs = AoInstallPath.Normalize(GetStoredAoPath());
-        if (AoInstallPath.IsValid(fromPrefs))
-            return fromPrefs;
-
-        string fromLogin = AoInstallPath.Normalize(LoginPreferences.GetAoPath());
-        if (AoInstallPath.IsValid(fromLogin))
-            return fromLogin;
-
-        return !string.IsNullOrEmpty(fromPrefs) ? fromPrefs : fromLogin;
-    }
+    public static string ResolveAoPath() => AoInstall.Path;
 }

@@ -99,6 +99,23 @@ public class ElectraSimTests
     }
 
     [Fact]
+    public void Place_MovesTheSparksWithTheLocator_BetweenSteps()
+    {
+        ElectraSim s = Make(3);
+        s.Step(0f, 0f, 0f, 0f);
+        s.Step(Step, 0f, 0f, 0f);
+        s.Step(2 * Step, 0f, 0f, 0f);
+        ElectraSim.Sprite before = s.Sprites[0];
+        Assert.True(before.Visible);
+        s.Place(0f, 2f, 0f);
+        ElectraSim.Sprite after = s.Sprites[0];
+        Assert.Equal(before.Y + 2f, after.Y, 5);
+        Assert.Equal(before.X, after.X, 5);
+        Assert.Equal(before.Frame, after.Frame);
+        Assert.Equal(before.Argb, after.Argb);
+    }
+
+    [Fact]
     public void Frame_AndColour_FollowLifeAndProgress()
     {
         ElectraSim s = Make();

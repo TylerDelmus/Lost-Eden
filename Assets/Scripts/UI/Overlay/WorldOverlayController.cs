@@ -5,7 +5,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 
 [DisallowMultipleComponent]
-[RequireComponent(typeof(UIDocument))]
+[RequireComponent(typeof(PanelRenderer))]
 public class WorldOverlayController : MonoBehaviour
 {
     const string OverlayResourcePath = "UI/WorldOverlay";
@@ -30,7 +30,13 @@ public class WorldOverlayController : MonoBehaviour
         if (_menu == null)
             return;
 
-        ApplyOverlayPicking();
+        // Root arrives from PanelRenderer's reload callback, after Awake.
+        _menu.WhenReady(_ =>
+        {
+            ApplyOverlayPicking();
+            if (_started)
+                EnsureOverlays();
+        });
     }
 
     void ApplyOverlayPicking()
@@ -38,8 +44,8 @@ public class WorldOverlayController : MonoBehaviour
         if (_menu?.Root != null)
             _menu.Root.pickingMode = PickingMode.Ignore;
 
-        if (_menu?.Document?.rootVisualElement != null)
-            _menu.Document.rootVisualElement.pickingMode = PickingMode.Ignore;
+        if (_menu?.PanelRoot != null)
+            _menu.PanelRoot.pickingMode = PickingMode.Ignore;
     }
 
     void Start()
@@ -95,7 +101,7 @@ public class WorldOverlayController : MonoBehaviour
 
     void EnsureOverlays()
     {
-        if (_menu == null)
+        if (_menu == null || !_menu.IsReady)
             return;
 
         VisualElement root = _menu.Root;
@@ -123,8 +129,8 @@ public class WorldOverlayController : MonoBehaviour
 
     Camera ResolveCamera()
     {
-        if (_playerController != null && _playerController.CameraController != null)
-            return _playerController.CameraController.Camera;
+        if (_playerController != null && _playerController.N3Camera != null)
+            return _playerController.N3Camera.Camera;
         return null;
     }
 
