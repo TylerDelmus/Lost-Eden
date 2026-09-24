@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -56,6 +57,9 @@ public abstract class AoButtonBase : AoGuiControl
         _onClass = block + "--on";
 
         focusable = true;
+        // Tab moves between text inputs only; a negative tabIndex keeps a button clickable but out
+        // of the focus ring.
+        tabIndex = -1;
         pickingMode = PickingMode.Position;
 
         RegisterCallback<PointerEnterEvent>(_ => { _hovered = true; OnStateChanged(); });
@@ -104,13 +108,118 @@ public abstract class AoButtonBase : AoGuiControl
 [UxmlElement]
 public partial class AoButton : AoButtonBase
 {
+    // The frame is drawn here rather than by UI Toolkit, because UI Toolkit has no cut corner.
+    // The skin still owns it: the colours and the cut come from these properties, and the
+    // outline's thickness per side from the ordinary border-width, which also insets the label.
+    static readonly CustomStyleProperty<Color> FillProperty = new("--ao-button-fill");
+    static readonly CustomStyleProperty<Color> LineProperty = new("--ao-button-line");
+    static readonly CustomStyleProperty<int> CutProperty = new("--ao-button-cut");
+
     readonly AoLabel _label;
+    Color _fill = Color.clear;
+    Color _line = Color.clear;
+    int _cut;
 
     public AoButton() : base("ao-button")
     {
         _label = new AoLabel();
         _label.AddToClassList("ao-button__label");
         Add(_label);
+
+        RegisterCallback<CustomStyleResolvedEvent>(OnCustomStyleResolved);
+        generateVisualContent += DrawFrame;
+    }
+
+    void OnCustomStyleResolved(CustomStyleResolvedEvent evt)
+    {
+        ICustomStyle custom = evt.customStyle;
+        _fill = custom.TryGetValue(FillProperty, out Color fill) ? fill : Color.clear;
+        _line = custom.TryGetValue(LineProperty, out Color line) ? line : Color.clear;
+        _cut = custom.TryGetValue(CutProperty, out int cut) ? Mathf.Max(0, cut) : 0;
+        MarkDirtyRepaint();
+    }
+
+    /// <summary>
+    /// The fill and the outline, with the top-right corner cut by a one-pixel diagonal that
+    /// steps <c>--ao-button-cut</c> rows down, each step flanked by a half-strength pixel on
+    /// either side so the diagonal reads smooth without blurring the straight edges. The area
+    /// beyond the cut is left empty, so whatever is behind the button shows through it.
+    /// </summary>
+    void DrawFrame(MeshGenerationContext mgc)
+    {
+        int w = Mathf.RoundToInt(layout.width);
+        int h = Mathf.RoundToInt(layout.height);
+        if (w <= 0 || h <= 0)
+            return;
+
+        int left = Mathf.RoundToInt(resolvedStyle.borderLeftWidth);
+        int right = Mathf.RoundToInt(resolvedStyle.borderRightWidth);
+        int top = Mathf.RoundToInt(resolvedStyle.borderTopWidth);
+        int bottom = Mathf.RoundToInt(resolvedStyle.borderBottomWidth);
+        int cut = Mathf.Min(_cut, Mathf.Min(h - bottom, w - left - right));
+        if (cut < top)
+            cut = 0;
+
+        var rects = new List<(float x0, float y0, float x1, float y1, Color32 c)>();
+        void Rect(int x0, int y0, int x1, int y1, Color c)
+        {
+            if (x1 > x0 && y1 > y0 && c.a > 0f)
+                rects.Add((x0, y0, x1, y1, c));
+        }
+
+        // Where the diagonal crosses row y (0 <= y < cut): it meets the right border's inner
+        // column on the last cut row.
+        int Diagonal(int y) => w - right - cut + 1 + y;
+
+        // Fill: every row between the top and bottom lines, stopping at the diagonal while the
+        // corner is being cut.
+        for (int y = top; y < h - bottom; y++)
+            Rect(left, y, y < cut ? Diagonal(y) : w - right, y + 1, _fill);
+
+        if (cut == 0)
+        {
+            Rect(0, 0, w, top, _line);
+            Rect(w - right, top, w, h - bottom, _line);
+        }
+        else
+        {
+            for (int y = 0; y < top; y++)
+                Rect(0, y, Diagonal(y) + 1, y + 1, _line);
+
+            Color half = new Color(_line.r, _line.g, _line.b, _line.a * 0.5f);
+            for (int y = 0; y < cut; y++)
+            {
+                int x = Diagonal(y);
+                if (y >= top)
+                {
+                    Rect(x, y, x + 1, y + 1, _line);
+                    Rect(x - 1, y, x, y + 1, half);   // inside, over the fill
+                }
+                Rect(x + 1, y, x + 2, y + 1, half);   // outside, over whatever is behind
+            }
+
+            Rect(w - right, cut, w, h - bottom, _line);
+        }
+
+        Rect(0, top, left, h - bottom, _line);
+        Rect(0, h - bottom, w, h, _line);
+
+        if (rects.Count == 0)
+            return;
+
+        MeshWriteData mesh = mgc.Allocate(rects.Count * 4, rects.Count * 6);
+        for (int i = 0; i < rects.Count; i++)
+        {
+            var r = rects[i];
+            ushort b = (ushort)(i * 4);
+            mesh.SetNextVertex(new Vertex { position = new Vector3(r.x0, r.y0, Vertex.nearZ), tint = r.c });
+            mesh.SetNextVertex(new Vertex { position = new Vector3(r.x1, r.y0, Vertex.nearZ), tint = r.c });
+            mesh.SetNextVertex(new Vertex { position = new Vector3(r.x1, r.y1, Vertex.nearZ), tint = r.c });
+            mesh.SetNextVertex(new Vertex { position = new Vector3(r.x0, r.y1, Vertex.nearZ), tint = r.c });
+
+            mesh.SetNextIndex(b); mesh.SetNextIndex((ushort)(b + 1)); mesh.SetNextIndex((ushort)(b + 2));
+            mesh.SetNextIndex(b); mesh.SetNextIndex((ushort)(b + 2)); mesh.SetNextIndex((ushort)(b + 3));
+        }
     }
 
     string _labelText;

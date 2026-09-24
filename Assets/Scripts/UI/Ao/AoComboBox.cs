@@ -35,7 +35,7 @@ public partial class AoComboBox : AoGuiControl
         hierarchy.Add(_field);
 
         // The arrow is drawn, not typed: the pixel fonts are latin1, which has no triangle.
-        _toggle = new Button(ToggleDropdown);
+        _toggle = new Button(ToggleDropdown) { tabIndex = -1 };  // Tab is for text inputs only
         _toggle.AddToClassList("ao-combo-box__toggle");
         _caret = new AoCaret();
         _toggle.Add(_caret);
@@ -77,7 +77,7 @@ public partial class AoComboBox : AoGuiControl
             _choices.Add(choice);
             string captured = choice;
 
-            var entry = new Button(() => Pick(captured)) { text = choice };
+            var entry = new Button(() => Pick(captured)) { text = choice, tabIndex = -1 };
             entry.AddToClassList("ao-combo-box__entry");
             _popup.Add(entry);
         }

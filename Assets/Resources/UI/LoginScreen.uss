@@ -47,10 +47,6 @@
     color: var(--ao-fg-dim);
 }
 
-.field-label .ao-text-view__label {
-    --ao-text-transform: uppercase;
-}
-
 .browse-button {
     align-self: flex-end;
     margin-top: 4px;
@@ -92,8 +88,4 @@
 .character-button {
     align-items: flex-start;
     margin-bottom: 4px;
-}
-
-.character-button .ao-button__label {
-    --ao-text-transform: none;
 }

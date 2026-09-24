@@ -9,10 +9,8 @@ public sealed class CatAnimPlayer : MonoBehaviour
     public const float DefaultBlendSeconds = 0.2f;
     public const float DefaultLoopSmoothSeconds = 0.15f;
     public const int DefaultPriority = 0;
-    public const int StrafePriority = 5;
     public const int OverlayPriority = 10;
     public const int LayerBits = 3;
-    public const float DefaultStrafeBlendWeight = 0.3f;
 
     ResourceDatabase _database;
     CatAnimResolver _resolver;
@@ -222,39 +220,6 @@ public sealed class CatAnimPlayer : MonoBehaviour
             _currentLogicalName = normalized;
         return true;
     }
-
-    public bool PlayStrafe(string logicalName, float blendSeconds = DefaultBlendSeconds)
-        => Play(logicalName, blendSeconds, StrafePriority, 0, DefaultStrafeBlendWeight);
-
-    public bool PlayStrafeKind(int kindId, int animId, float blendSeconds = DefaultBlendSeconds)
-    {
-        if (animId <= 0)
-            return false;
-
-        if (IsStableAnimAt(StrafePriority, animId))
-        {
-            Arbitrate();
-            return true;
-        }
-
-        return PlayResolved(
-            animId,
-            $"kind:{kindId}",
-            blendSeconds,
-            StrafePriority,
-            0,
-            DefaultStrafeBlendWeight,
-            oneShot: false,
-            null,
-            unscaledTime: false,
-            1f,
-            0,
-            kindId,
-            0f);
-    }
-
-    public void CancelStrafe(float blendSeconds = DefaultBlendSeconds)
-        => FadeOutPriority(StrafePriority, blendSeconds);
 
     /// <summary>
     /// Resolve/play on the next frame so Instantiate + ApplyPose don't stack on the load frame.

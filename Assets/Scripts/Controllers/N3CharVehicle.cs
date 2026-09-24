@@ -559,20 +559,6 @@ public class N3CharVehicle : MonoBehaviour
     }
 
     /// <summary>UNPORTED. Animation clip selection.</summary>
-    public int GetStrafeOverlayKind()
-    {
-        MovementFlags flags = MovementFlags;
-        if ((flags & (MovementFlags.Forward | MovementFlags.Backward)) == 0)
-            return 0;
-
-        if ((flags & MovementFlags.StrafeLeft) != 0)
-            return AnimKindIds.WalkLeft;
-        if ((flags & MovementFlags.StrafeRight) != 0)
-            return AnimKindIds.WalkRight;
-        return 0;
-    }
-
-    /// <summary>UNPORTED. Animation clip selection.</summary>
     public bool TryGetLocomotionKind(AnimHolder holder, out int kind)
     {
         kind = 0;

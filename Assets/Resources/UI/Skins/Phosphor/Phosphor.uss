@@ -45,33 +45,44 @@
 /* ─── Tokens ───────────────────────────────────────────────────────────── */
 
 :root {
-    /* Surfaces, near-black through to raised. */
-    --ao-bg-0: #06080b;
-    --ao-bg-1: #0c1016;
-    --ao-bg-2: #121821;
-    --ao-bg-3: #1a222d;
-    --ao-bg-4: #24303e;
+    /* Surfaces, near-black through to raised. The background (bg-1), the
+       button (bg-3), the outline and the text are sampled from stock's own
+       button; bg-2 and bg-4 are ours, a step either side of the button.
+       Every surface is 97% opaque, so the world shows through the UI. Only
+       surfaces: text and lines are always solid, so never colour either with
+       a bg token. */
+    --ao-bg-0: rgba(6, 8, 11, 0.97);
+    --ao-bg-1: rgba(19, 15, 13, 0.97);
+    --ao-bg-2: rgba(26, 28, 26, 0.97);
+    --ao-bg-3: rgba(33, 41, 40, 0.97);
+    --ao-bg-4: rgba(43, 53, 52, 0.97);
 
-    --ao-line: #223040;
-    --ao-line-hi: #35465a;
+    --ao-line-lo: #212928;
+    --ao-line: #317b84;
+    /* Hover lifts a line halfway to the text colour; focus takes it all the
+       way, so the field being typed into is the brightest edge on screen. */
+    --ao-line-hi: #58b2bb;
+    --ao-line-focus: #80e9f3;
 
-    /* Text */
-    --ao-fg: #ccd6e0;
-    --ao-fg-hi: #ffffff;
+    /* Text: stock's GUIColors.xml "Default" and "Hover". */
+    --ao-fg: #80e9f3;
+    --ao-fg-hi: #a5ffdb;
     --ao-fg-dim: #7c8b9c;
     --ao-fg-mute: #4d5a6a;
+    /* What the player types. */
+    --ao-fg-input: #ffffff;
 
     /* Amber drives interaction, cyan marks data. */
     --ao-accent: #ffb454;
-    --ao-accent-lo: #4a3720;
+    --ao-accent-lo: rgba(74, 55, 32, 0.97);
     --ao-info: #56d4e8;
     --ao-info-lo: #17383f;
     --ao-good: #8ce99a;
     --ao-warn: #ffd43b;
     --ao-bad: #ff6b6b;
 
-    --ao-window: #0c1016;
-    --ao-panel: #121821;
+    --ao-window: rgba(19, 15, 13, 0.97);
+    --ao-panel: rgba(19, 15, 13, 0.97);
     --ao-selection: rgba(255, 180, 84, 0.35);
 }
 
@@ -137,6 +148,13 @@
 
 /* ─── Buttons ──────────────────────────────────────────────────────────── */
 
+/* The button draws its own frame, because UI Toolkit has no cut corner:
+     --ao-button-fill     the inside
+     --ao-button-line     the outline
+     --ao-button-cut      rows the top-right diagonal steps down; 0 is square
+   and border-width gives the outline's thickness per side (it also insets the
+   label). background-color and border-color stay clear, or UI Toolkit would
+   paint a square box under the cut. */
 .ao-button {
     /* Views flow as a column (stock's default layout), so the label is
        centred across by align-items and down by justify-content. */
@@ -144,36 +162,38 @@
     justify-content: center;
     height: 20px;
     padding: 0 8px;
-    background-color: var(--ao-bg-3);
-    border-width: 1px;
-    border-color: var(--ao-line);
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 1px 2px;
+    border-color: rgba(0, 0, 0, 0);
+    --ao-button-fill: var(--ao-bg-3);
+    --ao-button-line: var(--ao-line);
+    --ao-button-cut: 6;
     color: var(--ao-fg);
 }
 
 .ao-button__label {
-    --ao-text-transform: uppercase;
     -unity-text-align: middle-center;
 }
 
 .ao-button:hover {
-    background-color: var(--ao-bg-4);
-    border-color: var(--ao-line-hi);
+    --ao-button-fill: var(--ao-bg-4);
+    --ao-button-line: var(--ao-line-hi);
     color: var(--ao-fg-hi);
 }
 
 .ao-button.ao-button--pressed {
-    background-color: var(--ao-bg-2);
+    --ao-button-fill: var(--ao-bg-2);
 }
 
 .ao-button.ao-button--on {
-    background-color: var(--ao-accent-lo);
-    border-color: var(--ao-accent);
+    --ao-button-fill: var(--ao-accent-lo);
+    --ao-button-line: var(--ao-accent);
     color: var(--ao-accent);
 }
 
 .ao-button:disabled {
-    background-color: var(--ao-bg-3);
-    border-color: var(--ao-line);
+    --ao-button-fill: var(--ao-bg-3);
+    --ao-button-line: var(--ao-line);
     color: var(--ao-fg-mute);
     opacity: 1;
 }
@@ -208,19 +228,23 @@
     border-width: 1px;
     border-radius: 0;
     border-color: var(--ao-line);
-    color: var(--ao-fg);
+    color: var(--ao-fg-input);
     --unity-cursor-color: var(--ao-accent);
     --unity-selection-color: var(--ao-selection);
 }
 
-.ao-text-input-view__field:hover > .unity-base-text-field__input,
-.ao-combo-box__field:hover > .unity-base-text-field__input {
+/* The default runtime theme has its own hover and focus rules for this
+   border, more specific than a single class plus a pseudo-class: with the
+   plain `.ao-text-input-view__field:focus` selector its blue (#006aa6) won.
+   The class pair and :enabled are here to outrank it. */
+.ao-text-input-view__field.unity-base-text-field:hover:enabled > .unity-base-text-field__input,
+.ao-combo-box__field.unity-base-text-field:hover:enabled > .unity-base-text-field__input {
     border-color: var(--ao-line-hi);
 }
 
-.ao-text-input-view__field:focus > .unity-base-text-field__input,
-.ao-combo-box__field:focus > .unity-base-text-field__input {
-    border-color: var(--ao-accent);
+.ao-text-input-view__field.unity-base-text-field:focus:enabled > .unity-base-text-field__input,
+.ao-combo-box__field.unity-base-text-field:focus:enabled > .unity-base-text-field__input {
+    border-color: var(--ao-line-focus);
 }
 
 .ao-text-input-view__field > .unity-base-field__label {
@@ -379,7 +403,6 @@
 }
 
 .ao-column-header-view__label {
-    --ao-text-transform: uppercase;
     flex-grow: 1;
     flex-shrink: 1;
     overflow: hidden;
@@ -443,7 +466,7 @@
 }
 
 .ao-item-slot-view.ao-item-slot-view--empty {
-    border-color: var(--ao-bg-3);
+    border-color: var(--ao-line-lo);
 }
 
 .ao-item-icon-view {
