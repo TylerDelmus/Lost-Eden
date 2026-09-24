@@ -217,7 +217,7 @@ Stock calls every control's Process once per engine frame (`_EffectHandler_t::Ru
 `100d2423`), with the real frame delta and no time gate. So in the original client, effects with per-call
 maths looked different at different frame rates.
 
-**Our client unifies this: an effect must look the same at any frame rate.** The maths is stock's;
+**The port unifies this: an effect looks the same at any frame rate.** The maths is stock's;
 the clock is ours. The only exception is MParticle (group C).
 
 **The rule for choosing a model** (apply it to every new port):

@@ -5,21 +5,6 @@ Read it before touching `Assets/Scripts/Vehicle/` or `Assets/Scripts/Controllers
 
 ---
 
-## 1. Ground rules
-
-Same as `Effects.md` §1, and for the same reasons:
-
-- **Stock is the only truth.** Behaviour comes from the shipped binaries, not from what feels right.
-- **Cite addresses.** Every recovered rule names the function or instruction it came from.
-- **Put stock maths in a Unity-free class** so `Tests/Vehicle` can lock it down with plain xUnit.
-  Unity types appear only in the thin `MonoBehaviour` that binds a sim to a transform.
-- **Do not oversell stock.** Stock sub-steps its integrator, but that bounds frame-rate divergence
-  rather than removing it (§4.1, with measurements). The standing project rule that the port must
-  behave the same at any fps is *stricter than stock*, so meeting it means deviating deliberately —
-  and saying so here — not claiming stock already did it.
-
----
-
 ## 2. Where things are
 
 ### Stock client
@@ -34,17 +19,6 @@ The camera is **not** in `Gamecode.dll`. It is split across three DLLs:
 
 All three export **mangled C++ symbols**, so full method names and signatures are recoverable.
 All three are in the Ghidra project (`/Vehicle.dll`, `/N3.dll`, `/Gamecode.dll`).
-
-Scratchpad helpers (session-local, rebuild if missing): `aolib.py` (PE loader, RTTI),
-`rtti.py <dll> <Class>` (vftables), `hier.py <dll> <Class>` (RTTI base list),
-`vtdiff.py <dll> <Base> <Derived>...` (slot-by-slot override diff), `exp.py`/`imp.py <dll> [regex]`.
-
-### The port
-
-- `Assets/Scripts/Vehicle/` — the recovered model, Unity-free.
-- `Tests/Vehicle/` — xUnit tests over it.
-
----
 
 ## 3. The architecture
 
@@ -211,7 +185,7 @@ The step, in order:
    rotate the **body quaternion**, otherwise rotate the **velocity vector**. (`1000e77d`.)
 8. `EnsureSurfaceAlignment(prevPos, false)`; a false return breaks the sub-step loop.
 
-**One trap.** The translate step gates on the **stored** speed `+0xcc`, which is only written by the
+The translate step gates on the **stored** speed `+0xcc`, which is only written by the
 force path, by `Halt`, by `DisableFalling` and by `SetVel` (`1000a4b1`). Assigning the velocity
 vector without going through `SetVel` leaves the stored speed stale and the vehicle does not move.
 
@@ -251,7 +225,7 @@ clamped to `maxForce` by the integrator, which is what actually limits responsiv
 `SteeringForward` (`1000ca73`), `SteeringReverse` (`1000cab3`), `SteeringDirArrive` (`1000ac8c`)
 are the rest of the set; only `Arrive`/`Halt` are needed for the camera's first pass.
 
-### 4.5 `EnsureSurfaceAlignment` — read, not ported
+### 4.5 `EnsureSurfaceAlignment`
 
 `Vehicle_t::EnsureSurfaceAlignment` (`1000d1aa`, ordinal 110) is the ground clamp and collision
 gate, and at 4206 bytes it is the largest function in `Vehicle.dll`. It is **deliberately not
@@ -436,7 +410,7 @@ renormalising it (`1001f6a3`).
 
 Stock's third-person orbit driver is `FUN_1002118c` (reached from `MouseCameraControl` when the
 camera mode `+0x1ec` is non-zero, and from the frame driver). Two details in it are load-bearing and
-both caused visible bugs when I got them wrong:
+both are load-bearing:
 
 **It rotates the camera's *current* offset**, not the preferred direction at the preferred distance
 (`1002119f`: `offset = position - GetLookTargetPos()`), clamping only at 25 m (`1002151a`). In
@@ -503,11 +477,8 @@ pre-scale, about 0.0087 rad/pixel) was matched against the real client at Sensit
 axes are equal for a recovered reason, not by guess: third-person yaw is unscaled and pitch is
 multiplied by `+0x230`, whose magnitude is 1.0.
 
-An earlier default of 0.3 with a 1.25:1 axis ratio was **invented** from an FPS convention
-(360 degrees per 40 cm at 800 DPI); it was roughly 16x too slow and the ratio had no basis.
-
 **Invert-Y** is `+0x230`'s sign: the helper at `100200c3` takes `fabs` of it and conditionally
-negates. Not exposed in the port yet.
+negates.
 
 
 #### The pitch pole
@@ -527,9 +498,76 @@ out as -165. With the refusal: stops at 87.4, azimuth unchanged, pitch back work
 First person is different and *does* clamp, to +/-1.553343 rad (`100216cf`) — safe there because it
 keeps explicit yaw/pitch accumulators instead of re-deriving the angle from a direction vector.
 
+### 5.5a The orbit driver, read from disassembly — `N3 1002118c`
+
+These functions are all in **N3.dll**, not Gamecode:
+
+| symbol | address |
+|---|---|
+| `n3Camera_t::MouseCameraControl(float, float)` | `N3 10021689` |
+| the third-person orbit driver it calls | `N3 1002118c` |
+| `CameraVehicleFixedThird_t::UpdateHeadingToPos` | `N3 1001f660` |
+| `CameraVehicleFixedThird_t::DecideSnap` | `N3 1001f537` |
+| `CameraVehicleFixedThird_t::RecalcOptimalPos` | `N3 1001f371` |
+| `CameraVehicleFixedThird_t::ForcedUpdate` | `N3 1001f7c9` |
+| `CameraVehicle_t::ForcedUpdate` | `N3 1001e5ac` |
+
+`MouseCameraControl`'s third-person branch (`10021722`) calls the driver with three floats:
+
+```
+arg1 = yawDelta                       // raw
+arg2 = pitchSensitivity(+0x230) * pitchDelta
+arg3 = 0.0                            // 10021727 -- a hardcoded zero, ALWAYS
+```
+
+That `arg3 = 0` kills two branches of the driver outright, which is the point.
+
+**Which offset gets rotated (`1002119f`..`1002124a`).** The driver starts from
+`offset = cameraPos(vehicle+0x58) - GetLookTargetPos()`, keeps a copy, and then:
+
+```
+if (n3Camera_t->mode(+0x1ec) == 3) {                 // Lock only, 1002121d
+    offset = vehicle->OptimalPos(+0x1ec) - lookTarget    // 1002122f
+    if (|offset| > |cameraOffset| && arg3 > 0)           // 1002128d, 10021299
+        offset = cameraOffset                            // never taken from mouse input
+}
+```
+
+So **Lock rotates the GOAL offset, Trail and Rubber rotate the camera's own.** This is load-bearing:
+`|OptimalPos - lookTarget|` is exactly `FollowDistance` by construction (`RecalcOptimalPos`), and
+`UpdateHeadingToPos` divides by `FollowDistance` rather than by the offset's own length (`1001f6a3`).
+Feed it a position at any other range and `PreferredDirection` stops being a unit vector — and since
+the next frame's goal is built from that direction, the error compounds.
+
+**The tail (`10021560`..`100215b7`).**
+
+```
+SetRelPos(intended)                                  // 100214fc
+flag |= |cameraPos - intended|² > eps                // 10021530, "it did not land where asked"
+if (arg3 > 0 && flag)  { SetRelPos(originalPos); return }    // dead for mouse input
+
+if (mode == 3) {                                     // Lock
+    UpdateHeadingToPos(intended, false)              // 1002156c
+    if (flag)        return
+    if (arg3 == 0)   return                          // 1002157d -- ALWAYS returns for mouse input
+    ForcedUpdate(false)
+} else {                                             // Trail / Rubber
+    if (vehicle->speed(+0xcc) < const)  ResyncFollowDistance()    // 1002159e, vtable +0x90
+    ForcedUpdate(false)                                           // vtable +0x94
+}
+```
+
+So **stock never calls `ForcedUpdate` on a mouse orbit in Lock.** Calling it re-stamps
+`PreferredDirection` from the position `DecideSnap` has just *eased* — and `DecideSnap` closes only a
+tenth of an outward gap per call — so the stored direction shrinks slightly every frame and the camera
+creeps inward. The port was calling it.
+
+The pitch refusal further up (`1002133e`..`10021367`) tests `dir.y + delta`, mixing a unit component
+with an angle.
+
 ### 5.6 Zoom
 
-Zoom is a **distance-remaining state machine**, not a rate the user holds.
+Zoom is a **distance-remaining state machine**, not a rate held down.
 
 `CameraVehicle_t::ZoomSteer(rate, out)` (`1001db64`):
 
@@ -564,8 +602,8 @@ Update(); ForcedUpdate(false)
 ```
 
 So mode 3 zoom tracks the wheel instead of steering toward it, its floor is **0.78** rather than
-`ZoomSteer`'s 0.7, and zooming out into geometry reverts rather than shoving through. Measured after
-porting: 2 m in 0.45 s, 4 m in 0.68 s, −3 m in 0.58 s, −8 m in 0.90 s; floor exactly 0.78, ceiling
+`ZoomSteer`'s 0.7, and zooming out into geometry reverts rather than shoving through. Measured:
+2 m in 0.45 s, 4 m in 0.68 s, −3 m in 0.58 s, −8 m in 0.90 s; floor exactly 0.78, ceiling
 exactly 25.
 
 The driver's state machine (`10022808`-`1002298d`) keeps the *distance still to cover* at
@@ -784,94 +822,6 @@ Not a controller in the Unity sense; a command sink. `exp.py n3 n3Camera_t` give
 - `GetObjectUnderColLine()` (`1002069c`) and `GetNextTarget(const Identity_t&)` (`10020723`) —
   **targeting lives on the camera in stock**, through `n3CameraCollLine_t` (a `CollLine_t`).
   Click-to-select and tab-target are camera queries, not a separate targeting system.
-
----
-
-## 6. Port status
-
-109 xUnit tests in `Tests/Vehicle`, all green (`dotnet test`), plus in-editor runs (below).
-
-**Measured in the Unity editor** (`Unity_RunCommand`), stock defaults, no occluders:
-
-| Scenario | Result |
-|---|---|
-| idle, settled | offset `(0, 1.47, -4.42)`, distance **4.656 m** (preferred 4.743; the arrive brake stops it just short) |
-| walking 2 m/s | distance **4.81 m** (worst 4.87) |
-| walking 4 m/s | distance **4.93 m** (worst 4.95) |
-| walking 8 m/s | distance **5.27 m** (worst 5.38) |
-| occluded by a wall 2 m behind the head | settles at **1.994 m**, 10 search iterations |
-| frame rate 10 / 30 / 60 / 144 fps, walking 4 m/s | 4.42 / 4.86 / 4.93 / 4.93 m |
-
-Trailing grows gently with speed and the following distance is stable across frame rates. The
-project compiles with **0 errors**.
-
-| Piece | Status |
-|---|---|
-| `Vehicle_t` integrator + sub-stepping | **Ported**, unit-tested |
-| `SteeringResult_e` | **Ported** |
-| `SteeringArrive` / `SteeringHalt` / `SetVel` / falling + surface-hug flags | **Ported**, unit-tested |
-| `CameraVehicle_t`: look target, follow distance, `UpdateMotionConstraints`, driver tick | **Ported**, unit-tested |
-| `SteeringCamArrive` incl. hitch guard + swing-around | **Ported** (swing magnitude approximated, §8) |
-| `CameraVehicleFixedThird_t`: `RecalcOptimalPos`, `CalcSteering`, default offset | **Ported**, unit-tested |
-| `EnsureSurfaceAlignment` | **Read, not ported** — a seam (§4.5); defaults to "always aligned" |
-| `UpdateHeadingToPos` (the orbit primitive) | **Ported**, unit-tested |
-| Unity binding — `N3Camera` on the sim: line of sight, orbit, zoom, view-mode dropdown | **Ported**, verified in editor |
-| `ZoomSteer` + `Forward` + `ForcedUpdate` + the driver's zoom state machine | **Ported**, unit-tested, verified in editor |
-| Third-person pitch pole guard | **Ported**, unit-tested |
-| `RMBMouseLook1st` / `RMBMouseLook3rd` gate | **Ported** as `_rightDragPitchesCamera`, default on |
-| `n3Dynel_t::VehicleForwardUpdate` (mouse-look character turn) | **Read** — dx about world up, dy about body right, dot guard, `SetRelRot` |
-| `MouseTurnSensitivity` chain | **Traced** — the slider is above these DLLs; `_lookSensitivity` fills its role |
-| `SteeringSeek` | **Ported** |
-| `UpdateSensors` / `CalculateSensorSteerDir` / `LineOfSight` | Seam (`Func<Vec3,Vec3,bool>` → `Physics.Raycast`); stock bodies not read |
-| `VetoForward` / `VetoUpAlignment` incl. the 0.9 m facing blend | **Ported**, unit-tested |
-| Mode 3 direct zoom (`SetRelPos` path) | **Ported**, verified in editor |
-| `DecideSnap` | **Ported** — it is Lock's entire positioning mechanism |
-| `DoDirectControl` | **Ported** (Trail) |
-| `CalculateSensorSteerDir` / `UpdateSensors` | **Seam** — needs `FUN_1002046f`, unread; Trail avoids nothing |
-| All four view modes + `PreferredCameraMode` + `ToggleCameraView` | **Ported**, unit-tested |
-| `ReposCutOnAxis` | Not started |
-| `FUN_1002118c` (stock's full orbit driver) | Partially — the port drives `UpdateHeadingToPos` directly |
-| `CameraVehicleFirstPerson_t` | **Ported**, unit-tested |
-| Attractors | Not started |
-| `n3Camera_t` input surface (toggle view, picking, tab-target) | Not started |
-| `CharVehicle_t` / `PlayerVehicle_t` | Not started |
-
----
-
-### 6.1 How the port is wired
-
-The binding is `Assets/Scripts/Controllers/N3Camera.cs`. It is stock's `n3Camera_t` — it owns the
-view, takes the input verbs, holds the mode at `+0x1ec`, dispatches the
-vehicle (`FUN_10020290`) and runs the driver `FUN_10022345`, which is itself reached from
-`n3Camera_t`'s vftable at `1003e3ec`. That mirrors the effects port's split between a `GfxControl*`
-binding and its Unity-free `*Sim`.
-
-The `*Sim` classes keep their stock names, since they already mirror `Vehicle_t` /
-`CameraVehicle_t` / `CameraVehicleFixedThird_t` / `CameraVehicleFirstPerson_t` exactly.
-
-`PlayerController` holds it in a field called `N3Camera`. The Controllers prefab stores that
-reference **by field name**, so the prefab key must match it; the component itself binds by the
-script GUID `790e4331…`.
-
-The public surface is `Camera`, `TargetAttached`, `SetInputs`, `SetTarget`, `ClearTarget`,
-`SetFreePose` and `GetViewAngles`, used by `PlayerController`, `EffectRuntimeHost`,
-`PlayfieldFactory`, `LoginScreenController` and `WorldOverlayController`. Everything underneath is
-the sim.
-
-**One deliberate deviation worth knowing:** stock's per-frame driver belongs to `n3Camera_t`, but the
-port puts `Tick(dt, characterMaxSpeed)` on `CameraVehicleSim` instead. That keeps the driver testable
-from `Tests/Vehicle` without Unity; moving it to `N3Camera` to match stock's ownership would make it
-untestable.
-
-The binding supplies:
-
-- `LineOfSight` → `Physics.Raycast` against `_collisionMask`, defaulting to `GameLayers.GroundMask`.
-- the eye offset, sampled **once** on attach from the head attractor's local height — stock calls
-  `SetEyeTargetLocalPos` rather than re-reading the bone, and re-reading it would let the walk
-  animation's head bob drive the whole camera.
-- orbit, by swinging the current world direction and handing the result to `UpdateHeadingToPos`,
-  which is the same entry point stock's orbit driver uses. No yaw/pitch is stored between frames, so
-  stay-behind keeps working when the character turns.
 
 ---
 

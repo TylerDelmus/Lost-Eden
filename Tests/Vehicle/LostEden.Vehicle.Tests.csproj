@@ -23,5 +23,15 @@
     <Compile Include="..\..\Assets\Scripts\Vehicle\CameraVehicleFixedThirdSim.cs" Link="CameraVehicleFixedThirdSim.cs" />
     <Compile Include="..\..\Assets\Scripts\Vehicle\CameraViewMode.cs" Link="CameraViewMode.cs" />
     <Compile Include="..\..\Assets\Scripts\Vehicle\CameraVehicleFirstPersonSim.cs" Link="CameraVehicleFirstPersonSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Vehicle\CharVehicleSim.cs" Link="CharVehicleSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Vehicle\Path.cs" Link="Path.cs" />
+    <Compile Include="..\..\Assets\Scripts\Vehicle\NpcVehicleSim.cs" Link="NpcVehicleSim.cs" />
+    <Compile Include="..\..\Assets\Scripts\Vehicle\Surface\ISurface.cs" Link="Surface\ISurface.cs" />
+    <Compile Include="..\..\Assets\Scripts\Vehicle\Surface\ITileHeightSource.cs" Link="Surface\ITileHeightSource.cs" />
+    <Compile Include="..\..\Assets\Scripts\Vehicle\Surface\ChunkedTileHeightSource.cs" Link="Surface\ChunkedTileHeightSource.cs" />
+    <Compile Include="..\..\Assets\Scripts\Vehicle\Surface\TilemapSurface.cs" Link="Surface\TilemapSurface.cs" />
+    <Compile Include="..\..\Assets\Scripts\Vehicle\Surface\GridSpace.cs" Link="Surface\GridSpace.cs" />
+    <Compile Include="..\..\Assets\Scripts\Vehicle\Surface\CellSurface.cs" Link="Surface\CellSurface.cs" />
+    <Compile Include="..\..\Assets\Scripts\Vehicle\Surface\TriangleMeshSurface.cs" Link="Surface\TriangleMeshSurface.cs" />
   </ItemGroup>
 </Project>

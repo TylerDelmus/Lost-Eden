@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using AOSharp.Common.GameData;
 using SmokeLounge.AOtomation.Messaging.GameData;
 using SmokeLounge.AOtomation.Messaging.Messages.N3Messages;
@@ -6,7 +6,7 @@ using UnityEngine;
 using MovementAction = AOSharp.Common.GameData.MovementAction;
 using MovementState = AOSharp.Common.GameData.MovementState;
 
-[RequireComponent(typeof(CharacterMotor))]
+[RequireComponent(typeof(N3CharVehicle))]
 [RequireComponent(typeof(VisualDynel))]
 public class Character : Dynel
 {
@@ -37,7 +37,7 @@ public class Character : Dynel
     [SerializeField] MovementConfig _movementConfig;
 
     internal Character FightingTarget { get; private set; }
-    CharacterMotor _motor;
+    N3CharVehicle _motor;
     VisualDynel _visual;
     string _locomotionLogicalName;
     string _strafeOverlayLogicalName;
@@ -53,7 +53,7 @@ public class Character : Dynel
     string _jumpLandLogicalName;
     float _spellCastLoopDeadline;
 
-    public CharacterMotor Motor => _motor;
+    public N3CharVehicle Motor => _motor;
     public VisualDynel Visual => _visual;
 
     /// <summary>
@@ -348,7 +348,7 @@ public class Character : Dynel
 
     void Awake()
     {
-        _motor = GetComponent<CharacterMotor>();
+        _motor = GetComponent<N3CharVehicle>();
         _visual = GetComponent<VisualDynel>();
         _lastMotorState = _motor.State;
         if (_movementConfig == null && _motor != null && _motor.Config != null)
@@ -359,7 +359,7 @@ public class Character : Dynel
     {
         Stats.StatChanged += OnStatChanged;
         if (_motor == null)
-            _motor = GetComponent<CharacterMotor>();
+            _motor = GetComponent<N3CharVehicle>();
         _motor.JumpStarted += OnJumpStarted;
         _motor.JumpLanded += OnJumpLanded;
     }
@@ -444,6 +444,14 @@ public class Character : Dynel
     public override void Apply(SimpleCharFullUpdateMessage msg)
     {
         base.Apply(msg);
+
+        // base.Apply has just set IsNpc from the spawn flags, and Awake ran before that -- so this is
+        // where the body learns which of CharVehicle_t's two subclasses it is. NPCs get NPCVehicle_t,
+        // which steers at a Path_t through a PathGuide_t and ignores the input axes; players get
+        // PlayerVehicle_t and its four axes. The server already sends NPC paths as
+        // FollowTargetMessage.PathInfo, which SetPath routes into the Path_t. See Docs/Movement.md §3.2.
+        _motor.SelectVehicleKind(IsNpc);
+
         _motor.Warp(transform.position, transform.rotation);
         _visual.ClearRenderOffset();
         if (msg.MovementStatus.HasValue)

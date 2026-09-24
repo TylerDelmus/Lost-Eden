@@ -19,6 +19,7 @@ public class CameraOrbitTests
         cam.EyeTargetLocalPos = new Vec3(0f, 1.8f, 0f);
         cam.TargetPosition = Vec3.Zero;
         cam.Position = new Vec3(0f, 1.8f, -4.743f);
+        cam.RecalcOptimalPos();          // N3Camera.ApplyViewMode seeds this
         return cam;
     }
 
@@ -34,11 +35,18 @@ public class CameraOrbitTests
     static float Distance(CameraVehicleFixedThirdSim cam)
         => (cam.Position - cam.GetLookTargetPos()).Length;
 
-    /// <summary>The orbit N3Camera performs: rotate the CURRENT offset about world up.</summary>
+    /// <summary>
+    /// The orbit N3Camera performs. Which offset is rotated depends on the mode: Lock substitutes the
+    /// vehicle's <c>OptimalPos</c> (<c>+0x1ec</c>) for the camera's own position (<c>1002122f</c>),
+    /// the other third-person modes keep the camera's current offset (the <c>jne</c> at
+    /// <c>1002122d</c> skips the substitution).
+    /// </summary>
     static void Orbit(CameraVehicleFixedThirdSim cam, float yawDegrees, bool locked)
     {
         Vec3 lookTarget = cam.GetLookTargetPos();
-        Vec3 offset = cam.Position - lookTarget;
+        Vec3 offset = locked && !cam.GetOptimalPos().IsZero
+            ? cam.GetOptimalPos() - lookTarget
+            : cam.Position - lookTarget;
         float distance = offset.Length;
         if (distance < 1e-4f)
             return;
@@ -58,8 +66,9 @@ public class CameraOrbitTests
 
         if (locked)
         {
+            // No ForcedUpdate: stock's is gated on the driver's third argument being non-zero
+            // (1002157d) and MouseCameraControl passes a hard 0.0 (10021727).
             cam.UpdateHeadingToPos(target, false);
-            cam.ForcedUpdate(false);
             return;
         }
 
@@ -72,7 +81,8 @@ public class CameraOrbitTests
 
     /// <summary>
     /// Rotating at the <i>preferred</i> distance instead of the current one yanks a lagging camera
-    /// inward the instant you touch the mouse. Stock rotates the current offset (<c>1002119f</c>).
+    /// inward the instant you touch the mouse. In Trail and Rubber stock rotates the camera's current
+    /// offset (<c>1002122d</c> skips Lock's substitution).
     /// </summary>
     [Fact]
     public void Orbit_WhileWalking_DoesNotChangeTheDistance()
@@ -161,6 +171,111 @@ public class CameraOrbitTests
 
         Assert.True(MathF.Abs(Distance(cam) - baseline) < 0.2f,
             $"lock drifted from {baseline} to {Distance(cam)}");
+    }
+
+
+    // ---- the LateUpdate order (Lock, walking while dragging) --------------
+    //
+    // The reported bug: holding W and left-dragging in Lock slowly zoomed the camera out with no
+    // scroll input. PreferredDirection must stay a UNIT vector -- UpdateHeadingToPos divides by
+    // FollowDistance rather than by the offset's own length (1001f6a3), so any offset measured at a
+    // different range rescales it, and next frame's goal is built from that direction.
+
+    /// <summary>
+    /// One N3Camera.LateUpdate, in order. <paramref name="syncBeforeOrbit"/> reproduces the old
+    /// ordering, which measured the offset against a look target that had already advanced past the
+    /// point the camera was last placed at.
+    /// </summary>
+    static void Frame(CameraVehicleFixedThirdSim cam, Vec3 target, float yawDegrees, bool syncBeforeOrbit)
+    {
+        if (syncBeforeOrbit)
+            cam.TargetPosition = target;
+
+        Orbit(cam, yawDegrees, locked: true);
+
+        if (!syncBeforeOrbit)
+            cam.TargetPosition = target;
+
+        cam.Tick(1f / 60f, 6f);
+    }
+
+    static float WorstUnitError(bool syncBeforeOrbit, float yawPerFrame)
+    {
+        var cam = Camera(locked: true);
+        var target = Vec3.Zero;
+        float worst = 0f;
+
+        for (int f = 0; f < 600; f++)
+        {
+            target.Z += 6f / 60f;                 // walking forward at the run speed
+            Frame(cam, target, yawPerFrame, syncBeforeOrbit);
+            worst = MathF.Max(worst, MathF.Abs(cam.PreferredDirection.Length - 1f));
+        }
+
+        return worst;
+    }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(1.5f)]
+    [InlineData(-3f)]
+    public void Orbit_InLock_WhileWalking_KeepsThePreferredDirectionUnitLength(float yawPerFrame)
+    {
+        Assert.Equal(0f, WorstUnitError(syncBeforeOrbit: false, yawPerFrame), 4);
+    }
+
+    [Fact]
+    public void Orbit_InLock_WhileWalking_NeverRatchetsOutward()
+    {
+        // The reported symptom was a zoom OUT, so that is the direction to pin. Inward lag is stock:
+        // DecideSnap eases only a tenth of an outward gap per call (1001f537), so a camera the
+        // character is closing on settles a little inside its goal and recovers when the drag stops.
+        var cam = Camera(locked: true);
+        var target = Vec3.Zero;
+        float follow = cam.FollowDistance;
+
+        for (int f = 0; f < 600; f++)
+        {
+            target.Z += 6f / 60f;
+            Frame(cam, target, 1.5f, syncBeforeOrbit: false);
+            Assert.True(Distance(cam) <= follow + 0.01f,
+                $"frame {f}: camera pushed out to {Distance(cam)} from {follow}");
+        }
+    }
+
+    [Fact]
+    public void Orbit_InLock_ReturnsToItsFollowDistanceOnceTheDragStops()
+    {
+        var cam = Camera(locked: true);
+        var target = Vec3.Zero;
+        float follow = cam.FollowDistance;
+
+        for (int f = 0; f < 300; f++)
+        {
+            target.Z += 6f / 60f;
+            Frame(cam, target, 1.5f, syncBeforeOrbit: false);
+        }
+
+        // keep walking, stop dragging
+        for (int f = 0; f < 300; f++)
+        {
+            target.Z += 6f / 60f;
+            cam.TargetPosition = target;
+            cam.Tick(1f / 60f, 6f);
+        }
+
+        Assert.Equal(follow, Distance(cam), 2);
+        Assert.Equal(1f, cam.PreferredDirection.Length, 4);
+    }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(1.5f)]
+    public void TheOldLateUpdateOrderIsWhatRatchetedTheCameraOut(float yawPerFrame)
+    {
+        // Documents the defect so the ordering cannot quietly regress: syncing the target pose
+        // BEFORE the orbit drives PreferredDirection far off unit length.
+        Assert.True(WorstUnitError(syncBeforeOrbit: true, yawPerFrame) > 0.5f);
     }
 
     // ---- the pitch pole (FUN_1002118c's Y guard) -------------------------

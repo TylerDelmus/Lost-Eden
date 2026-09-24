@@ -2,12 +2,12 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
   <metadata>
     <id>AODB</id>
-    <version>1.0.6</version>
+    <version>1.0.8</version>
     <title>AODB</title>
     <authors>AODB</authors>
     <description>Anarchy Online database (AODB) reader and playfield parsers. Includes AODB.Common.</description>
     <tags>aodb anarchy-online</tags>
-    <repository type="git" />
+    <repository type="git" commit="3394961bd245f9081e94a0fe251cc4fdc0dca000" />
     <dependencies>
       <group targetFramework="net10.0">
         <dependency id="StbImageSharp" version="2.30.15" exclude="Build,Analyzers" />

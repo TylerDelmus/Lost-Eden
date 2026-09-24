@@ -14,6 +14,9 @@ public sealed class PlayfieldLocality : MonoBehaviour
     CellLocalityMonitor _monitor;
     CellResourceHub _hub;
     SurfaceCellLoader _surfaceLoader;
+
+    /// <summary>The statel collision streamer, so the factory can hand it the playfield's grid.</summary>
+    public SurfaceCellLoader SurfaceLoader => _surfaceLoader;
     Transform _surfacesRoot;
     bool _indoorLogged;
 

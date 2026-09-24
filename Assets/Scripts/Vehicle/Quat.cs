@@ -54,6 +54,97 @@ namespace LostEden.Vehicles
         /// <c>FUN_10005c95</c> — the inverse rotation for a unit quaternion, used by
         /// <c>UpdateHeadingToPos</c> to take a world direction into the target's local frame.
         /// </summary>
+        /// <summary>
+        /// <c>FUN_1000f1f2</c> — the body orientation stock builds from a forward and an up vector.
+        /// Used by the orientation update (<c>FUN_1000c616</c>) in modes 1, 2 and 3.
+        ///
+        /// <para>
+        /// Two details are stock's and both matter:
+        /// </para>
+        /// <list type="bullet">
+        ///   <item><b>An up vector with <c>Y &lt;= 0</c> is replaced by world up</b>
+        ///     (<c>1000f1fe</c>), so a body is never turned upside down by a bad normal.</item>
+        ///   <item>Forward is projected onto the plane by adjusting <b>only its Y</b>:
+        ///     <c>forward.y -= dot(forward, up) / up.y</c> (<c>1000f241</c>). That is algebraically a
+        ///     valid projection — the result is perpendicular to <c>up</c> — and it is what tilts a
+        ///     walker's forward along a slope, which is how the swept solver comes to see an upward
+        ///     move at all.</item>
+        /// </list>
+        ///
+        /// <para>
+        /// The quaternion construction from the resulting basis is the standard one; stock's
+        /// remaining arithmetic (<c>1000f045</c> onward) was not read instruction by instruction.
+        /// </para>
+        /// </summary>
+        public static Quat LookRotation(Vec3 forward, Vec3 up)
+        {
+            if (up.Y <= 0f)
+                up = Vec3.ReferenceUp;
+
+            float dot = Vec3.Dot(forward, up);
+            forward.Y -= dot / up.Y;
+
+            float forwardLength = forward.Length;
+            if (forwardLength <= 1e-6f)
+                return Identity;
+            forward = forward * (1f / forwardLength);
+
+            float upLength = up.Length;
+            if (upLength <= 1e-6f)
+                return Identity;
+            up = up * (1f / upLength);
+
+            Vec3 right = Vec3.Cross(up, forward);
+            float rightLength = right.Length;
+            if (rightLength <= 1e-6f)
+                return Identity;
+            right = right * (1f / rightLength);
+
+            // re-derive up so the basis is exactly orthonormal
+            up = Vec3.Cross(forward, right);
+
+            // standard orthonormal basis -> quaternion
+            float trace = right.X + up.Y + forward.Z;
+            if (trace > 0f)
+            {
+                float s = (float)Math.Sqrt(trace + 1f) * 2f;
+                return new Quat(
+                    (up.Z - forward.Y) / s,
+                    (forward.X - right.Z) / s,
+                    (right.Y - up.X) / s,
+                    s * 0.25f);
+            }
+
+            if (right.X > up.Y && right.X > forward.Z)
+            {
+                float s = (float)Math.Sqrt(1f + right.X - up.Y - forward.Z) * 2f;
+                return new Quat(
+                    s * 0.25f,
+                    (up.X + right.Y) / s,
+                    (forward.X + right.Z) / s,
+                    (up.Z - forward.Y) / s);
+            }
+
+            if (up.Y > forward.Z)
+            {
+                float s = (float)Math.Sqrt(1f + up.Y - right.X - forward.Z) * 2f;
+                return new Quat(
+                    (up.X + right.Y) / s,
+                    s * 0.25f,
+                    (forward.Y + up.Z) / s,
+                    (forward.X - right.Z) / s);
+            }
+
+            {
+                float s = (float)Math.Sqrt(1f + forward.Z - right.X - up.Y) * 2f;
+                return new Quat(
+                    (forward.X + right.Z) / s,
+                    (forward.Y + up.Z) / s,
+                    s * 0.25f,
+                    (right.Y - up.X) / s);
+            }
+        }
+
         public Quat Conjugate => new Quat(-X, -Y, -Z, W);
 
         public float Length => (float)Math.Sqrt(X * X + Y * Y + Z * Z + W * W);

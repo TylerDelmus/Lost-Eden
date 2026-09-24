@@ -189,7 +189,13 @@ public class N3Camera : MonoBehaviour
         _vehicle.SetVel(Vec3.Zero);
 
         if (_followRoot != null)
+        {
             SyncTargetPose();
+
+            // Seed OptimalPos: ApplyOrbit now runs before the vehicle's own tick, and in Lock it
+            // rotates the goal offset, so there has to be a goal before the first drag.
+            _third?.RecalcOptimalPos();
+        }
     }
 
     /// <summary>Switch view mode, rebuilding the vehicle and persisting the preference.</summary>
@@ -252,6 +258,13 @@ public class N3Camera : MonoBehaviour
         float distance = delta.magnitude;
         if (distance < 1e-4f)
             return true;
+
+        // Surface_i, not Unity physics: this is stock's own occlusion predicate
+        // (CameraVehicleFixedThird_t::RecalcOptimalPos's binary search), and it sees the statel cells
+        // that no longer have colliders. Falls back to physics only when no surface is bound -- the
+        // login backdrop has none.
+        if (LostEden.Vehicles.WorldCollision.HasSurface)
+            return !LostEden.Vehicles.WorldCollision.Blocked(a, b);
 
         return !Physics.Raycast(a, delta / distance, distance, OcclusionMask,
             QueryTriggerInteraction.Ignore);
@@ -342,14 +355,23 @@ public class N3Camera : MonoBehaviour
         if (_viewMode != _activeMode)
             ApplyViewMode();
 
-        SyncTargetPose();
-
         // A surface is only bound once there is something to occlude against; first person never
         // has one.
         _vehicle.HasSurface = _third != null && OcclusionMask != 0;
 
         ApplyZoom();
+
+        // ORDER IS LOAD-BEARING: the orbit must run BEFORE the target pose is advanced.
+        //
+        // It measures the camera's offset from GetLookTargetPos(), and the camera (and its
+        // OptimalPos) were last placed against the target pose as it stood at the end of the
+        // previous frame. Syncing first mixes two instants, so the measured offset is wrong by the
+        // character's movement since — and because UpdateHeadingToPos divides by FollowDistance
+        // rather than by the offset's own length, that error is written into PreferredDirection and
+        // compounds. Walking forward while dragging pushed the camera out ~0.1 m every frame.
         ApplyOrbit();
+
+        SyncTargetPose();
 
         // Max speed, not current — stock reads the character vehicle's Vehicle_t +0x3c (10022404).
         float characterMaxSpeed = _target != null && _target.Motor != null
@@ -441,13 +463,41 @@ public class N3Camera : MonoBehaviour
     /// </summary>
     void OrbitThirdPerson(float yawDelta, float pitchDelta)
     {
-        // Stock rotates the camera's CURRENT offset from the look target (1002119f:
-        // offset = position - GetLookTargetPos()), not the preferred direction at the preferred
-        // distance. That matters in Rubber: while walking the camera lags behind its ideal spot, so
-        // rebuilding the position at FollowDistance yanks it ~1 m closer on the first mouse movement
-        // and the steering then drifts it back out — orbit and rubber appearing to fight.
+        // WHICH offset gets rotated depends on the mode, and it is not cosmetic. The driver
+        // (N3 1002118c) starts from `cameraPos - GetLookTargetPos()`, then at 1002121d tests the
+        // camera mode and, for Lock (3) only, REPLACES it with `vehicle->OptimalPos (+0x1ec) -
+        // GetLookTargetPos()` (1002122f..10021245). Trail and Rubber keep the camera's own offset —
+        // there the camera lags its ideal spot and rebuilding at FollowDistance would yank it
+        // closer, orbit and rubber appearing to fight.
+        //
+        // For Lock the substitution is what keeps the whole thing stable. |OptimalPos - lookTarget|
+        // is exactly FollowDistance by construction (RecalcOptimalPos), and UpdateHeadingToPos
+        // divides by FollowDistance rather than by the offset's own length (1001f6a3) — so handing it
+        // a position at any other range rescales PreferredDirection away from unit length, and since
+        // the next frame's goal is built from that direction the error compounds. Using the camera's
+        // own offset here fed it a value inflated by the character's movement since the camera was
+        // last placed, so walking while dragging pushed the camera out ~0.1 m per frame.
+        //
+        // Stock does have a fallback to the camera's own offset when the goal one is the longer of
+        // the two, but it is gated on the driver's third argument being positive and
+        // MouseCameraControl passes a hard 0.0 (10021727). It cannot fire on mouse input, so it is
+        // not ported.
         Vector3 lookTargetNow = _third.GetLookTargetPos().ToUnity();
-        Vector3 offset = _third.Position.ToUnity() - lookTargetNow;
+        Vector3 offset;
+        if (_viewMode == CameraViewMode.Lock)
+        {
+            // Not stock: OptimalPos is only seeded once RecalcOptimalPos has run. ApplyViewMode seeds
+            // it, but guard anyway — and test OptimalPos itself, not the offset, because an unset
+            // (0,0,0) sits a whole eye height below the look target rather than on top of it.
+            offset = _third.GetOptimalPos().IsZero
+                ? _third.Position.ToUnity() - lookTargetNow
+                : _third.GetOptimalPos().ToUnity() - lookTargetNow;
+        }
+        else
+        {
+            offset = _third.Position.ToUnity() - lookTargetNow;
+        }
+
         if (offset.sqrMagnitude < 1e-8f)
             return;
 
@@ -492,9 +542,13 @@ public class N3Camera : MonoBehaviour
         // the camera outward every drag.
         if (_viewMode == CameraViewMode.Lock)
         {
-            // Lock re-seats the goal on every drag (10021572).
+            // Lock re-seats the goal on every drag (1002156c: UpdateHeadingToPos(pos, false)) and
+            // stops there. Stock's ForcedUpdate afterwards is gated on the driver's third argument
+            // being non-zero (1002157d..10021589) and mouse input passes 0.0, so it never runs on a
+            // drag. Calling it anyway re-stamps PreferredDirection from the position DecideSnap has
+            // just EASED (it closes only a tenth of an outward gap, 1001f537), so the stored
+            // direction shrinks a little every frame and the camera creeps inward.
             _third.UpdateHeadingToPos(newPosition, false);
-            _third.ForcedUpdate(false);
             return;
         }
 

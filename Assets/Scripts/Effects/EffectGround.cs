@@ -12,6 +12,14 @@ public static class EffectGround
 
     public static float HeightAt(float x, float y, float z)
     {
+        if (LostEden.Vehicles.WorldCollision.HasSurface)
+        {
+            return LostEden.Vehicles.WorldCollision.GroundAt(
+                new Vector3(x, y, z), Above, Reach - Above, out Vector3 surfaceHit, out _)
+                ? surfaceHit.y
+                : float.NaN;
+        }
+
         int mask = ~GameLayers.DynelMask;
         var origin = new Vector3(x, y + Above, z);
         if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, Reach, mask, QueryTriggerInteraction.Ignore))
@@ -25,6 +33,22 @@ public static class EffectGround
     /// </summary>
     public static bool TryGround(float x, float y, float z, out float height, out Vector3 normal)
     {
+        if (LostEden.Vehicles.WorldCollision.HasSurface)
+        {
+            if (LostEden.Vehicles.WorldCollision.GroundAt(
+                    new Vector3(x, y, z), Above, Reach - Above,
+                    out Vector3 surfaceHit, out Vector3 surfaceNormal))
+            {
+                height = surfaceHit.y;
+                normal = surfaceNormal;
+                return true;
+            }
+
+            height = float.NaN;
+            normal = Vector3.up;
+            return false;
+        }
+
         int mask = ~GameLayers.DynelMask;
         var origin = new Vector3(x, y + Above, z);
         if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, Reach, mask, QueryTriggerInteraction.Ignore))

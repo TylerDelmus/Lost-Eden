@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -20,7 +20,7 @@ using UnityEngine;
 /// children it registered drain in the handler. The next start replaces it.
 ///
 /// Port: 0x1000 (no locator, <c>100ce912</c>) makes the child on the Toggle's own locator; no nano's record
-/// sets it. The dynel's mover is the character's <c>CharacterMotor</c> — speed its current speed, direction -1
+/// sets it. The dynel's mover is the character's <c>N3CharVehicle</c> — speed its current speed, direction -1
 /// while backing and +1 once going forward again (+1 at first). A visual-only dynel (GfxTest) stands. The
 /// playfield id is <see cref="PlayfieldId"/>; the resource's flags aren't read, and no record sets the mask.
 /// </summary>

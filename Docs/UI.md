@@ -72,7 +72,7 @@ project runs) the dictionary survives the play session while the `PanelSettings`
 are destroyed on exit. A plain `TryGetValue` therefore hands back a **destroyed** object on the
 second Play; every panel gets a null `panelSettings`, `rootVisualElement.panel` is null, and
 **nothing renders at all — with no console error**, because the controllers run happily against
-elements that are simply never on a panel. This cost a long debugging session in Sept 2026.
+elements that are simply never on a panel.
 
 `GetOrCreatePanelSettings` guards the cache hit with Unity's overloaded `!=`:
 

@@ -49,6 +49,14 @@ public sealed class GfxControlMesh : GfxControl
     /// <summary>Stock's <c>100d33f3</c>, as a downward ray.</summary>
     float SampleGround(float x, float z)
     {
+        if (LostEden.Vehicles.WorldCollision.HasSurface)
+        {
+            return LostEden.Vehicles.WorldCollision.GroundAt(
+                new Vector3(x, _sim.Y, z), ProbeUp, ProbeDown, out Vector3 surfaceHit, out _)
+                ? surfaceHit.y
+                : _sim.Y;
+        }
+
         var from = new Vector3(x, _sim.Y + ProbeUp, z);
         return Physics.Raycast(from, Vector3.down, out RaycastHit hit, ProbeUp + ProbeDown)
             ? hit.point.y

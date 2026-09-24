@@ -78,6 +78,9 @@ public class Dynel : MonoBehaviour
         if ((to - from).sqrMagnitude < 1e-8f)
             return true;
 
+        if (LostEden.Vehicles.WorldCollision.HasSurface)
+            return !LostEden.Vehicles.WorldCollision.Blocked(from, to);
+
         return !Physics.Linecast(from, to, GameLayers.GroundMask, QueryTriggerInteraction.Ignore);
     }
 }
