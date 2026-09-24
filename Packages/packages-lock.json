@@ -24,12 +24,13 @@
       "hash": "55423389e8d443f18090720891af52d9952d6e5e"
     },
     "com.malishade.n3lite": {
-      "version": "file:../../N3Lite/package",
+      "version": "https://github.com/Malishade/N3Lite.git?path=/package#2139168aa2c6b384880f18e19f29b57091902dc8",
       "depth": 0,
-      "source": "local",
+      "source": "git",
       "dependencies": {
         "com.unity.burst": "1.8.17"
-      }
+      },
+      "hash": "2139168aa2c6b384880f18e19f29b57091902dc8"
     },
     "com.unity.2d.sprite": {
       "version": "1.0.0",
