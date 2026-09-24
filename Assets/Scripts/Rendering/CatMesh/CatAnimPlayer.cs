@@ -807,7 +807,36 @@ public sealed class CatAnimPlayer : MonoBehaviour
             InvokeCompletedCallbacks();
         }
 
-        ApplyPose();
+        // Clip time, notes and completion callbacks above always advance, so gameplay timing is the
+        // same on or off screen. Only writing the pose to the bones is skipped while no renderer of this
+        // character is drawn by any camera (shadows count). The first frame back on screen shows the
+        // pose from when it left, then catches up.
+        if (IsOnScreen())
+            ApplyPose();
+    }
+
+    SkinnedMeshRenderer[] _renderers;
+
+    bool IsOnScreen()
+    {
+        if (_renderers == null || _renderers.Length == 0)
+            _renderers = GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        if (_renderers.Length == 0)
+            return true;
+
+        for (int i = 0; i < _renderers.Length; i++)
+        {
+            SkinnedMeshRenderer renderer = _renderers[i];
+            if (renderer == null)
+                continue;
+
+            // CatMeshDeformHost hides the renderer and draws a baked copy itself, which leaves
+            // isVisible false while the character is on screen; keep animating it.
+            if (renderer.isVisible || renderer.forceRenderingOff)
+                return true;
+        }
+
+        return false;
     }
 
     void AdvanceInstance(AnimInstance instance, float dt)
@@ -947,66 +976,79 @@ public sealed class CatAnimPlayer : MonoBehaviour
                 AnimInstance instance = _applyOrder[i];
                 if (instance?.Clip == null || instance.Weight <= 0f)
                     continue;
-                if (!instance.Clip.IsTrackEnabled(boneIndex, instance.ActiveMask))
+                if (!EvaluateBone(instance, boneIndex,
+                        out Vector3 samplePos, out bool hasPos, out Quaternion sampleRot, out bool hasRot))
                     continue;
 
-                EvaluateBone(instance, boneIndex, out Vector3? samplePos, out Quaternion? sampleRot);
                 if (instance.Weight >= 1f)
                 {
-                    if (samplePos.HasValue)
-                        pos = samplePos.Value;
-                    if (sampleRot.HasValue)
-                        rot = sampleRot.Value;
+                    if (hasPos)
+                        pos = samplePos;
+                    if (hasRot)
+                        rot = sampleRot;
                     continue;
                 }
 
-                if (samplePos.HasValue)
-                    pos = Vector3.Lerp(pos, samplePos.Value, instance.Weight);
-                if (sampleRot.HasValue)
-                    rot = Quaternion.Slerp(rot, sampleRot.Value, instance.Weight);
+                if (hasPos)
+                    pos = Vector3.Lerp(pos, samplePos, instance.Weight);
+                if (hasRot)
+                    rot = Quaternion.Slerp(rot, sampleRot, instance.Weight);
             }
 
-            bone.localPosition = pos;
-            bone.localRotation = rot;
+            bone.SetLocalPositionAndRotation(pos, rot);
         }
     }
 
-    void EvaluateBone(
+    /// <summary>
+    /// The clip's pose for one bone at the instance's time, eased back towards the loop start over the
+    /// last <see cref="_loopSmoothSeconds"/> of a loop. False when the clip has no enabled track for the
+    /// bone under the instance's mask.
+    /// </summary>
+    bool EvaluateBone(
         AnimInstance instance,
         int boneIndex,
-        out Vector3? localPosition,
-        out Quaternion? localRotation)
+        out Vector3 localPosition,
+        out bool hasPosition,
+        out Quaternion localRotation,
+        out bool hasRotation)
     {
         bool absoluteSourceTime = instance.OneShot && !instance.OutgoingCrossFade;
-        instance.Clip.Evaluate(boneIndex, instance.Time, absoluteSourceTime, out localPosition, out localRotation);
+        if (!instance.Clip.TrySample(boneIndex, instance.ActiveMask, instance.Time, absoluteSourceTime,
+                out localPosition, out hasPosition, out localRotation, out hasRotation))
+            return false;
 
         float duration = absoluteSourceTime ? instance.Clip.GetOneShotDuration() : instance.Clip.Duration;
         if (instance.Time >= duration)
-            return;
+            return true;
 
         float blend = _loopSmoothSeconds;
         if (instance.OneShot || instance.OutgoingCrossFade)
             blend = 0f;
 
         if (blend <= 0f || duration <= blend)
-            return;
+            return true;
 
         float windowStart = duration - blend;
         if (instance.Time < windowStart)
-            return;
+            return true;
 
         float w = Mathf.SmoothStep(0f, 1f, (instance.Time - windowStart) / blend);
-        instance.Clip.Evaluate(boneIndex, 0f, out Vector3? startPos, out Quaternion? startRot);
+        instance.Clip.TrySample(boneIndex, instance.ActiveMask, 0f, false,
+            out Vector3 startPos, out bool hasStartPos, out Quaternion startRot, out bool hasStartRot);
 
-        if (localPosition.HasValue && startPos.HasValue)
-            localPosition = Vector3.Lerp(localPosition.Value, startPos.Value, w);
-        else if (startPos.HasValue)
-            localPosition = startPos;
+        if (hasStartPos)
+        {
+            localPosition = hasPosition ? Vector3.Lerp(localPosition, startPos, w) : startPos;
+            hasPosition = true;
+        }
 
-        if (localRotation.HasValue && startRot.HasValue)
-            localRotation = Quaternion.Slerp(localRotation.Value, startRot.Value, w);
-        else if (startRot.HasValue)
-            localRotation = startRot;
+        if (hasStartRot)
+        {
+            localRotation = hasRotation ? Quaternion.Slerp(localRotation, startRot, w) : startRot;
+            hasRotation = true;
+        }
+
+        return true;
     }
 
     AnimInstance GetCurrentBase()

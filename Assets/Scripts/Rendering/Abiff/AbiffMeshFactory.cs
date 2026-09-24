@@ -58,6 +58,8 @@ public static class AbiffMeshFactory
         mesh.SetVertices(data.Vertices);
         mesh.SetNormals(data.Normals);
         mesh.SetUVs(0, data.UVs);
+        if (data.UV1 != null && data.UV1.Length == data.Vertices.Length)
+            mesh.SetUVs(1, data.UV1);
         mesh.SetTriangles(data.Triangles, 0, calculateBounds: false);
         mesh.RecalculateBounds();
         mesh.UploadMeshData(markNoLongerReadable: true);

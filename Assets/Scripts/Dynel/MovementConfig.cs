@@ -30,12 +30,6 @@ public sealed class MovementConfig : ScriptableObject
     [SerializeField] float _speedStopEpsilon = 0.05f;
     [SerializeField] float _waypointArrivalRadius = 0.5f;
 
-    [Header("Jump")]
-    [SerializeField] float _jumpStatCap = 800f;
-    [SerializeField] float _jumpHeightPerStatPool = 200f;
-    [SerializeField] float _jumpHeightBase = 1f;
-    [SerializeField] float _jumpHeightFloor = 0.5f;
-
     [Header("Run Speed (stat scaling)")]
     [SerializeField] float _healthPenaltyThreshold = 0.15f;
     [SerializeField] float _statFactorOffset = 1000f;
@@ -75,11 +69,6 @@ public sealed class MovementConfig : ScriptableObject
     public float TerminalVelocity => _terminalVelocity;
     public float SpeedStopEpsilon => _speedStopEpsilon;
     public float WaypointArrivalRadius => _waypointArrivalRadius;
-
-    public float JumpStatCap => _jumpStatCap;
-    public float JumpHeightPerStatPool => _jumpHeightPerStatPool;
-    public float JumpHeightBase => _jumpHeightBase;
-    public float JumpHeightFloor => _jumpHeightFloor;
 
     public float HealthPenaltyThreshold => _healthPenaltyThreshold;
     public float StatFactorOffset => _statFactorOffset;

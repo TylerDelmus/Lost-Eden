@@ -47,26 +47,6 @@ public sealed class PlayfieldLocality : MonoBehaviour
         }
     }
 
-    public SurfaceCollisionState GetCollisionState(Vector3 worldPosition)
-    {
-        if (_surfaceLoader == null || _layout == null)
-            return SurfaceCollisionState.Unavailable;
-
-        return _surfaceLoader.GetCollisionState(worldPosition);
-    }
-
-    public bool TryGetCollisionState(Vector3 worldPosition, out SurfaceCollisionState state)
-    {
-        if (_surfaceLoader == null || _layout == null)
-        {
-            state = SurfaceCollisionState.Unavailable;
-            return false;
-        }
-
-        state = _surfaceLoader.GetCollisionState(worldPosition);
-        return true;
-    }
-
     /// <summary>
     /// Seed the locality monitor from <paramref name="worldPosition"/>, prioritize surface
     /// loads for that cell, and pump the hub once so spawn frames make progress immediately.

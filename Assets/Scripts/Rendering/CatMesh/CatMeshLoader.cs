@@ -328,6 +328,7 @@ public sealed class CatMeshLoader
 
         section.Restart();
         var createdMeshes = new List<Mesh>(build.Submeshes.Length);
+        var skinned = new List<SkinnedMeshRenderer>(build.Submeshes.Length);
         var groupRoots = new Dictionary<string, Transform>();
 
         for (int i = 0; i < build.Submeshes.Length; i++)
@@ -336,7 +337,13 @@ public sealed class CatMeshLoader
             if (sub.Positions == null || sub.Positions.Length == 0)
                 continue;
 
-            Mesh mesh = CatMeshFactory.CreateSkinnedMesh(sub, build.BindPoses, $"CatMesh_{build.CatMeshId}_{i}");
+            // Give each renderer only the joints its vertices are weighted to. Unity computes a skin
+            // matrix per entry in renderer.bones, and a submesh uses ~25 of a ~110-joint skeleton.
+            CatMeshFactory.CompactBones(
+                sub.BoneWeights, bones, build.BindPoses,
+                out BoneWeight[] meshWeights, out Transform[] meshBones, out Matrix4x4[] meshBindPoses);
+
+            Mesh mesh = CatMeshFactory.CreateSkinnedMesh(sub, meshWeights, meshBindPoses, $"CatMesh_{build.CatMeshId}_{i}");
             if (mesh == null)
                 continue;
 
@@ -348,15 +355,17 @@ public sealed class CatMeshLoader
 
             var renderer = subGo.AddComponent<SkinnedMeshRenderer>();
             renderer.sharedMesh = mesh;
-            renderer.bones = bones;
+            renderer.bones = meshBones;
             renderer.rootBone = FindRootBone(bones, visualRoot.transform);
             renderer.quality = SkinQuality.Bone2;
-            renderer.updateWhenOffscreen = true;
+            renderer.updateWhenOffscreen = false;
             renderer.sharedMaterial = _materials.Get(sub.Material);
             var source = subGo.AddComponent<CatMeshSourceVertices>();
             source.Positions = sub.Positions;
             source.MaterialId = sub.MaterialId;
+            skinned.Add(renderer);
         }
+        SetCullingBounds(skinned);
         double meshMs = section.Elapsed.TotalMilliseconds;
 
         if (createdMeshes.Count == 0)
@@ -463,12 +472,9 @@ public sealed class CatMeshLoader
         if (bones == null)
             bones = holder.Bones;
 
+        // No fallback to a renderer's bones: those are trimmed to the joints that mesh uses.
         if (bones == null)
-        {
-            var renderers = visualRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-            if (renderers.Length > 0)
-                bones = renderers[0].bones;
-        }
+            Debug.LogError($"[CatMeshLoader] {visualRoot.name}: no skeleton on the visual holder.");
 
         player.Initialize(_database, bones, monsterDataId, animSet);
         holder.Set(createdMeshes, bones, player, ownsMeshes);
@@ -643,6 +649,53 @@ public sealed class CatMeshLoader
         return 10;
     }
 
+    /// <summary>
+    /// Fixed culling bounds, so Unity does not recompute them from the bones every frame
+    /// (<c>updateWhenOffscreen</c>) and skips skinning what is off-screen. Every renderer of the
+    /// character gets the same box: the whole rest-pose mesh in root-bone space, padded on every side
+    /// by <see cref="CullPadFraction"/> of its largest dimension plus <see cref="CullPadMetres"/>, so
+    /// limbs, tails and weapons swinging out stay inside it. The box follows the root bone.
+    /// </summary>
+    static void SetCullingBounds(List<SkinnedMeshRenderer> renderers)
+    {
+        Transform rootBone = null;
+        bool any = false;
+        Vector3 min = default, max = default;
+
+        foreach (SkinnedMeshRenderer renderer in renderers)
+        {
+            rootBone = renderer.rootBone != null ? renderer.rootBone : renderer.transform;
+            Vector3[] positions = renderer.GetComponent<CatMeshSourceVertices>().Positions;
+            Matrix4x4 meshToRoot = rootBone.worldToLocalMatrix * renderer.transform.localToWorldMatrix;
+            for (int v = 0; v < positions.Length; v++)
+            {
+                Vector3 p = meshToRoot.MultiplyPoint3x4(positions[v]);
+                if (!any)
+                {
+                    min = max = p;
+                    any = true;
+                    continue;
+                }
+                min = Vector3.Min(min, p);
+                max = Vector3.Max(max, p);
+            }
+        }
+
+        if (!any)
+            return;
+
+        Vector3 size = max - min;
+        float pad = UnityEngine.Mathf.Max(size.x, UnityEngine.Mathf.Max(size.y, size.z)) * CullPadFraction + CullPadMetres;
+        var bounds = new Bounds((min + max) * 0.5f, size + Vector3.one * (2f * pad));
+
+        foreach (SkinnedMeshRenderer renderer in renderers)
+            renderer.localBounds = bounds;
+    }
+
+    // Tuning, not stock: how far the culling box reaches past the rest pose.
+    const float CullPadFraction = 0.5f;
+    const float CullPadMetres = 0.25f;
+
     static Transform FindRootBone(Transform[] bones, Transform visualRoot)
     {
         if (bones == null || bones.Length == 0)
@@ -769,7 +822,11 @@ public sealed class CatMeshLoader
 public sealed class CatMeshVisualHolder : MonoBehaviour
 {
     Mesh[] _meshes;
-    Transform[] _bones;
+
+    // Serialized so Instantiate copies it into prototype clones with the references remapped to the
+    // clone's own joints. Each renderer carries only the joints its vertices use, so the full
+    // skeleton exists nowhere else on the instance.
+    [SerializeField] Transform[] _bones;
     CatAnimPlayer _player;
     bool _ownsMeshes = true;
 

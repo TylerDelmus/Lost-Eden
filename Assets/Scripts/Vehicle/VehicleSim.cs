@@ -1210,6 +1210,24 @@ namespace LostEden.Vehicles
             OnBeginFall();
         }
 
+        /// <summary>
+        /// <c>Vehicle_t::Impact</c> (<c>1000a1b8</c>) — an impulse, which stock only accepts when it is
+        /// <b>purely vertical</b> and the body is <b>on the ground</b>. Anything else is dropped whole:
+        /// airborne returns first, then a non-zero x or z (each <c>fucomp</c> against 0; unordered also
+        /// drops it). What survives is <c>+0x54 += y * (1 / mass)</c> followed by
+        /// <see cref="BeginFalling"/>.
+        /// </summary>
+        public void Impact(Vec3 impulse)
+        {
+            if (Airborne)
+                return;
+            if (!(impulse.X == 0f) || !(impulse.Z == 0f))
+                return;
+
+            VerticalVelocity += 1f / Mass * impulse.Y;
+            BeginFalling();
+        }
+
         /// <summary>+0x120, the in-liquid flag. Entering and leaving call vtable slots 32 and 33.</summary>
         public bool InLiquid;
 

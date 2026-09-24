@@ -8,8 +8,89 @@ using AoColor = AODB.Common.Structs.Color;
 
 public static class CatMeshFactory
 {
+    /// <summary>
+    /// The subset of <paramref name="skeleton"/> that <paramref name="weights"/> actually reference
+    /// (any non-zero weight), with the weights re-indexed into that subset and the bind poses picked
+    /// to match. Joints keep their skeleton order. When the inputs do not line up — no weights, or
+    /// bind poses that are not one per joint — everything is passed through unchanged.
+    /// </summary>
+    public static void CompactBones(
+        BoneWeight[] weights,
+        Transform[] skeleton,
+        Matrix4x4[] bindPoses,
+        out BoneWeight[] compactWeights,
+        out Transform[] compactBones,
+        out Matrix4x4[] compactBindPoses)
+    {
+        compactWeights = weights;
+        compactBones = skeleton;
+        compactBindPoses = bindPoses;
+
+        if (weights == null || weights.Length == 0 || skeleton == null || bindPoses == null
+            || bindPoses.Length != skeleton.Length)
+            return;
+
+        int jointCount = skeleton.Length;
+        var remap = new int[jointCount];
+        for (int j = 0; j < jointCount; j++)
+            remap[j] = -1;
+
+        bool outOfRange = false;
+        for (int v = 0; v < weights.Length; v++)
+        {
+            BoneWeight w = weights[v];
+            if (w.weight0 > 0f) Mark(w.boneIndex0);
+            if (w.weight1 > 0f) Mark(w.boneIndex1);
+            if (w.weight2 > 0f) Mark(w.boneIndex2);
+            if (w.weight3 > 0f) Mark(w.boneIndex3);
+        }
+
+        int used = 0;
+        for (int j = 0; j < jointCount; j++)
+        {
+            if (remap[j] >= 0)
+                remap[j] = used++;
+        }
+
+        // A weight index outside the skeleton means the data does not describe this skeleton; leave
+        // it exactly as it was rather than guess.
+        if (outOfRange || used == 0 || used == jointCount)
+            return;
+
+        compactBones = new Transform[used];
+        compactBindPoses = new Matrix4x4[used];
+        for (int j = 0; j < jointCount; j++)
+        {
+            if (remap[j] < 0)
+                continue;
+            compactBones[remap[j]] = skeleton[j];
+            compactBindPoses[remap[j]] = bindPoses[j];
+        }
+
+        compactWeights = new BoneWeight[weights.Length];
+        for (int v = 0; v < weights.Length; v++)
+        {
+            BoneWeight w = weights[v];
+            // A zero-weight slot may point at a joint that was dropped; any valid index will do.
+            w.boneIndex0 = w.weight0 > 0f ? remap[w.boneIndex0] : 0;
+            w.boneIndex1 = w.weight1 > 0f ? remap[w.boneIndex1] : 0;
+            w.boneIndex2 = w.weight2 > 0f ? remap[w.boneIndex2] : 0;
+            w.boneIndex3 = w.weight3 > 0f ? remap[w.boneIndex3] : 0;
+            compactWeights[v] = w;
+        }
+
+        void Mark(int joint)
+        {
+            if (joint >= 0 && joint < jointCount)
+                remap[joint] = 0;
+            else
+                outOfRange = true;
+        }
+    }
+
     public static Mesh CreateSkinnedMesh(
         CatMeshSubmeshSource source,
+        BoneWeight[] boneWeights,
         Matrix4x4[] bindPoses,
         string name)
     {
@@ -28,8 +109,8 @@ public static class CatMeshFactory
         mesh.SetUVs(0, source.UVs);
         mesh.SetTriangles(source.Triangles ?? Array.Empty<int>(), 0, calculateBounds: false);
 
-        if (source.BoneWeights != null && source.BoneWeights.Length == count)
-            mesh.boneWeights = source.BoneWeights;
+        if (boneWeights != null && boneWeights.Length == count)
+            mesh.boneWeights = boneWeights;
 
         if (bindPoses != null && bindPoses.Length > 0)
             mesh.bindposes = bindPoses;

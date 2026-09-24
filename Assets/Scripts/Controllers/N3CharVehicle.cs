@@ -21,9 +21,9 @@ using MovementState = AOSharp.Common.GameData.MovementState;
 /// </para>
 ///
 /// <para>
-/// <b>Two regions below are NOT ported</b> and are carried over from the deleted file only so the
-/// game keeps working: the animation-clip naming and the jump impulse. Both are marked, and both
-/// need their own reversing pass — see <c>Docs/Movement.md</c> §9.
+/// <b>The animation-clip naming below is NOT ported</b> and is carried over from the deleted file only
+/// so the game keeps working. It is marked and needs its own reversing pass — see
+/// <c>Docs/Movement.md</c> §9. The jump is stock's (<see cref="CharVehicleSim.Jump"/>).
 /// </para>
 /// </summary>
 public class N3CharVehicle : MonoBehaviour
@@ -60,7 +60,7 @@ public class N3CharVehicle : MonoBehaviour
     int _jumpStrength;
     int _jumpAgility;
     int _jumpGmLevel;
-    bool _jumpArmed = true;
+    float _bodyScale = 1f;
 
     readonly List<Vector3> _path = new();
     int _pathIndex = -1;
@@ -160,6 +160,9 @@ public class N3CharVehicle : MonoBehaviour
         _sim.NearProbeOffset = _radius;
         _sim.SlowingDistance = 1.5f;
         _sim.MovementState = ToVehicleState(_state);
+        _sim.OwnerIsNpc = isNpc;
+        _sim.OwnerBodyScale = _bodyScale;
+        _sim.JumpLanded += OnVehicleJumpLanded;
 
         _sim.EnableFalling();
         _sim.DisableSurfaceHug();
@@ -207,11 +210,7 @@ public class N3CharVehicle : MonoBehaviour
         if (HasPath)
             SteerAlongPath(dt);
 
-        bool wasAirborne = _sim.Airborne;
         _sim.Run(dt);
-
-        if (!_jumpArmed && wasAirborne && !_sim.Airborne)
-            CompleteLanding();
 
         PullSimToTransform();
     }
@@ -430,7 +429,7 @@ public class N3CharVehicle : MonoBehaviour
             case MovementAction.TurnRightStop: SetFlags(_flags & ~MovementFlags.TurnRight); break;
             case MovementAction.JumpStart:
                 SetFlags(_flags | MovementFlags.Jump);
-                TryStartJump(requireGrounded: false);
+                TryStartJump();
                 break;
             case MovementAction.JumpStop: SetFlags(_flags & ~MovementFlags.Jump); break;
             case MovementAction.FullStop: SetFlags(MovementFlags.None); break;
@@ -545,11 +544,18 @@ public class N3CharVehicle : MonoBehaviour
         ApplyFlagsToAxes();
     }
 
-    public void UpdateJumpStatsFromStats(int strength, int agility, int gmLevel)
+    /// <summary>
+    /// The owner's stats the jump reads: Strength, Agility and GmLevel for
+    /// <see cref="CharVehicleSim.JumpHeightFromStats"/>, and the body scale for the ceiling clamp.
+    /// </summary>
+    public void UpdateJumpStatsFromStats(int strength, int agility, int gmLevel, float bodyScale)
     {
         _jumpStrength = strength;
         _jumpAgility = agility;
         _jumpGmLevel = gmLevel;
+        _bodyScale = bodyScale;
+        if (_sim != null)
+            _sim.OwnerBodyScale = bodyScale;
     }
 
     public void Halt()
@@ -578,7 +584,6 @@ public class N3CharVehicle : MonoBehaviour
         if (resetVelocity)
         {
             _sim.Halt();
-            _jumpArmed = true;
             SetFlags(MovementFlags.None);
         }
     }
@@ -701,47 +706,31 @@ public class N3CharVehicle : MonoBehaviour
     }
 
     /// <summary>
-    /// UNPORTED. Stock jumps through a CharacterAction, not a vertical impulse computed from stats.
-    /// This formula is the previous developer's, retained only so jumping still functions.
+    /// <c>JumpStartTransitionAction_t</c> (<c>1006dcdb</c>): the owner's jump height into the vehicle's
+    /// <see cref="CharVehicleSim.Jump"/>. Stock then plays the take-off animation (0x9c or 0x9d, picked
+    /// from the state machine's state), which <see cref="JumpStarted"/> hands to <c>Character</c>.
+    ///
+    /// <para>
+    /// Stock's character state machine decides whether the action runs at all; it is not ported, so
+    /// the sit check and raising <see cref="JumpStarted"/> only when the vehicle took the jump stand in
+    /// for it.
+    /// </para>
     /// </summary>
-    bool TryStartJump(bool requireGrounded = true)
+    bool TryStartJump()
     {
-        if (_sim == null || !_jumpArmed || _state == MovementState.Sit)
-            return false;
-        if (requireGrounded && _sim.Airborne)
+        if (_sim == null || _state == MovementState.Sit)
             return false;
 
-        MovementConfig config = Config;
-        float cap = config != null ? config.JumpStatCap : 800f;
-        float perPool = config != null ? config.JumpHeightPerStatPool : 200f;
-        float baseHeight = config != null ? config.JumpHeightBase : 1f;
-        float floor = config != null ? config.JumpHeightFloor : 0.5f;
+        float height = CharVehicleSim.JumpHeightFromStats(_jumpStrength, _jumpAgility, _jumpGmLevel);
+        if (!_sim.Jump(height))
+            return false;
 
-        float str = _jumpStrength;
-        float agi = _jumpAgility;
-        if (str + agi > cap && _jumpGmLevel == 0)
-        {
-            str = cap;
-            agi = 0f;
-        }
-
-        float height = (str + agi) / perPool + baseHeight;
-        if (height < floor)
-            height = floor;
-
-        _sim.VerticalVelocity = Mathf.Sqrt(2f * height * Mathf.Abs(VehicleSim.GravityAccel));
-        _sim.BeginFalling();
-        _jumpArmed = false;
         JumpStarted?.Invoke();
         return true;
     }
 
-    void CompleteLanding()
+    void OnVehicleJumpLanded()
     {
-        if (_jumpArmed)
-            return;
-
-        _jumpArmed = true;
         _flags &= ~MovementFlags.Jump;
         JumpLanded?.Invoke();
     }

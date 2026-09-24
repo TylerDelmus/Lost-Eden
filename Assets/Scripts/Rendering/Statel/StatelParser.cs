@@ -23,7 +23,8 @@ public sealed class StatelParser
     readonly RenderConfig _renderConfig;
     readonly AbiffMaterialFactory _materials;
 
-    readonly Dictionary<MeshVariantKey, Mesh[]> _unityMeshCache = new Dictionary<MeshVariantKey, Mesh[]>();
+    readonly Dictionary<(MeshVariantKey, string), StatelPart[]> _partCache =
+        new Dictionary<(MeshVariantKey, string), StatelPart[]>();
 
     Dictionary<ResourceTypeId, Dictionary<int, string>> _rdbNames;
 
@@ -98,7 +99,6 @@ public sealed class StatelParser
             built = BuildMeshDataParallel(neededKeys, meshSources);
         });
 
-        CreateUnityMeshes(built);
         yield return null;
 
         for (int i = 0; i < placements.Count; i++)
@@ -107,11 +107,11 @@ public sealed class StatelParser
             if (!meshSources.TryGetValue(placement.MeshId, out MeshSource source))
                 continue;
 
-            MeshVariantKey key = MeshVariantKey.FromPlacement(placement);
-            if (!_unityMeshCache.TryGetValue(key, out Mesh[] meshes))
+            StatelPart[] parts = GetParts(placement, source, built);
+            if (parts == null)
                 continue;
 
-            InstantiatePlacement(root.transform, placement, source, meshes, i);
+            InstantiatePlacement(root.transform, placement, source, parts, i);
             created++;
 
             if (created % InstantiateBatchSize == 0)
@@ -125,7 +125,7 @@ public sealed class StatelParser
         Transform parent,
         StatelPlacement placement,
         MeshSource source,
-        Mesh[] meshes,
+        StatelPart[] parts,
         int index)
     {
         string name = ResolveMeshName(placement.MeshId);
@@ -159,37 +159,45 @@ public sealed class StatelParser
                 placement.Transform);
         }
 
-        Dictionary<int, int> overrides = BuildOverrideMap(placement.TextureOverrides);
         bool hasUvAnim = false;
 
-        for (int s = 0; s < source.Submeshes.Length; s++)
+        for (int p = 0; p < parts.Length; p++)
         {
-            AbiffSubmeshSource sub = source.Submeshes[s];
-            Mesh mesh = meshes[s];
-            if (mesh == null)
-                continue;
+            StatelPart part = parts[p];
+            GameObject partGo;
 
-            var subGo = new GameObject($"Sub_{s}");
-            subGo.transform.SetParent(go.transform, false);
-            subGo.transform.localPosition = sub.BasePosition;
-            subGo.transform.localRotation = sub.BaseRotation;
-            subGo.transform.localScale = Vector3.one;
-
-
-            var filter = subGo.AddComponent<MeshFilter>();
-            filter.sharedMesh = mesh;
-
-            var renderer = subGo.AddComponent<MeshRenderer>();
-            AbiffMaterialDesc material = sub.Material;
-            if (overrides != null && overrides.TryGetValue(s, out int overridden) && overridden > 0)
-                material = material.WithDiffuseTexture(overridden);
-            renderer.sharedMaterial = _materials.Get(material);
-
-            if (sub.UvKeys != null && sub.UvKeys.Length >= 2)
+            if (part.Submesh >= 0)
             {
-                hasUvAnim = true;
-                var animator = subGo.AddComponent<AbiffUvAnimator>();
-                animator.Init(sub.UvKeys, sub.UvLoop, sub.UvDuration);
+                // A part kept on its own, at the submesh's own offset.
+                AbiffSubmeshSource sub = source.Submeshes[part.Submesh];
+                partGo = new GameObject($"Sub_{part.Submesh}");
+                partGo.transform.SetParent(go.transform, false);
+                partGo.transform.localPosition = sub.BasePosition;
+                partGo.transform.localRotation = sub.BaseRotation;
+                partGo.transform.localScale = Vector3.one;
+            }
+            else
+            {
+                // Merged parts already carry their submesh offsets in the vertices.
+                partGo = new GameObject($"Merged_{p}");
+                partGo.transform.SetParent(go.transform, false);
+            }
+
+            var filter = partGo.AddComponent<MeshFilter>();
+            filter.sharedMesh = part.Mesh;
+
+            var renderer = partGo.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = part.Material;
+
+            if (part.Submesh >= 0)
+            {
+                AbiffSubmeshSource sub = source.Submeshes[part.Submesh];
+                if (sub.UvKeys != null && sub.UvKeys.Length >= 2)
+                {
+                    hasUvAnim = true;
+                    var animator = partGo.AddComponent<AbiffUvAnimator>();
+                    animator.Init(sub.UvKeys, sub.UvLoop, sub.UvDuration);
+                }
             }
         }
 
@@ -345,23 +353,169 @@ public sealed class StatelParser
         return new Dictionary<MeshVariantKey, AbiffMeshData[]>(result);
     }
 
-    void CreateUnityMeshes(Dictionary<MeshVariantKey, AbiffMeshData[]> built)
+    /// <summary>
+    /// One renderable piece of a placement: either a merge of every submesh that ends up with the same
+    /// material (<see cref="Submesh"/> = -1, vertices already in the placement's space), or a single
+    /// submesh kept apart at its own offset.
+    /// </summary>
+    sealed class StatelPart
     {
-        if (built == null)
-            return;
+        public Mesh Mesh;
+        public Material Material;
+        public int Submesh = -1;
+    }
 
-        foreach (KeyValuePair<MeshVariantKey, AbiffMeshData[]> kvp in built)
+    /// <summary>
+    /// The placement's parts, cached per mesh variant and texture-override set -- the two things that
+    /// decide both the geometry and which submeshes share a material.
+    ///
+    /// <para>
+    /// An AO model arrives as many submeshes (a medium Nascence building is 51 with 23 materials), and
+    /// each was its own renderer: one draw call per submesh per pass. Submeshes that resolve to the same
+    /// material are merged into one mesh here, so the draw count follows materials, not parts.
+    /// </para>
+    ///
+    /// <para>
+    /// A submesh whose texture is in the factory's texture arrays uses the shared AOLit array material
+    /// and carries its slice in UV1.x, so submeshes with different textures still merge. A UV-animated
+    /// submesh stays on its own on HDRP/Lit, because <see cref="AbiffUvAnimator"/> drives
+    /// <c>_BaseColorMap_ST</c> through a per-renderer property block.
+    /// </para>
+    /// </summary>
+    StatelPart[] GetParts(
+        StatelPlacement placement,
+        MeshSource source,
+        Dictionary<MeshVariantKey, AbiffMeshData[]> built)
+    {
+        MeshVariantKey key = MeshVariantKey.FromPlacement(placement);
+        string overrideKey = placement.TextureOverrides == null || placement.TextureOverrides.Length == 0
+            ? string.Empty
+            : string.Join(",", placement.TextureOverrides);
+
+        if (_partCache.TryGetValue((key, overrideKey), out StatelPart[] cached))
+            return cached;
+
+        if (built == null || !built.TryGetValue(key, out AbiffMeshData[] data) || data == null)
+            return null;
+
+        Dictionary<int, int> overrides = BuildOverrideMap(placement.TextureOverrides);
+        var parts = new List<StatelPart>();
+
+        // Grouped by the Material each desc resolves to: descs that differ only in name, in a shininess
+        // that remaps to the same smoothness, or (on the array path) in texture share one Material.
+        var groups = new Dictionary<Material, List<(int submesh, int slice)>>();
+        var groupOrder = new List<Material>();
+
+        for (int s = 0; s < source.Submeshes.Length && s < data.Length; s++)
         {
-            var meshes = new Mesh[kvp.Value.Length];
-            for (int i = 0; i < kvp.Value.Length; i++)
+            AbiffMeshData mesh = data[s];
+            if (mesh?.Vertices == null || mesh.Vertices.Length == 0)
+                continue;
+
+            AbiffSubmeshSource sub = source.Submeshes[s];
+            AbiffMaterialDesc desc = sub.Material;
+            if (overrides != null && overrides.TryGetValue(s, out int overridden) && overridden > 0)
+                desc = desc.WithDiffuseTexture(overridden);
+
+            bool separate = (sub.UvKeys != null && sub.UvKeys.Length >= 2) || !CanMerge(mesh);
+            if (separate)
             {
-                meshes[i] = AbiffMeshFactory.CreateUnityMesh(
-                    kvp.Value[i],
-                    $"Statel_{kvp.Key.MeshId}_{kvp.Key.ShearBits}_{i}");
+                parts.Add(new StatelPart
+                {
+                    Mesh = AbiffMeshFactory.CreateUnityMesh(mesh, $"Statel_{key.MeshId}_{key.ShearBits}_{s}"),
+                    Material = _materials.Get(desc),
+                    Submesh = s,
+                });
+                continue;
             }
 
-            _unityMeshCache[kvp.Key] = meshes;
+            if (!_materials.TryGetArrayMaterial(desc, out Material resolved, out int slice))
+            {
+                resolved = _materials.Get(desc);
+                slice = -1;
+            }
+
+            if (!groups.TryGetValue(resolved, out List<(int submesh, int slice)> members))
+            {
+                members = new List<(int submesh, int slice)>();
+                groups[resolved] = members;
+                groupOrder.Add(resolved);
+            }
+            members.Add((s, slice));
         }
+
+        for (int g = 0; g < groupOrder.Count; g++)
+        {
+            AbiffMeshData merged = MergeSubmeshes(groups[groupOrder[g]], source, data);
+            parts.Add(new StatelPart
+            {
+                Mesh = AbiffMeshFactory.CreateUnityMesh(merged, $"Statel_{key.MeshId}_{key.ShearBits}_m{g}"),
+                Material = groupOrder[g],
+            });
+        }
+
+        parts.RemoveAll(p => p.Mesh == null);
+        StatelPart[] result = parts.ToArray();
+        _partCache[(key, overrideKey)] = result;
+        return result;
+    }
+
+    static bool CanMerge(AbiffMeshData mesh)
+        => mesh.Normals != null && mesh.Normals.Length == mesh.Vertices.Length
+           && mesh.UVs != null && mesh.UVs.Length == mesh.Vertices.Length
+           && mesh.Triangles != null;
+
+    /// <summary>
+    /// Concatenates the submeshes into the placement's space: each vertex goes through its submesh's
+    /// BaseRotation and BasePosition -- the transform its own GameObject used to apply -- and each
+    /// normal through the rotation. No scale is involved, so winding is unchanged. On the array path
+    /// (slices &gt;= 0) each vertex also gets its submesh's texture-array slice in UV1.x.
+    /// </summary>
+    static AbiffMeshData MergeSubmeshes(List<(int submesh, int slice)> members, MeshSource source, AbiffMeshData[] data)
+    {
+        int vertexCount = 0, indexCount = 0;
+        bool arrayPath = false;
+        foreach ((int s, int slice) in members)
+        {
+            vertexCount += data[s].Vertices.Length;
+            indexCount += data[s].Triangles.Length;
+            arrayPath |= slice >= 0;
+        }
+
+        var merged = new AbiffMeshData
+        {
+            Vertices = new Vector3[vertexCount],
+            Normals = new Vector3[vertexCount],
+            UVs = new Vector2[vertexCount],
+            Triangles = new int[indexCount],
+            UV1 = arrayPath ? new Vector2[vertexCount] : null,
+        };
+
+        int vBase = 0, iBase = 0;
+        foreach ((int s, int slice) in members)
+        {
+            AbiffMeshData part = data[s];
+            AbiffSubmeshSource sub = source.Submeshes[s];
+            Quaternion rotation = sub.BaseRotation;
+            Vector3 offset = sub.BasePosition;
+
+            for (int v = 0; v < part.Vertices.Length; v++)
+            {
+                merged.Vertices[vBase + v] = rotation * part.Vertices[v] + offset;
+                merged.Normals[vBase + v] = rotation * part.Normals[v];
+                merged.UVs[vBase + v] = part.UVs[v];
+                if (arrayPath)
+                    merged.UV1[vBase + v] = new Vector2(slice, 0f);
+            }
+
+            for (int i = 0; i < part.Triangles.Length; i++)
+                merged.Triangles[iBase + i] = part.Triangles[i] + vBase;
+
+            vBase += part.Vertices.Length;
+            iBase += part.Triangles.Length;
+        }
+
+        return merged;
     }
 
     Dictionary<int, MeshSource> SnapshotMeshes(List<StatelPlacement> placements)
@@ -419,6 +573,8 @@ public sealed class StatelParser
 
         foreach (AbiffMaterialDesc desc in unique)
             _materials.Get(desc);
+
+        _materials.PrepareArrays(unique);
     }
 
     static Dictionary<int, int> BuildOverrideMap(int[] textureOverrides)

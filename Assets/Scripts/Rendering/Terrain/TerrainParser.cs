@@ -215,7 +215,6 @@ public sealed class TerrainParser
             lodGo.SetActive(lod == 0);
         }
 
-        var collider = root.AddComponent<MeshCollider>();
         GameLayers.SetLayerRecursively(root, GameLayers.Ground);
 
         return new ChunkView
@@ -223,8 +222,7 @@ public sealed class TerrainParser
             Root = root,
             LodGroup = lodGroup,
             Filters = filters,
-            Renderers = renderers,
-            Collider = collider
+            Renderers = renderers
         };
     }
 
@@ -247,9 +245,7 @@ public sealed class TerrainParser
         view.Filters[lod].sharedMesh = mesh;
         view.Renderers[lod].gameObject.SetActive(true);
 
-        if (lod == 0)
-            view.Collider.sharedMesh = mesh;
-        else
+        if (lod != 0)
             mesh.UploadMeshData(markNoLongerReadable: true);
     }
 
@@ -500,6 +496,5 @@ public sealed class TerrainParser
         public LODGroup LodGroup;
         public MeshFilter[] Filters;
         public MeshRenderer[] Renderers;
-        public MeshCollider Collider;
     }
 }

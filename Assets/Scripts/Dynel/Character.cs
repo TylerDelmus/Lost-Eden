@@ -587,7 +587,9 @@ public class Character : Dynel
         int strength = Stats.Get(Stat.Strength, StatDetail.Full);
         int agility = Stats.Get(Stat.Agility, StatDetail.Full);
         int gmLevel = Stats.Get(Stat.GmLevel, StatDetail.Full);
-        _motor.UpdateJumpStatsFromStats(strength, agility, gmLevel);
+        // n3VisualDynel_t::GetBodyScale, stat 360 / 100 -- the same reading GfxControlEffectMesh uses.
+        int scale = Stats.Get(Stat.Scale, StatDetail.Full);
+        _motor.UpdateJumpStatsFromStats(strength, agility, gmLevel, scale > 0 ? scale / 100f : 1f);
     }
 
     void UpdateLocomotionAnim()

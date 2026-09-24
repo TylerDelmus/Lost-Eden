@@ -2648,9 +2648,9 @@ inner rim to field 12 on the outer. The texture tiles **along** the band. Readin
 wrong way round projects the texture flat over the world and gives the ring obvious stripes, which
 stock does not have.
 
-**Ground height.** Stock asks n3Playfield (`100d33f3`) per point. The port raycasts straight down,
-which is the engine's equivalent; with nothing to hit it falls back to the ring's own height, which is
-correct on flat ground. Sloped ground needs terrain colliders, which the project does not have yet.
+**Ground height.** Stock asks n3Playfield (`100d33f3`) per point. The port casts straight down onto
+the playfield's collision surface (`WorldCollision.GroundAt`, terrain and statel cells); with nothing
+to hit — GfxTest has no playfield — it falls back to the ring's own height.
 
 Verified live on 60005: 34 points for 16 segments, outer radius 8, height field 19 above the centre,
 alpha 0 to full over the 0.5 s fade-in, held through the middle, back down over the last second, and
@@ -2690,8 +2690,8 @@ the same two ideas (0x800 and 0x1000 there). The lift is applied to whichever he
 stock re-reads the locator every call, so the port derives the height fresh each time rather than
 adding the lift onto what the last call left.
 
-Ground height is the same downward raycast as GroundRing, with the same caveat: correct on flat
-ground, and sloped ground needs terrain colliders the project does not have yet.
+Ground height is the same downward cast onto the collision surface as GroundRing, with the same
+fallback to its own height when nothing is there.
 
 Verified live on 61043: model 2 resolved by name and loaded from the RDB, alpha 0 to 1 over the 0.2 s
 fade-in and held (its duration is 300 s), and the tower wreck renders with its own materials.
