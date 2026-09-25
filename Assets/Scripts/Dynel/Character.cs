@@ -575,17 +575,14 @@ public class Character : Dynel
         if (_motor == null)
             return;
 
-        int runSpeed = Stats.Get(Stat.RunSpeed, StatDetail.Full);
-        int currentHealth = Stats.Get(Stat.Health, StatDetail.Full);
-        int maxHealth = Stats.Get(Stat.MaxHealth, StatDetail.Full);
-        _motor.UpdateRunLimitsFromStats(runSpeed, currentHealth, maxHealth);
-
-        int strength = Stats.Get(Stat.Strength, StatDetail.Full);
-        int agility = Stats.Get(Stat.Agility, StatDetail.Full);
-        int gmLevel = Stats.Get(Stat.GmLevel, StatDetail.Full);
-        // n3VisualDynel_t::GetBodyScale, stat 360 / 100 -- the same reading GfxControlEffectMesh uses.
-        int scale = Stats.Get(Stat.Scale, StatDetail.Full);
-        _motor.UpdateJumpStatsFromStats(strength, agility, gmLevel, scale > 0 ? scale / 100f : 1f);
+        _motor.SetMovementStats(new N3Lite.AORules.MovementStats
+        {
+            RunSpeed = Stats.Get(Stat.RunSpeed, StatDetail.Full),
+            Strength = Stats.Get(Stat.Strength, StatDetail.Full),
+            Agility = Stats.Get(Stat.Agility, StatDetail.Full),
+            GmLevel = Stats.Get(Stat.GmLevel, StatDetail.Full),
+            Scale = Stats.Get(Stat.Scale, StatDetail.Full),
+        });
     }
 
     void UpdateLocomotionAnim()
