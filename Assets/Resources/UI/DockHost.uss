@@ -1,0 +1,7 @@
+/* The dock layer covers the screen and places nothing itself: each window is
+   positioned absolutely where it was opened, dragged or torn out to. */
+.dock-root {
+    flex-grow: 1;
+    width: 100%;
+    height: 100%;
+}

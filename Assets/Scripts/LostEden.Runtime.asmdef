@@ -8,6 +8,7 @@
         "Unity.RenderPipelines.HighDefinition.Runtime",
         "Reflex",
         "N3Lite",
+        "N3Lite.AORules",
         "UnityEngine.UI"
     ],
     "includePlatforms": [],

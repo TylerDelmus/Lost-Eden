@@ -13,7 +13,8 @@ public enum LoginScreenState
     Authenticating,
     CharacterSelect,
     EnteringGame,
-    InGame
+    InGame,
+    Reconnecting
 }
 
 [DisallowMultipleComponent]
@@ -29,6 +30,8 @@ public class LoginScreenController : MonoBehaviour
     [SerializeField] LoginScreenView _loginView;
 
     const float AuthTimeoutSeconds = 30f;
+    const float ReconnectDelaySeconds = 3f;
+    const int MaxReconnectAttempts = 3;
     const string DefaultBrowseHint = @"C:\Program Files (x86)\Steam\steamapps\common\Anarchy Online";
 
 
@@ -39,6 +42,12 @@ public class LoginScreenController : MonoBehaviour
     bool _ignoreNextDisconnect;
     string _pendingLoginStatus;
     float _authTimeoutAt = -1f;
+
+    // Dropped mid-game: log back in with the same credentials and re-enter this character.
+    int _reconnectCharacterId;
+    int _reconnectAttempt;
+    float _reconnectAt = -1f;
+    bool _abortingReconnectAttempt;
 
     void Awake()
     {
@@ -199,15 +208,25 @@ public class LoginScreenController : MonoBehaviour
     {
         _networkClient.Update();
         TickAuthTimeout();
+        TickReconnect();
     }
 
     void TickAuthTimeout()
     {
-        if (_authTimeoutAt < 0f || _state != LoginScreenState.Authenticating)
+        if (_authTimeoutAt < 0f)
+            return;
+
+        if (_state != LoginScreenState.Authenticating && _state != LoginScreenState.Reconnecting)
             return;
 
         if (Time.realtimeSinceStartup < _authTimeoutAt)
             return;
+
+        if (_state == LoginScreenState.Reconnecting)
+        {
+            AbortReconnectAttempt("login timed out");
+            return;
+        }
 
         string message = _networkClient.Phase == SessionPhase.Authenticating
             ? "Login timed out."
@@ -348,6 +367,25 @@ public class LoginScreenController : MonoBehaviour
 
     void OnCharacterListReceived(CharacterListMessage charList)
     {
+        if (_state == LoginScreenState.Reconnecting)
+        {
+            ClearAuthTimeout();
+            bool stillThere = false;
+            if (charList.Characters != null)
+                foreach (var character in charList.Characters)
+                    stillThere |= character.Id == _reconnectCharacterId;
+
+            if (!stillThere)
+            {
+                AbortReconnectAttempt($"character {_reconnectCharacterId} not in the character list");
+                return;
+            }
+
+            Debug.Log($"[LoginScreen] Reconnected; re-entering the world as {_reconnectCharacterId}");
+            EnterWorld(_reconnectCharacterId, "Reconnecting...");
+            return;
+        }
+
         if (_state != LoginScreenState.Authenticating)
             return;
 
@@ -399,10 +437,15 @@ public class LoginScreenController : MonoBehaviour
         if (_state != LoginScreenState.CharacterSelect)
             return;
 
+        EnterWorld(characterId, "Entering world...");
+    }
+
+    void EnterWorld(int characterId, string loadingMessage)
+    {
         _state = LoginScreenState.EnteringGame;
         _loginView.HideLoginUi();
         _loginView.ClearCharacterButtons();
-        _loadingScreen.Show("Entering world...", LoadingScreenKind.Login);
+        _loadingScreen.Show(loadingMessage, LoadingScreenKind.Login);
         _playfieldFactory.NetworkDriven = true;
         _playfieldFactory.Unload();
         _awaitingPlayfieldReady = true;
@@ -432,6 +475,8 @@ public class LoginScreenController : MonoBehaviour
 
         _awaitingPlayfieldReady = false;
         _state = LoginScreenState.InGame;
+        _reconnectAttempt = 0;
+        _reconnectCharacterId = 0;
 
         // The login world has done its job; tear it down so its backdrop and camera stop
         // competing with the playfield. Previously it stayed alive behind the player.
@@ -442,6 +487,13 @@ public class LoginScreenController : MonoBehaviour
 
     void OnLoginFailed(LoginError error)
     {
+        // The session closes the socket right after this; OnDisconnected schedules the retry.
+        if (_state == LoginScreenState.Reconnecting)
+        {
+            Debug.LogWarning($"[LoginScreen] Reconnect attempt {_reconnectAttempt} refused: {error}");
+            return;
+        }
+
         // Authenticating, or soft-failed to the form after a raced socket close.
         if (_state != LoginScreenState.Authenticating && _state != LoginScreenState.LoginBackdrop)
             return;
@@ -465,6 +517,18 @@ public class LoginScreenController : MonoBehaviour
             return;
         }
 
+        if (_abortingReconnectAttempt)
+            return;
+
+        // Dropped in (or on the way into) the world: go back in rather than to the login form.
+        if (_state == LoginScreenState.EnteringGame || _state == LoginScreenState.InGame
+            || _state == LoginScreenState.Reconnecting)
+        {
+            if (!TryScheduleReconnect())
+                ReturnToLoginAfterDrop();
+            return;
+        }
+
         // Bad password / early login drop: keep the form and backdrop, only show status.
         if (_state == LoginScreenState.Authenticating)
         {
@@ -472,8 +536,72 @@ public class LoginScreenController : MonoBehaviour
             return;
         }
 
+        ReturnToLoginAfterDrop();
+    }
+
+    bool TryScheduleReconnect()
+    {
+        int characterId = _reconnectCharacterId != 0 ? _reconnectCharacterId : _networkClient.LocalDynelId;
+        if (characterId == 0 || _networkClient.Credentials == null || _networkClient.Dimension == null)
+            return false;
+
+        if (_reconnectAttempt >= MaxReconnectAttempts)
+            return false;
+
+        _reconnectAttempt++;
+        _reconnectCharacterId = characterId;
+        _state = LoginScreenState.Reconnecting;
+        _awaitingPlayfieldReady = false;
         _networkClient.AbandonReconnect();
+        ClearAuthTimeout();
+        _reconnectAt = Time.realtimeSinceStartup + ReconnectDelaySeconds;
+
+        // Drop the dead world now: a load still running would otherwise finish during the reconnect.
+        _playfieldFactory.Unload();
+        _loadingScreen.Show($"Connection lost. Reconnecting ({_reconnectAttempt}/{MaxReconnectAttempts})...", LoadingScreenKind.Login);
+        Debug.LogWarning($"[LoginScreen] Connection lost; reconnect attempt {_reconnectAttempt}/{MaxReconnectAttempts} as {characterId} in {ReconnectDelaySeconds:F0}s");
+        return true;
+    }
+
+    void TickReconnect()
+    {
+        if (_reconnectAt < 0f || Time.realtimeSinceStartup < _reconnectAt)
+            return;
+
+        _reconnectAt = -1f;
+        if (_state != LoginScreenState.Reconnecting)
+            return;
+
+        BeginAuthTimeout();
+        _networkClient.Connect(_networkClient.Credentials, _networkClient.Dimension);
+    }
+
+    /// <summary>Gives up on this attempt (closing whatever it opened) and tries again or goes to the form.</summary>
+    void AbortReconnectAttempt(string reason)
+    {
+        Debug.LogWarning($"[LoginScreen] Reconnect attempt {_reconnectAttempt} failed: {reason}");
+        ClearAuthTimeout();
+
+        _abortingReconnectAttempt = true;
+        _networkClient.AbandonReconnect();
+        _networkClient.Disconnect();
+        _abortingReconnectAttempt = false;
+
+        if (!TryScheduleReconnect())
+            ReturnToLoginAfterDrop();
+    }
+
+    void ReturnToLoginAfterDrop()
+    {
+        _networkClient.AbandonReconnect();
+        ClearAuthTimeout();
+        _reconnectAt = -1f;
+        _reconnectAttempt = 0;
+        _reconnectCharacterId = 0;
+
         _playfieldFactory.NetworkDriven = false;
+        _playfieldFactory.Unload();
+        _loadingScreen.Hide();
         _awaitingPlayfieldReady = false;
         _pendingLoginStatus = "Disconnected";
 

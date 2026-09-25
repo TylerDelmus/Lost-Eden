@@ -81,6 +81,12 @@ public class NetworkClient
     public event Action<CastNanoSpellMessage> CastNanoSpellReceived;
     public event Action<BuffMessage> BuffReceived;
 
+    /// <summary>A container's contents: a backpack opened, the bank, a corpse's loot.</summary>
+    public event Action<InventoryUpdateMessage> InventoryUpdateReceived;
+
+    /// <summary>The server moved an item into a container (or the inventory) at a slot.</summary>
+    public event Action<ContainerAddItem> ContainerAddItemReceived;
+
     public NetworkClient(NetworkConfig config = null)
     {
         _config = config ?? new NetworkConfig();
@@ -132,6 +138,7 @@ public class NetworkClient
         // Drain inbound packets before posted transport drops so LoginError
         // (and its soft-fail UI path) wins the race against a simultaneous close.
         _session.Update();
+        ZoneInTrace.Tick(this);
 
         while (_mainThreadActions.TryDequeue(out Action action))
         {
@@ -233,15 +240,27 @@ public class NetworkClient
     internal void OnFullCharacter(FullCharacterMessage msg)
     {
         Debug.Log($"[Network] FullCharacter → {msg.Identity.Type}:{msg.Identity.Instance}");
+        ZoneInTrace.Mark($"RX FullCharacter {msg.Identity.Instance}");
         FullCharacterReceived?.Invoke(msg);
     }
 
     internal void EnterPlay()
     {
         if (_phase == SessionPhase.InPlay)
+        {
+            ZoneInTrace.Mark("EnterPlay skipped: phase already InPlay, CharInPlay NOT sent");
             return;
+        }
+
+        // A playfield that finished loading after the socket dropped is not a world we are in.
+        if (!_session.Connected)
+        {
+            ZoneInTrace.Mark("EnterPlay refused: socket is closed");
+            return;
+        }
 
         Send(new CharInPlayMessage());
+        ZoneInTrace.Mark("CharInPlay sent");
         SetPhase(SessionPhase.InPlay);
         CharacterInPlay?.Invoke(_isFirstPlayshift);
         _isFirstPlayshift = false;
@@ -251,12 +270,15 @@ public class NetworkClient
     {
         int playfieldId = msg.PlayfieldId1.Instance;
         Debug.Log($"[Network] PlayfieldAnarchyF → {playfieldId}");
+        ZoneInTrace.Begin($"RX PlayfieldAnarchyF {playfieldId} (phase={_phase})");
         PlayfieldAnarchyFReceived?.Invoke(playfieldId);
     }
 
     internal void OnSimpleCharFullUpdate(SimpleCharFullUpdateMessage msg)
     {
         Debug.Log($"[Network] SimpleCharFullUpdate → {msg.Identity.Type}:{msg.Identity.Instance} \"{msg.Name}\" @ ({msg.Position.X:F1}, {msg.Position.Y:F1}, {msg.Position.Z:F1})");
+        if (msg.Identity.Instance == LocalDynelId)
+            ZoneInTrace.Mark($"RX local SCFU {msg.Identity.Instance}");
         SimpleCharFullUpdateReceived?.Invoke(msg);
     }
 
@@ -318,6 +340,10 @@ public class NetworkClient
         CastNanoSpellReceived?.Invoke(msg);
     }
 
+    internal void OnInventoryUpdate(InventoryUpdateMessage msg) => InventoryUpdateReceived?.Invoke(msg);
+
+    internal void OnContainerAddItem(ContainerAddItem msg) => ContainerAddItemReceived?.Invoke(msg);
+
     internal void OnBuff(BuffMessage msg)
     {
         BuffReceived?.Invoke(msg);
@@ -331,6 +357,7 @@ public class NetworkClient
     {
         bool alreadyDown = _phase == SessionPhase.Disconnected && !_session.Connected;
         _session.CloseSocket();
+        ZoneInTrace.Mark($"transport drop (unexpected={unexpected}, phase was {_phase})");
 
         if (alreadyDown)
             return;

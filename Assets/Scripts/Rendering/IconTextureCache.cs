@@ -42,9 +42,37 @@ public sealed class IconTextureCache
             return null;
         }
 
+        KeyOutGreen(tex);
         tex.name = name;
         tex.wrapMode = TextureWrapMode.Clamp;
         tex.filterMode = FilterMode.Point;
         return tex;
+    }
+
+    // The icons have no alpha: what should show through is painted pure green (0,255,0), exactly,
+    // with no compression noise around it. Only that exact colour is keyed, so green in the art
+    // itself (the nano program icons' grid) stays.
+    static void KeyOutGreen(Texture2D tex)
+    {
+        Color32[] pixels = tex.GetPixels32();
+        bool keyed = false;
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            Color32 p = pixels[i];
+            if (p.r == 0 && p.g == 255 && p.b == 0)
+            {
+                pixels[i] = new Color32(0, 0, 0, 0);
+                keyed = true;
+            }
+        }
+
+        if (keyed)
+        {
+            // LoadImage gives a JPEG an RGB24 texture, which has nowhere to keep the alpha.
+            if (tex.format != TextureFormat.RGBA32)
+                tex.Reinitialize(tex.width, tex.height, TextureFormat.RGBA32, false);
+            tex.SetPixels32(pixels);
+            tex.Apply(updateMipmaps: false);
+        }
     }
 }

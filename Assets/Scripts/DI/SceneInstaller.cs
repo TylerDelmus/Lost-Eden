@@ -43,7 +43,8 @@ public class SceneInstaller : MonoBehaviour, IInstaller
         containerBuilder.RegisterValue(new AbiffLoader(resourceDatabase, abiffMaterials, imageTextures));
         containerBuilder.RegisterValue(new CatMeshLoader(resourceDatabase, catMeshMaterials));
         containerBuilder.RegisterValue(_playfieldFactory);
-        containerBuilder.RegisterValue(new NetworkClient(new NetworkConfig { AutoReconnect = false }));
+        var networkClient = new NetworkClient(new NetworkConfig { AutoReconnect = false });
+        containerBuilder.RegisterValue(networkClient);
         containerBuilder.RegisterValue(_playerController);
 
         _loadingScreenView ??= GetComponentInChildren<LoadingScreenView>(true);
@@ -72,9 +73,13 @@ public class SceneInstaller : MonoBehaviour, IInstaller
 
         containerBuilder.RegisterValue(_worldOverlayController);
 
-        // The old inventory window is gone; IGameHud stays as the seam so InputController keeps
-        // resolving, and the rebuilt window will supply the real implementation.
-        containerBuilder.RegisterValue(new NullGameHud(), new System.Type[] { typeof(IGameHud) });
+        containerBuilder.RegisterValue(new ItemMoveService(networkClient, _playerController));
+
+        var dockHost = UserInterface.FindOrCreateMenuView<DockHostView>(transform, "DockHost");
+        containerBuilder.RegisterValue(dockHost);
+
+        var inventoryWindow = UserInterface.FindOrCreateMenuView<InventoryWindowView>(transform, "InventoryWindow");
+        containerBuilder.RegisterValue(new GameHud(inventoryWindow), new System.Type[] { typeof(IGameHud) });
         containerBuilder.RegisterValue(new UIInteractionManager(), new System.Type[] { typeof(IUINotifyService) });
 
         EffectRuntimeHost fxHost = GetComponentInChildren<EffectRuntimeHost>(true);

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using LostEden.Vehicles;
 using N3Lite;
+using N3Lite.AORules;
 using N3Lite.Surfaces;
 using SmokeLounge.AOtomation.Messaging.GameData;
 using UnityEngine;
@@ -17,8 +18,9 @@ using MovementState = AOSharp.Common.GameData.MovementState;
 /// <para>
 /// What lives here and not in N3Lite: the transform sync, the protocol mapping
 /// (<see cref="MovementAction"/>, <see cref="CharMovementStatus"/>, <see cref="MovementState"/>), the
-/// movement state and stats — turned into a <see cref="MovementProfile"/> by
-/// <see cref="CharMovementRules"/> — the player-side path follower, and the animation queries. <b>There is no <c>CharacterController</c>
+/// player-side path follower, and the animation queries. The movement state and stats — turned into a
+/// <see cref="MovementProfile"/> by <see cref="CharMovementRules"/> — are <see cref="CharMovement"/>,
+/// which the server shares. <b>There is no <c>CharacterController</c>
 /// and no collider.</b>
 /// </para>
 ///
@@ -54,10 +56,8 @@ public class N3CharVehicle : MonoBehaviour
     /// </summary>
     [SerializeField] Transform _surfaceRoot;
 
+    CharMovement _movement;
     CharCore _core;
-    MovementState _state = MovementState.Run;
-    MovementState _lastSpeedMode = MovementState.Run;
-    float _runSpeedStat;
 
     readonly List<Vector3> _path = new();
     int _pathIndex = -1;
@@ -67,6 +67,9 @@ public class N3CharVehicle : MonoBehaviour
 
     /// <summary>The movement core this component drives.</summary>
     public CharCore Core => _core;
+
+    /// <summary>The movement state and stats around the core — the part the server shares.</summary>
+    public CharMovement Movement => _movement;
 
     /// <summary>The vehicle itself.</summary>
     public CharVehicleSim Vehicle => _core?.Vehicle;
@@ -87,7 +90,7 @@ public class N3CharVehicle : MonoBehaviour
 
     public MovementFlags MovementFlags => _core.Flags;
 
-    public MovementState State => _state;
+    public MovementState State => _movement != null ? (MovementState)_movement.State : MovementState.Run;
 
     public float CurrentSpeed => _core != null ? _core.CurrentSpeed : 0f;
 
@@ -112,7 +115,8 @@ public class N3CharVehicle : MonoBehaviour
         if (_core != null)
             return;
 
-        _core = new CharCore(isNpc: false, _mass, _radius);
+        _movement = new CharMovement(isNpc: false, _mass, _radius);
+        _core = _movement.Core;
 
         // UNPORTED: the keyboard turn rates are the previous developer's, not stock. Stock scales a
         // +/-0.02 rad rate by MouseTurnSensitivity (100229ff).
@@ -127,7 +131,6 @@ public class N3CharVehicle : MonoBehaviour
         _core.JumpLanded += () => JumpLanded?.Invoke();
         _core.PathCleared += ClearPlayerPath;
 
-        ApplyRules();
         PushTransformToSim();
     }
 
@@ -149,8 +152,7 @@ public class N3CharVehicle : MonoBehaviour
         if (_core == null)
             Awake();
 
-        _core.SelectVehicleKind(isNpc);
-        ApplyRules();
+        _movement.SelectVehicleKind(isNpc);
     }
 
     /// <summary>
@@ -273,7 +275,7 @@ public class N3CharVehicle : MonoBehaviour
     /// </summary>
     public void ApplyYawDelta(float degrees)
     {
-        if (_state == MovementState.Sit || Mathf.Approximately(degrees, 0f))
+        if (State == MovementState.Sit || Mathf.Approximately(degrees, 0f))
             return;
 
         transform.Rotate(0f, degrees, 0f);
@@ -330,7 +332,7 @@ public class N3CharVehicle : MonoBehaviour
     {
         _core.ClearPath();
         EnterMovementState(ToMovementState(status.ModeId));
-        _lastSpeedMode = ToMovementState(status.LastSpeedMode);
+        _movement.LastSpeedMode = (int)ToMovementState(status.LastSpeedMode);
 
         MovementFlags flags = MovementFlags.None;
 
@@ -360,53 +362,20 @@ public class N3CharVehicle : MonoBehaviour
 
     // ---- movement state --------------------------------------------------
 
-    void EnterMovementState(MovementState state)
-    {
-        if (_state == MovementState.Walk || _state == MovementState.Run)
-            _lastSpeedMode = _state;
+    void EnterMovementState(MovementState state) => _movement.EnterState((int)state);
 
-        _state = state;
-        ApplyRules();
-    }
-
-    void LeaveMovementState()
-        => EnterMovementState(_lastSpeedMode is MovementState.Walk or MovementState.Run
-            ? _lastSpeedMode
-            : MovementState.Run);
-
-    /// <summary>The state, the stat and the vehicle kind, into the core's profile.</summary>
-    void ApplyRules()
-        => _core.SetProfile(CharMovementRules.Profile((int)_state, _runSpeedStat, _core.IsNpcVehicle));
+    void LeaveMovementState() => _movement.LeaveState();
 
     static MovementState ToMovementState(uint modeId)
         => Enum.IsDefined(typeof(MovementState), (int)modeId) ? (MovementState)modeId : MovementState.Run;
 
-    /// <summary>
-    /// The run-speed stat, which drives the whole curve (<c>FUN_1006f2fc</c>).
-    ///
-    /// <para>
-    /// The health penalty the previous file applied is <b>dropped</b>: it was invented, and stock's
-    /// stat lookup has not been reversed far enough to say whether one exists.
-    /// </para>
-    /// </summary>
-    public void UpdateRunLimitsFromStats(int runSpeed, int currentHealth, int maxHealth)
-    {
-        _runSpeedStat = runSpeed;
-        if (_core != null)
-            ApplyRules();
-    }
-
-    /// <summary>
-    /// The owner's stats the jump reads: Strength, Agility and GmLevel for
-    /// <see cref="CharMovementRules.JumpHeight"/>, and the body scale for the ceiling clamp.
-    /// </summary>
-    public void UpdateJumpStatsFromStats(int strength, int agility, int gmLevel, float bodyScale)
+    /// <summary>The owner's movement stats. See <see cref="CharMovement.SetStats"/>.</summary>
+    public void SetMovementStats(MovementStats stats)
     {
         if (_core == null)
             Awake();
 
-        _core.JumpHeight = CharMovementRules.JumpHeight(strength, agility, gmLevel);
-        _core.BodyHeight = CharMovementRules.BodyHeight(bodyScale);
+        _movement.SetStats(stats);
     }
 
     public void Halt()

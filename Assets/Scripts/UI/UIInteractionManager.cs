@@ -1,23 +1,28 @@
+using System;
 using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
 
 public class UIInteractionManager : IUINotifyService
 {
-    private readonly HashSet<VisualElement> _hoveredElements = new();
+    private readonly List<Func<Vector2, bool>> _hitTests = new();
     private VisualElement _draggedElement;
 
     private bool _isGameDragging;
 
-    public bool IsPointerOverUI => !_isGameDragging && _hoveredElements.Count > 0;
+    // Asked fresh on every read, not tracked through enter/leave events: a missed leave (a window
+    // closed under the cursor, the cursor warped back after a camera drag) would otherwise leave
+    // the pointer "over UI" until something happened to send that window another leave.
+    public bool IsPointerOverUI => !_isGameDragging && PointerHitsUI();
     public bool IsDraggingUI => _draggedElement != null;
     public bool IsInteractingWithUI => IsDraggingUI || IsPointerOverUI;
 
     // DEV - remove later
-    public IReadOnlyCollection<VisualElement> HoveredElements => _hoveredElements;
     public VisualElement DraggedElement => _draggedElement;
 
-    public void NotifyHoverStart(VisualElement element) => _hoveredElements.Add(element);
-    public void NotifyHoverEnd(VisualElement element) => _hoveredElements.Remove(element);
+    public void AddHitTest(Func<Vector2, bool> hitTest) => _hitTests.Add(hitTest);
+    public void RemoveHitTest(Func<Vector2, bool> hitTest) => _hitTests.Remove(hitTest);
     public void NotifyGameDragStart() => _isGameDragging = true;
     public void NotifyGameDragEnd() => _isGameDragging = false;
 
@@ -26,6 +31,19 @@ public class UIInteractionManager : IUINotifyService
     {
         if (_draggedElement == element)
             _draggedElement = null;
+    }
+
+    private bool PointerHitsUI()
+    {
+        Mouse mouse = Mouse.current;
+        if (mouse == null)
+            return false;
+
+        Vector2 screen = mouse.position.ReadValue();
+        for (int i = 0; i < _hitTests.Count; i++)
+            if (_hitTests[i](screen))
+                return true;
+        return false;
     }
 }
 
@@ -36,11 +54,14 @@ public interface IUINotifyService
     bool IsDraggingUI { get; }
 
     // DEV - remove later
-    IReadOnlyCollection<VisualElement> HoveredElements { get; }
     VisualElement DraggedElement { get; }
 
-    void NotifyHoverStart(VisualElement element);
-    void NotifyHoverEnd(VisualElement element);
+    /// <summary>
+    /// Adds a test for whether a screen point (Input System coordinates, origin bottom-left) is
+    /// over UI that should keep clicks and the wheel from the world.
+    /// </summary>
+    void AddHitTest(Func<Vector2, bool> hitTest);
+    void RemoveHitTest(Func<Vector2, bool> hitTest);
     void NotifyDragStart(VisualElement element);
     void NotifyDragEnd(VisualElement element);
     void NotifyGameDragStart();

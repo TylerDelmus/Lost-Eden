@@ -274,12 +274,26 @@ internal class InputController : MonoBehaviour
         actorInput.MoveAxisRaw = _moveAction.ReadValue<Vector2>();
         actorInput.LookAxisRaw = 0.1f * 0.5f * _lookAction.ReadValue<Vector2>(); // legacy scaling compensation
         actorInput.LookAxis = _lookSensitivity * actorInput.LookAxisRaw;
-        actorInput.ZoomDelta = _zoomAction.ReadValue<Vector2>().y;
+        // The wheel over a window scrolls the window; it does not also zoom the camera.
+        bool wheelOverUI = _uiNotifyService != null && _uiNotifyService.IsPointerOverUI;
+        actorInput.ZoomDelta = wheelOverUI ? 0f : _zoomAction.ReadValue<Vector2>().y;
         actorInput.StrafeAxisRaw = _strafeAction.ReadValue<float>();
     }
 
+    // A press that starts while the UI has the pointer — over a window, or with an item on the
+    // cursor — is the UI's until it is released: it never reaches the held flags the camera
+    // and the world read, so dragging a tab or carrying an item does not also turn the camera.
+    private bool _leftClickOwnedByUI;
+    private bool _rightClickOwnedByUI;
+
+    private bool UIOwnsPointer => _uiNotifyService != null && _uiNotifyService.IsInteractingWithUI;
+
     private void OnLeftClickStarted(InputAction.CallbackContext ctx)
     {
+        _leftClickOwnedByUI = UIOwnsPointer;
+        if (_leftClickOwnedByUI)
+            return;
+
         _actorInputRaw.IsLeftClickPressedThisFrame = true;
         _actorInputRaw.IsLeftClickHeld = true;
         _actorInputRaw.LeftClickOrigin = Mouse.current.position.ReadValue();
@@ -288,11 +302,18 @@ internal class InputController : MonoBehaviour
 
     private void OnLeftClickPerformed(InputAction.CallbackContext ctx)
     {
-        _actorInputRaw.IsLeftClickHeld = true;
+        if (!_leftClickOwnedByUI)
+            _actorInputRaw.IsLeftClickHeld = true;
     }
 
     private void OnLeftClickCanceled(InputAction.CallbackContext ctx)
     {
+        if (_leftClickOwnedByUI)
+        {
+            _leftClickOwnedByUI = false;
+            return;
+        }
+
         _actorInputRaw.IsLeftClickHeld = false;
         _actorInputRaw.IsLeftClickReleasedAtOrigin = Mouse.current.position.ReadValue() == _actorInputRaw.LeftClickOrigin;
         if (!_actorInputRaw.IsRightClickHeld)
@@ -301,6 +322,10 @@ internal class InputController : MonoBehaviour
 
     private void OnRightClickStarted(InputAction.CallbackContext ctx)
     {
+        _rightClickOwnedByUI = UIOwnsPointer;
+        if (_rightClickOwnedByUI)
+            return;
+
         _actorInputRaw.IsRightClickPressedThisFrame = true;
         _actorInputRaw.IsRightClickHeld = true;
         _actorInputRaw.RightClickOrigin = Mouse.current.position.ReadValue();
@@ -309,11 +334,18 @@ internal class InputController : MonoBehaviour
 
     private void OnRightClickPerformed(InputAction.CallbackContext ctx)
     {
-        _actorInputRaw.IsRightClickHeld = true;
+        if (!_rightClickOwnedByUI)
+            _actorInputRaw.IsRightClickHeld = true;
     }
 
     private void OnRightClickCanceled(InputAction.CallbackContext ctx)
     {
+        if (_rightClickOwnedByUI)
+        {
+            _rightClickOwnedByUI = false;
+            return;
+        }
+
         _actorInputRaw.IsRightClickHeld = false;
         _actorInputRaw.IsRightClickReleasedAtOrigin = Mouse.current.position.ReadValue() == _actorInputRaw.RightClickOrigin;
         if (!_actorInputRaw.IsLeftClickHeld)

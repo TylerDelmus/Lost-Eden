@@ -131,4 +131,41 @@ public partial class AoComboBox : AoGuiControl
     }
 
     public TextField Field => _field;
+
+    bool _editable = true;
+
+    /// <summary>
+    /// Whether the text can be typed into, as stock's <c>ComboBox_c</c> always can. Ours: false
+    /// makes it a plain picker — the field is read-only, takes no focus (so no Tab stop and no
+    /// caret), and a click anywhere on it opens the list. Published as <c>ao-combo-box--fixed</c>.
+    /// </summary>
+    public bool Editable
+    {
+        get => _editable;
+        set
+        {
+            if (_editable == value)
+                return;
+
+            _editable = value;
+            _field.isReadOnly = !value;
+            _field.focusable = value;
+
+            // The field takes focus through its inner text element, so every part of it leaves
+            // the Tab order, not only the outer field.
+            _field.Query<VisualElement>().ForEach(e => e.tabIndex = value ? 0 : -1);
+            EnableInClassList("ao-combo-box--fixed", !value);
+
+            if (value)
+                _field.UnregisterCallback<PointerDownEvent>(OnFixedFieldPointerDown, TrickleDown.TrickleDown);
+            else
+                _field.RegisterCallback<PointerDownEvent>(OnFixedFieldPointerDown, TrickleDown.TrickleDown);
+        }
+    }
+
+    void OnFixedFieldPointerDown(PointerDownEvent evt)
+    {
+        ToggleDropdown();
+        evt.StopPropagation();
+    }
 }

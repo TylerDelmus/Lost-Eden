@@ -1,6 +1,7 @@
 {
   "dependencies": {
-    "com.malishade.n3lite": "https://github.com/Malishade/N3Lite.git?path=/package#2139168aa2c6b384880f18e19f29b57091902dc8",
+    "com.malishade.n3lite": "https://github.com/Malishade/N3Lite.git?path=/package#f475fc36e72d900a8f0f8542b9d97adaad2b2b0d",
+    "com.malishade.n3lite.aorules": "https://github.com/Malishade/N3Lite.git?path=/aorules#f475fc36e72d900a8f0f8542b9d97adaad2b2b0d",
     "com.boxqkrtm.ide.cursor": "https://github.com/boxqkrtm/com.unity.ide.cursor.git",
     "com.github-glitchenzo.nugetforunity": "https://github.com/GlitchEnzo/NuGetForUnity.git?path=/src/NuGetForUnity",
     "com.gustavopsantos.reflex": "https://github.com/gustavopsantos/reflex.git?path=/Assets/Reflex/#14.3.1",

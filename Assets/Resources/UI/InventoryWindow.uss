@@ -1,0 +1,14 @@
+/* Layout for the inventory view. How its views look is the skin's job
+   (Skins/Phosphor/Phosphor.uss); this sheet only places them. */
+
+/* Opens at six grid slots across and five down: 58px per slot and a 1px
+   inset either side. More items than that scroll down. Resizing the window
+   changes this, snapped to whole slots. */
+.inventory {
+    width: 350px;
+    height: 292px;
+}
+
+.inventory-view {
+    flex-grow: 1;
+}
